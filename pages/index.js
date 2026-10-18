@@ -1380,8 +1380,17 @@ export default function Home() {
     }));
   }
   async function consultOfficialAutomatically(url, expectedKey = '') {
-    if (!url || !/\/Dfe\/QrCodeNFce\?p=/i.test(url)) {
-      setDraft((d) => d ? ({ ...d, officialStatus: 'QR Code completo não encontrado. Confira os dados manualmente.' }) : d);
+    let validQr = false;
+    try {
+      const parsed = new URL(url);
+      const hosts = ['dfe-portal.svrs.rs.gov.br', 'www.sefaz.rs.gov.br'];
+      const pathOk = /^\/Dfe\/QrCodeNFce\/?$/i.test(parsed.pathname) || /^\/NFCE\/NFCE-COM\.aspx$/i.test(parsed.pathname);
+      const payload = parsed.searchParams.get('p') || '';
+      validQr = parsed.protocol === 'https:' && hosts.includes(parsed.hostname) && pathOk &&
+        /^\d{44}\|/.test(payload) && validateNfceAccessKey(payload.split('|')[0]);
+    } catch (_) {}
+    if (!validQr) {
+      setDraft((d) => d ? ({ ...d, officialStatus: 'Não encontrei uma URL de QR Code completa e válida. Confira os dados manualmente.' }) : d);
       return;
     }
     setDraft((d) => d ? ({ ...d, officialStatus: 'Consultando automaticamente a NFC-e na SVRS…' }) : d);
@@ -1393,9 +1402,9 @@ export default function Home() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
-      const officialItems = parseOfficialConsultaItems(data.text);
+      const officialItems = Array.isArray(data.items) ? data.items : [];
       if (!officialItems.length) throw new Error('A página oficial foi aberta, mas os itens não puderam ser extraídos com segurança.');
-      const totals = parseReceiptTotals(data.text);
+      const totals = data.totals || {};
       setDraft((d) => {
         if (!d || d.consultaUrl !== url || (expectedKey && d.accessKey && expectedKey !== d.accessKey)) return d;
         return {
