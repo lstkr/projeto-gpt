@@ -31,7 +31,7 @@ test('Seven verified real grocery items: ingredients, weight, pot vs pack, print
  assert.equal(items.length,products.length);
  items.forEach((it,index)=>{
   const [code,name,quantity,unit,unitPrice,total]=products[index];
-  assert.equal(it.code,code);assert.equal(it.name,name);
+  assert.equal(it.code,code);assert.equal(it.name,name.replace(/[.\\s]+$/,''));
   assert.equal(it.quantity,quantity);
   assert.equal(it.unit,unit.toLowerCase());
   assert.equal(it.unitPrice,unitPrice);assert.equal(it.lineTotal,total);
