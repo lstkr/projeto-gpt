@@ -405,3 +405,32 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .auth-screen { padding: 14px; }
   .auth-card { padding: 24px 20px; }
 }
+
+
+/* Audit view: highlight risks without implying that inventories were merged. */
+.duplicates-panel { padding: 20px; }
+.duplicates-panel .panel-head { padding: 0 0 16px; }
+.duplicate-guidance, .duplicate-inline {
+  border: 1px solid #e8d7a8; background: #fff9e9; border-radius: 9px;
+  padding: 12px 14px; color: #885e19; font-size: 11px; line-height: 1.7;
+}
+.duplicate-results { display: grid; gap: 13px; margin-top: 18px; }
+.duplicate-pair { padding: 15px; border: 1px solid #e6ece6; border-radius: 12px; background: #fdfefc; }
+.duplicate-pair-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.duplicate-pair-heading b { border-radius: 20px; padding: 5px 10px; font-size: 10px; }
+.duplicate-high { background: #e7f4e9; color: #28623b; }
+.duplicate-review { background: #fff0ce; color: #946019; }
+.duplicate-pair-heading small { color: #677668; font-size: 10px; }
+.duplicate-comparison { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.duplicate-product { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px; border-radius: 8px; background: #f5f8f4; }
+.duplicate-product strong { color: #354d3a; overflow-wrap: anywhere; font-size: 12px; }
+.duplicate-product small { color: #667969; overflow-wrap: anywhere; font-size: 10px; }
+.duplicate-product .text-btn { justify-content: flex-start; align-self: flex-start; margin-top: 4px; padding: 0; }
+.duplicate-reasons { margin: 12px 0 0; color: #7a835e; font-size: 11px; line-height: 1.6; }
+.duplicate-inline { margin: 14px 0 0; }
+.duplicate-inline p { margin: 4px 0 0; }
+@media (max-width: 700px) {
+  .duplicate-comparison { grid-template-columns: 1fr; }
+  .duplicates-panel { padding: 14px; }
+  .duplicate-pair-heading { flex-wrap: wrap; }
+}
