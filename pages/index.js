@@ -481,6 +481,9 @@ async function prepareReceiptCanvases(file) {
     const yPad = Math.max(8, Math.round(height * 0.012));
     y0 = Math.max(0, y0 - yPad);
     y1 = Math.min(height, y1 + yPad + 1);
+    // Paper shadows and the dense QR matrix can lower the white-pixel score near the footer.
+    // Keep the last 1.5% of a tall image so the QR's bottom modules aren't clipped.
+    y1 = Math.max(y1, Math.floor(height * 0.985));
     const sh = Math.max(1, y1 - y0);
 
     const scaledWidth = Math.max(1200, Math.min(1800, Math.round(sw * 2.8)));
