@@ -58,10 +58,34 @@ function parseNfeXml(text) {
     const prod = Array.from(det.getElementsByTagName('*')).find((n) => n.localName === 'prod');
     if (!prod) return null;
     const read = (name) => Array.from(prod.getElementsByTagName('*')).find((n) => n.localName === name)?.textContent?.trim() || '';
-    return { name: read('xProd'), code: read('cProd'), quantity: Number(read('qCom')) || 1, unit: read('uCom') || 'un', unitPrice: Number(read('vUnCom')) || 0 };
+    const quantity = Number(read('qCom')) || 1;
+    const unitPrice = Number(read('vUnCom')) || 0;
+    const lineGross = Number(read('vProd'));
+    const itemDiscount = Number(read('vDesc')) || 0;
+    const lineTotal = Number.isFinite(lineGross) && lineGross > 0 ? Math.max(0, lineGross - itemDiscount) : Math.round(quantity * unitPrice * 100) / 100;
+    return { name: read('xProd'), code: read('cProd'), quantity, unit: read('uCom') || 'un', unitPrice, lineTotal };
   }).filter((item) => item && item.name);
   if (!items.length) throw new Error('Não encontrei produtos. Use o XML completo da NF-e, não apenas uma foto do DANFE.');
-  return { supplier: find(emit, 'xNome') || '', invoiceNumber: find(ide, 'nNF') || '', date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '', source: 'XML de NF-e', items };
+  const totalsNode = all.find((n) => n.localName === 'ICMSTot') || doc;
+  const xmlNumber = (name) => {
+    const raw = find(totalsNode, name);
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+  const subtotal = xmlNumber('vProd');
+  const discount = xmlNumber('vDesc');
+  const total = xmlNumber('vNF');
+  return {
+    supplier: find(emit, 'xNome') || '',
+    invoiceNumber: find(ide, 'nNF') || '',
+    date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '',
+    source: 'XML de NF-e',
+    subtotal: subtotal ?? items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0),
+    discount: discount ?? 0,
+    total: total ?? Math.max(0, (subtotal ?? items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0)) - (discount ?? 0)),
+    totalsSource: 'XML oficial',
+    items
+  };
 }
 
 function localizedValue(raw) {
@@ -595,6 +619,148 @@ function detectReceiptMetadata(text) {
   const date = raw.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
   return { invoiceNumber: invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
 }
+
+function receiptItemTotal(item) {
+  if (item && item.lineTotal !== undefined && item.lineTotal !== null && item.lineTotal !== '' && Number.isFinite(Number(item.lineTotal))) {
+    return Math.round(Number(item.lineTotal) * 100) / 100;
+  }
+  return Math.round(Number(item?.quantity || 0) * Number(item?.unitPrice || 0) * 100) / 100;
+}
+
+function parseReceiptTotals(text) {
+  const totals = { subtotal: null, discount: null, total: null };
+  const moneyPattern = /(?:R\$\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+)[,.]\d{2})/g;
+  const normalize = (line) => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const amountValues = (line) => [...String(line || '').matchAll(moneyPattern)]
+    .map((match) => localizedValue(match[1]))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const n = normalize(line);
+    const values = amountValues(line);
+    if (!values.length) continue;
+    if (totals.subtotal === null && /\bSUB[\s-]*TOTAL\b|\bSUBTOTAL\b/.test(n)) totals.subtotal = values[0];
+    if (totals.discount === null && /\bDESCONTO\b/.test(n)) totals.discount = values[0];
+    if (totals.total === null && (/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
+        !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n)) totals.total = values[0];
+  }
+  return totals;
+}
+
+function reconcileReceiptTotals(primaryText, alternateText, items) {
+  const primary = parseReceiptTotals(primaryText);
+  const alternate = parseReceiptTotals(alternateText);
+  const itemSubtotal = Math.round((items || []).reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100;
+  const subtotal = primary.subtotal ?? alternate.subtotal ?? itemSubtotal;
+  const discount = primary.discount ?? alternate.discount ?? 0;
+  const expected = Math.round((Number(subtotal) - Number(discount)) * 100) / 100;
+  const candidates = [primary.total, alternate.total].filter((value) => value !== null);
+  let total = candidates.length ? candidates[0] : expected;
+  if (candidates.length > 1) {
+    total = candidates.sort((a, b) => Math.abs(a - expected) - Math.abs(b - expected))[0];
+  }
+  return {
+    subtotal: Math.round(Number(subtotal) * 100) / 100,
+    discount: Math.round(Number(discount) * 100) / 100,
+    total: Math.round(Number(total) * 100) / 100,
+    totalsSource: primary.total !== null || primary.subtotal !== null || primary.discount !== null
+      ? 'OCR (leitura principal)'
+      : alternate.total !== null || alternate.subtotal !== null || alternate.discount !== null
+        ? 'OCR (leitura alternativa)' : 'Calculado pelos itens'
+  };
+}
+
+function parseOfficialConsultaItems(text) {
+  const source = String(text || '');
+  const structured = parseReceiptOcr(source);
+  const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
+  const unitPattern = /\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i;
+  const normalizeLine = (line) => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const junk = /\b(CNPJ|CPF|PROTOCOLO|CHAVE DE ACESSO|CONSULTA PUBLICA|CONSUMIDOR|VALOR TOTAL|SUBTOTAL|DESCONTO|FORMA DE PAGAMENTO|CARTAO|PIX|TROCO|TRIBUTOS|NFC-E|NOTA FISCAL|SERIE|DATA DE EMISSAO)\b/;
+  const inline = [];
+  for (const line of source.split(/\r?\n/).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean)) {
+    const n = normalizeLine(line);
+    if (junk.test(n)) continue;
+    const tokens = [...line.matchAll(amountPattern)].map((m) => ({ value: localizedValue(m[0]), index: m.index || 0 }));
+    if (tokens.length < 2) continue;
+    const unitMatch = line.match(unitPattern);
+    const codeMatch = line.match(/^\s*([A-Z]?\d{3,14})\b/i);
+    let quantity, unitPrice, lineTotal;
+    if (unitMatch) {
+      const before = tokens.filter((t) => t.index < (unitMatch.index || 0));
+      const after = tokens.filter((t) => t.index > (unitMatch.index || 0));
+      if (before.length && after.length) {
+        quantity = before[before.length - 1].value;
+        unitPrice = after[0].value;
+        lineTotal = after.length >= 2 ? after[after.length - 1].value : quantity * unitPrice;
+      } else {
+        quantity = tokens[0].value;
+        unitPrice = tokens[1].value;
+        lineTotal = tokens.length >= 3 ? tokens[tokens.length - 1].value : quantity * unitPrice;
+      }
+    } else {
+      quantity = tokens[0].value;
+      unitPrice = tokens[1].value;
+      lineTotal = tokens.length >= 3 ? tokens[tokens.length - 1].value : quantity * unitPrice;
+    }
+    const name = line
+      .replace(/^\s*[A-Z]?\d{3,14}\s*/i, '')
+      .replace(amountPattern, ' ')
+      .replace(unitPattern, ' ')
+      .replace(/[|:;]+/g, ' ')
+      .replace(/[^A-Za-zÀ-ÿ0-9 '&()./-]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const letters = (name.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    if (letters < 3 || !(quantity > 0) || !Number.isFinite(unitPrice) || unitPrice < 0) continue;
+    let unit = unitMatch ? unitMatch[1].toLowerCase() : 'un';
+    if (['und','unidade'].includes(unit)) unit = 'un';
+    if (unit === 'kgs') unit = 'kg';
+    inline.push({
+      name: name.slice(0,120),
+      code: codeMatch?.[1] || '',
+      quantity: Math.round(quantity * 1000) / 1000,
+      unit,
+      unitPrice: Math.round(unitPrice * 10000) / 10000,
+      lineTotal: Math.round(Number(lineTotal || quantity * unitPrice) * 100) / 100
+    });
+  }
+  return mergeReceiptCandidates(structured, inline);
+}
+
+function compareInvoiceItems(ocrItems, officialItems) {
+  const normalize = (value) => norm(value).normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const used = new Set();
+  return (ocrItems || []).map((ocr) => {
+    const code = normalize(ocr.code || '');
+    const name = normalize(ocr.name);
+    let matchIndex = (officialItems || []).findIndex((official, index) => {
+      if (used.has(index)) return false;
+      const officialCode = normalize(official.code || '');
+      const officialName = normalize(official.name);
+      if (code && officialCode && code === officialCode) return true;
+      if (name && officialName && name === officialName) return true;
+      const shorter = Math.min(name.length, officialName.length);
+      return shorter >= 6 && (name.startsWith(officialName) || officialName.startsWith(name));
+    });
+    const official = matchIndex >= 0 ? officialItems[matchIndex] : null;
+    if (matchIndex >= 0) used.add(matchIndex);
+    if (!official) return { ocr, official: null, status: 'Não localizado na consulta pública' };
+    const sameQty = Math.abs(Number(ocr.quantity || 0) - Number(official.quantity || 0)) <= 0.001;
+    const samePrice = Math.abs(Number(ocr.unitPrice || 0) - Number(official.unitPrice || 0)) <= 0.02;
+    const sameTotal = Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official)) <= 0.02;
+    return {
+      ocr,
+      official,
+      status: sameQty && samePrice && sameTotal ? 'Confere' : 'Divergência de valor/quantidade'
+    };
+  }).concat((officialItems || []).filter((_, index) => !used.has(index)).map((official) => ({
+    ocr: null, official, status: 'Item da consulta não encontrado no OCR'
+  })));
+}
+
 
 async function prepareReceiptCanvases(file) {
   const image = new Image();
