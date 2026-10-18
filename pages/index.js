@@ -193,7 +193,7 @@ async function prepareReceiptCanvases(file) {
   const baseCtx = base.getContext('2d', { willReadFrequently: true });
   baseCtx.drawImage(image, 0, 0, width, height);
   const pixels = baseCtx.getImageData(0, 0, width, height).data;
-  const isPaper = (r, g, b) => Math.min(r, g, b) > 168 && Math.max(r, g, b) - Math.min(r, g, b) < 72;
+  const isPaper = (r, g, b) => Math.min(r, g, b) > 175 && Math.max(r, g, b) - Math.min(r, g, b) < 60;
 
   const xScores = new Float32Array(width);
   const yTop = Math.floor(height * 0.12);
@@ -214,7 +214,7 @@ async function prepareReceiptCanvases(file) {
     }
     return count ? sum / count : 0;
   };
-  const radius = Math.max(2, Math.round(width * 0.006));
+  const radius = Math.max(1, Math.round(width * 0.002));
   const leftFrom = Math.floor(width * 0.20), leftTo = Math.floor(width * 0.43);
   const valleyFrom = Math.floor(width * 0.43), valleyTo = Math.floor(width * 0.57);
   const rightFrom = Math.floor(width * 0.57), rightTo = Math.floor(width * 0.80);
