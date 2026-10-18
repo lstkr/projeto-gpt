@@ -499,7 +499,45 @@ async function decodeNfceQrWithZXing(canvas) {
   return '';
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = []) {
+// Inspired by pcelias-ctrl/nfc-e: isolate the code from the footer and retry
+// with rotated, resized variants before requesting any external decoding service.
+function createQrFooterCrop(canvas, rotation = 0) {
+  const fromY = Math.floor(canvas.height * 0.44);
+  const cropWidth = canvas.width;
+  const cropHeight = Math.max(1, canvas.height - fromY);
+  const maxSide = 1400;
+  const scale = Math.min(1.4, maxSide / Math.max(cropWidth, cropHeight));
+  const w = Math.max(1, Math.round(cropWidth * scale));
+  const h = Math.max(1, Math.round(cropHeight * scale));
+  const quarterTurn = rotation === 90 || rotation === 270;
+  const out = document.createElement('canvas');
+  out.width = quarterTurn ? h : w;
+  out.height = quarterTurn ? w : h;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate(rotation * Math.PI / 180);
+  ctx.drawImage(canvas, 0, fromY, cropWidth, cropHeight, -w / 2, -h / 2, w, h);
+  return out;
+}
+
+async function decodeQrViaExternalApi(canvas) {
+  const crop = createQrFooterCrop(canvas);
+  const image = crop.toDataURL('image/jpeg', 0.82);
+  const response = await fetch('/api/qr-externo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_base64: image })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
+  const parsed = parseNfceQrPayload(data.url);
+  if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
+    throw new Error('O leitor externo respondeu, mas não encontrou um QR Code fiscal válido do RS.');
+  }
+  return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
+}
+
+async function detectNfceQrCodes(canvases, rawCanvases = [], useExternal = false) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -545,6 +583,43 @@ async function detectNfceQrCodes(canvases, rawCanvases = []) {
         } catch (_) {}
       }
       if (found.accessKey || found.consultaUrl) break;
+    }
+    // A small QR in a large receipt benefits from footer cropping and rotation.
+    if (!found.qrUrlPreserved) {
+      const reference = rawCanvases[index] || canvases[index];
+      for (const angle of [0, 90, 270, 180]) {
+        try {
+          const cropped = createQrFooterCrop(reference, angle);
+          if (decodeQR) {
+            const img = cropped.getContext('2d', { willReadFrequently: true })
+              .getImageData(0, 0, cropped.width, cropped.height);
+            const decoded = decodeQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+            if (decoded?.data) {
+              const candidate = parseNfceQrPayload(decoded.data);
+              if (candidate.qrUrlPreserved) { found = candidate; break; }
+            }
+          }
+          if (angle === 0 && !found.qrUrlPreserved) {
+            const decoded = await decodeNfceQrWithZXing(cropped);
+            if (decoded) {
+              const candidate = parseNfceQrPayload(decoded);
+              if (candidate.qrUrlPreserved) { found = candidate; break; }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    // The repository's PHP API handles generic QR codes, including URLs from RS.
+    // Its structured NFC-e parser explicitly rejects non-SP receipts; only use QR.
+    if (!found.qrUrlPreserved && useExternal) {
+      try {
+        found = await decodeQrViaExternalApi(rawCanvases[index] || canvases[index]);
+      } catch (error) {
+        found = {
+          ...found,
+          qrReaderWarning: error?.message || 'Leitor de QR externo indisponível.'
+        };
+      }
     }
     results.push(found);
   }
@@ -904,6 +979,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
+  // Off by default: an external fallback uploads a QR-only crop to a third party.
+  const [enableExternalQr, setEnableExternalQr] = useState(false);
   const uploadRef = useRef(null);
 
   async function loadSharedInventory(token) {
@@ -1147,7 +1224,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResults = await detectNfceQrCodes(canvases, prepared.qrCanvases);
+          const qrResults = await detectNfceQrCodes(canvases, prepared.qrCanvases, enableExternalQr);
           const { createWorker } = await import('tesseract.js');
           worker = await createWorker('por', 1, {
             logger: (message) => {
@@ -1198,6 +1275,8 @@ export default function Home() {
               keyWarning,
               qrDetected: Boolean(qr.qrRaw) && Boolean(accessKey),
               qrUrlPreserved: Boolean(qr.qrUrlPreserved),
+              qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
+              qrReaderWarning: qr.qrReaderWarning || '',
               source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
@@ -1245,6 +1324,8 @@ export default function Home() {
             duplicate.keyWarning = duplicate.accessKey ? '' : (duplicate.keyWarning || candidate.keyWarning);
             duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
             duplicate.qrUrlPreserved = duplicate.qrUrlPreserved || candidate.qrUrlPreserved;
+            duplicate.qrReader = duplicate.qrReader || candidate.qrReader;
+            duplicate.qrReaderWarning = duplicate.qrReaderWarning || candidate.qrReaderWarning;
             duplicate.subtotal = duplicate.subtotal ?? candidate.subtotal;
             duplicate.discount = duplicate.discount ?? candidate.discount;
             duplicate.total = duplicate.total ?? candidate.total;
