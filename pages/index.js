@@ -60,6 +60,35 @@ function parseNfeXml(text) {
   return { supplier: find(emit, 'xNome') || '', invoiceNumber: find(ide, 'nNF') || '', date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '', source: 'XML de NF-e', items };
 }
 
+function localizedValue(raw) {
+  let value = String(raw || '').trim();
+  if (value.includes(',') && value.includes('.')) value = value.replace(/\./g, '').replace(',', '.');
+  else if (value.includes(',')) value = value.replace(',', '.');
+  return Number(value);
+}
+
+function parseReceiptOcr(text) {
+  const output = [];
+  const valuePattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
+  const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL)/i;
+  String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).forEach((line) => {
+    if (ignore.test(line)) return;
+    const matches = line.match(valuePattern) || [];
+    if (!matches.length) return;
+    const values = matches.map(localizedValue).filter((value) => Number.isFinite(value) && value >= 0);
+    if (!values.length) return;
+    const total = values[values.length - 1];
+    const unitPrice = values.length > 1 ? values[values.length - 2] : total;
+    let quantity = unitPrice > 0 ? total / unitPrice : 1;
+    if (!Number.isFinite(quantity) || quantity < 0.001 || quantity > 10000) quantity = 1;
+    quantity = Math.round(quantity * 1000) / 1000;
+    let name = line.replace(valuePattern, ' ').replace(/\b(?:UN|UND|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)\b/gi, ' ').replace(/^\s*(?:\d{1,6}\s+){1,3}/, '').replace(/\s+/g, ' ').trim();
+    if (name.length < 3 || ignore.test(name)) return;
+    output.push({ name, code: '', quantity: quantity || 1, unit: 'un', unitPrice: unitPrice || total });
+  });
+  return output.slice(0, 50);
+}
+
 export default function Home() {
   const [products, setProducts] = useState(initialProducts);
   const [movements, setMovements] = useState(initialMovements);
@@ -78,6 +107,7 @@ export default function Home() {
   const [detailDoc, setDetailDoc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   const uploadRef = useRef(null);
 
   useEffect(() => {
@@ -172,11 +202,38 @@ export default function Home() {
       reader.readAsText(file);
       return;
     }
-    if (file.type === 'application/pdf' || file.type.startsWith('image/') || /\.(pdf|png|jpe?g|webp)$/i.test(file.name)) {
-      setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto/PDF', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
+    if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+      setBusy(true);
+      setOcrProgress(0);
       setView('documents');
-      setToast('Arquivo selecionado. Preencha os itens: o OCR ainda não está conectado.');
-    } else setError('Formato não reconhecido. Envie XML de NF-e, PDF ou imagem JPG/PNG/WEBP.');
+      (async () => {
+        let worker;
+        try {
+          const { createWorker } = await import('tesseract.js');
+          worker = await createWorker('por', 1, { logger: (message) => { if (message.status === 'recognizing text') setOcrProgress(Math.round((message.progress || 0) * 100)); } });
+          const result = await worker.recognize(file);
+          const items = parseReceiptOcr(result.data.text || '');
+          setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (OCR local)', fileName: file.name, status: 'Aguardando conferência', ocrText: result.data.text || '', items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
+          setToast(items.length ? 'OCR encontrou ' + items.length + ' linhas candidatas. Confira com atenção.' : 'Texto lido, mas não consegui separar os itens; preencha-os manualmente.');
+          if (!items.length) setError('A leitura do texto não encontrou itens com preço de forma confiável. O texto reconhecido ficará disponível para consulta; preencha os produtos manualmente.');
+        } catch (e) {
+          setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
+          setError('Não foi possível fazer o reconhecimento automático desta imagem. Você pode informar os produtos manualmente.');
+        } finally {
+          if (worker) await worker.terminate().catch(() => {});
+          setBusy(false);
+          setOcrProgress(0);
+        }
+      })();
+      return;
+    }
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'PDF (preenchimento manual)', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
+      setView('documents');
+      setToast('PDF selecionado. Preencha os itens manualmente; a extração automática de PDF ainda não está disponível.');
+      return;
+    }
+    setError('Formato não reconhecido. Envie XML de NF-e, PDF ou imagem JPG/PNG/WEBP.');
   }
   function changeDraft(key, value) { setDraft((d) => ({ ...d, [key]: value })); }
   function changeItem(index, key, value) { setDraft((d) => ({ ...d, items: d.items.map((it, i) => i === index ? { ...it, [key]: ['quantity', 'unitPrice'].includes(key) ? Number(value) : value } : it) })); }
@@ -240,10 +297,11 @@ export default function Home() {
 
         {view === 'documents' && <>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Envie o XML da NF-e para ler os itens automaticamente. Fotos de cupons e PDFs podem ser registrados com conferência manual nesta versão.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Escolher arquivo</button></section>
-          {busy && <div className="notice">Lendo o XML e identificando os itens…</div>}
+          {busy && <div className="notice">Reconhecendo texto da imagem{ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR"}…</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <div className="table-wrap review-table"><table><thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL</th><th></th></tr></thead><tbody>{draft.items.map((it, i) => <tr key={i}><td><input className="inline-input name-field" value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/></td><td><input className="inline-input small-field" type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td><td><input className="inline-input unit-field" value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td><td><input className="inline-input small-field" type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td><td><b>{money(Number(it.quantity || 0) * Number(it.unitPrice || 0))}</b></td><td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }))}><Icon type="close" size={15}/></button></td></tr>)}</tbody></table></div>
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total estimado</span><b>{money(draft.items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0))}</b></div></div>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
