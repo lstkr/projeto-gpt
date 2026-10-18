@@ -94,12 +94,17 @@ function parseReceiptOcr(text) {
       return;
     }
 
-    const amounts = line.match(amountPattern) || [];
-    const values = amounts.map(localizedValue).filter((value) => Number.isFinite(value) && value >= 0);
+    const amountTokens = [...line.matchAll(amountPattern)].map((match) => ({
+      raw: match[0],
+      value: localizedValue(match[0]),
+      index: match.index || 0
+    })).filter((token) => Number.isFinite(token.value) && token.value >= 0);
+    const values = amountTokens.map((token) => token.value);
     const rawName = cleanDescription(line);
     const letters = (rawName.match(/[A-Za-zÀ-ÿ]/g) || []).length;
     const hasItemName = letters >= 3 && !onlyUnit.test(rawName);
     const lineLooksLikeProduct = hasItemName && /^\s*\d{3,14}\s+[A-Za-zÀ-ÿ]/.test(line);
+    const unitMatch = line.match(/\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i);
 
     if (values.length >= 2) {
       const inlineName = hasItemName && !lineLooksLikeProduct ? rawName : '';
@@ -111,14 +116,32 @@ function parseReceiptOcr(text) {
         return;
       }
 
-      // Printed coupons usually put quantity, unit price, then line total left-to-right.
-      // When OCR sees only two values, interpret them as quantity and unit price;
-      // the employee can correct uncertain values in the mandatory review step.
-      const quantity = values[0];
-      const unitPrice = values[1];
-      const lineTotal = values.length >= 3 ? values[values.length - 1] : quantity * unitPrice;
-      const unitMatch = line.match(/\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i);
-      let unit = unitMatch ? unitMatch[1].toLocaleLowerCase('pt-BR') : 'un';
+      // Use the printed unit label as an anchor: quantity is normally to its left,
+      // while unit price and extended total are to its right. This is safer when OCR
+      // misses one of the numbers and avoids mistaking "unit price, total" for quantity.
+      let quantity, unitPrice, lineTotal;
+      if (unitMatch) {
+        const beforeUnit = amountTokens.filter((token) => token.index < (unitMatch.index || 0));
+        const afterUnit = amountTokens.filter((token) => token.index > (unitMatch.index || 0));
+        if (beforeUnit.length && afterUnit.length) {
+          quantity = beforeUnit[beforeUnit.length - 1].value;
+          unitPrice = afterUnit[0].value;
+          lineTotal = afterUnit.length >= 2 ? afterUnit[afterUnit.length - 1].value : quantity * unitPrice;
+        } else if (!beforeUnit.length && afterUnit.length >= 2) {
+          unitPrice = afterUnit[0].value;
+          lineTotal = afterUnit[afterUnit.length - 1].value;
+          const inferred = unitPrice > 0 ? lineTotal / unitPrice : 1;
+          quantity = inferred > 0 && inferred <= 100000 ? inferred : 1;
+        } else {
+          quantity = values[0];
+          unitPrice = values[1];
+          lineTotal = values.length >= 3 ? values[values.length - 1] : quantity * unitPrice;
+        }
+      } else {
+        quantity = values[0];
+        unitPrice = values[1];
+        lineTotal = values.length >= 3 ? values[values.length - 1] : quantity * unitPrice;
+      }
       if (unit === 'unidade' || unit === 'und') unit = 'un';
       if (unit === 'kgs') unit = 'kg';
       if (unit === 'gr') unit = 'g';
