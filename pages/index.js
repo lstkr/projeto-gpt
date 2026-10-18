@@ -813,18 +813,56 @@ export default function Home() {
               items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
             });
           }
+          const uniqueReceipts = [];
+          let duplicateReadsRemoved = 0;
+          const normalizeSupplier = (value) => norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+          const sameSupplier = (a, b) => {
+            const left = normalizeSupplier(a), right = normalizeSupplier(b);
+            if (!left || !right) return true;
+            const shorter = Math.min(left.length, right.length);
+            return shorter >= 8 && (left === right || left.startsWith(right) || right.startsWith(left));
+          };
+          for (const candidate of receipts) {
+            const duplicate = uniqueReceipts.find((existing) => {
+              if (candidate.accessKey && existing.accessKey && candidate.accessKey.length === 44 && candidate.accessKey === existing.accessKey) return true;
+              if (candidate.invoiceNumber && existing.invoiceNumber && candidate.invoiceNumber === existing.invoiceNumber) {
+                return sameSupplier(candidate.supplier, existing.supplier);
+              }
+              return false;
+            });
+            if (!duplicate) {
+              uniqueReceipts.push(candidate);
+              continue;
+            }
+            duplicateReadsRemoved++;
+            const existingItems = (duplicate.items || []).filter((item) => item.name && item.name.trim());
+            const candidateItems = (candidate.items || []).filter((item) => item.name && item.name.trim());
+            const joinedItems = mergeReceiptCandidates(existingItems, candidateItems);
+            duplicate.items = joinedItems.length ? joinedItems : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }];
+            duplicate.ocrText = [duplicate.ocrText, candidate.ocrText].filter(Boolean).join('\n\n--- OUTRO RECORTE DA MESMA NOTA ---\n');
+            duplicate.supplier = duplicate.supplier || candidate.supplier;
+            duplicate.invoiceNumber = duplicate.invoiceNumber || candidate.invoiceNumber;
+            duplicate.date = duplicate.date || candidate.date;
+            duplicate.accessKey = duplicate.accessKey || candidate.accessKey;
+            duplicate.consultaUrl = duplicate.consultaUrl || candidate.consultaUrl;
+            duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
+            duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
+          }
+
           window.__ocrReceiptIndex = 0;
-          setDraft(receipts[0]);
-          setDraftQueue(receipts.slice(1));
-          setDraftBatch(receipts.length > 1 ? { total: receipts.length, current: 1 } : null);
-          const identifiedItems = receipts.reduce((sum, receipt) => sum + receipt.items.filter((item) => item.name.trim()).length, 0);
+          setDraft(uniqueReceipts[0] || receipts[0]);
+          setDraftQueue(uniqueReceipts.slice(1));
+          setDraftBatch(uniqueReceipts.length > 1 ? { total: uniqueReceipts.length, current: 1 } : null);
+          const identifiedItems = uniqueReceipts.reduce((sum, receipt) => sum + receipt.items.filter((item) => item.name.trim()).length, 0);
           setError('');
-          if (receipts.length > 1) {
-            setToast('Separei ' + receipts.length + ' cupons. Confira e confirme cada um separadamente.');
+          if (uniqueReceipts.length > 1) {
+            setToast('Encontrei ' + uniqueReceipts.length + ' cupons distintos. Confira e confirme cada um separadamente.');
+          } else if (duplicateReadsRemoved > 0 && identifiedItems) {
+            setToast('Removi ' + duplicateReadsRemoved + ' leitura(s) repetida(s) da mesma nota e combinei os itens. Confira com o cupom original.');
           } else if (identifiedItems) {
             setToast('OCR sugeriu ' + identifiedItems + ' itens. Confira nomes, quantidades e preços com o cupom original.');
           } else {
-            setError('A foto foi processada, mas os produtos não puderam ser separados com confiança. O texto reconhecido ficou disponível; preencha ou corrija os itens manualmente.');
+            setError('A foto foi processada, mas os produtos não puderam ser separados com confiança. O texto reconhecido ficará disponível; preencha ou corrija os itens manualmente.');
           }
         } catch (e) {
           setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
