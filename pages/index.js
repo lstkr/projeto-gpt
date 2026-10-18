@@ -966,6 +966,7 @@ async function prepareReceiptCanvases(file) {
 }
 
 
+// Count screen: tracking due dates and physical inventory.
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
