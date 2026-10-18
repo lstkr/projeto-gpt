@@ -1154,8 +1154,40 @@ export default function Home() {
   const draftDiscount = draft ? Number(draft.discount || 0) : 0;
   const draftTotal = draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
   const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
-  const totalsFinalMismatch = Boolean(draft && Math.abs(draftTotal - (draftSubtotal - draftDiscount)) > 0.05);
+  const draftExtras = draft ? Number(draft.additionalCharges || 0) : 0;
+  const totalsFinalMismatch = Boolean(draft && Math.abs(draftTotal - (draftSubtotal - draftDiscount + draftExtras)) > 0.05);
   const officialComparison = draft?.officialItems?.length ? compareInvoiceItems(draft.items, draft.officialItems) : [];
+  const officialMissing = officialComparison.filter((r) => !r.ocr).length;
+  const officialTotalsMismatch = Boolean(draft && draft.officialOrigin === 'sefaz' && (
+    (draft.officialTotal != null && Math.abs(draftTotal - Number(draft.officialTotal)) > 0.02) ||
+    (draft.officialSubtotal != null && Math.abs(draftSubtotal - Number(draft.officialSubtotal)) > 0.05) ||
+    (draft.officialDiscount != null && Math.abs(draftDiscount - Number(draft.officialDiscount)) > 0.02)
+  ));
+  const receiptReviewRows = (draft?.items || []).map((it, index) => {
+    const issues = [];
+    const row = officialComparison.find((r) => r.ocrIndex === index);
+    if (row && row.issues.length) issues.push(...row.issues);
+    if (it.readingWarning) issues.push(it.readingWarning);
+    if (it.unitInferred) issues.push('Unidade não reconhecida no OCR.');
+    if (/manjeric|hortel|alface|rucula|salsa|cebolinha/i.test(norm(it.name)) &&
+      normalizeReceiptUnit(it.unit) === 'ml') issues.push('Unidade ML incomum para este produto: confirme com o cupom e o estoque.');
+    if (Math.abs(Number(it.quantity || 0) * Number(it.unitPrice || 0) - receiptItemTotal(it)) > 0.055)
+      issues.push('Preço × quantidade não corresponde ao total da linha.');
+    if (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz')
+      issues.push('Sem confirmação oficial automática: conferir com a foto.');
+    if (String(draft.source || '').startsWith('PDF'))
+      issues.push('PDF preenchido manualmente: conferir com o documento.');
+    const existingByName = products.find((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name));
+    if (existingByName && normalizeReceiptUnit(existingByName.unit) !== normalizeReceiptUnit(it.unit))
+      issues.push('Unidade do produto já cadastrado: ' + existingByName.unit + '. Confira a conversão.');
+    return { issues: [...new Set(issues)], requiresReview: issues.length > 0,
+      done: issues.length === 0 || draft.reviewedItems?.[index] === true };
+  });
+  const totalsRequireReview = Boolean(draft && (
+    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch ||
+    (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
+    String(draft.source || '').startsWith('PDF')
+  ));
   const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(b.name, 'pt-BR'));
 
   function downloadPurchaseList() {
@@ -1386,8 +1418,8 @@ export default function Home() {
     setError('Formato não reconhecido. Envie XML de NF-e, PDF ou imagem JPG/PNG/WEBP.');
   }
   function changeDraft(key, value) {
-    const numericFields = ['subtotal', 'discount', 'total', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
-    setDraft((d) => ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }));
+    const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
+    setDraft((d) => d ? ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
   }
   function changeNfceAccessKey(value) {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
@@ -1526,17 +1558,46 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
+    if (officialMissing) {
+      setError('Há ' + officialMissing + ' item(ns) da consulta ainda ausentes. Inclua-os ou use os itens oficiais antes de lançar.');
+      return;
+    }
+    if (receiptReviewRows.some((row) => !row.done)) {
+      setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
+      return;
+    }
+    if (totalsRequireReview && !draft?.totalsReviewed) {
+      setError('Confira e marque os totais destacados antes de registrar a nota.');
+      return;
+    }
+    if ((totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch) &&
+      String(draft?.divergenceReason || '').trim().length < 8) {
+      setError('Justifique a divergência dos totais (mínimo de 8 caracteres) antes de continuar.');
+      return;
+    }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
-    if (!draft || !draft.items.some((it) => it.name.trim() && Number(it.quantity) > 0)) { setError('Informe ao menos um produto com nome e quantidade válida.'); return; }
-    const duplicate = documents.some((d) => d.invoiceNumber && draft.invoiceNumber && d.invoiceNumber === draft.invoiceNumber && norm(d.supplier) === norm(draft.supplier));
-    if (duplicate && !window.confirm('Já há um documento com este número e fornecedor. Deseja lançar novamente?')) return;
-    const items = draft.items.filter((it) => it.name.trim() && Number(it.quantity) > 0);
+    if (!draft || !draft.items.length || draft.items.some((it) =>
+      !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
+      !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
+      !it.unit?.trim())) {
+      setError('Todas as linhas devem conter produto, quantidade, unidade e preço válidos.');
+      return;
+    }
+    // The unique fiscal access key is the primary deduplication key.
+    const duplicate = documents.some((d) =>
+      (validateNfceAccessKey(d.accessKey) && d.accessKey === draft.accessKey) ||
+      (d.invoiceNumber && draft.invoiceNumber && d.invoiceNumber === draft.invoiceNumber &&
+        normalizeReceiptName(d.supplier) === normalizeReceiptName(draft.supplier) &&
+        (!d.date || !draft.date || d.date === draft.date)));
+    if (duplicate) { setError('Esta nota já foi lançada no estoque. Para corrigir, peça ao Gestor o estorno da entrada anterior.'); return; }
+    const items = draft.items;
     const nextProducts = [...products];
     const nextMovements = [...movements];
     const documentId = uid();
     const stockEntries = [];
     items.forEach((it) => {
-      const index = nextProducts.findIndex((p) => norm(p.name) === norm(it.name) && norm(p.unit || 'un') === norm(it.unit || 'un'));
+      const index = nextProducts.findIndex((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
+        normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit));
       let productId;
       if (index >= 0) {
         const old = nextProducts[index];
@@ -1552,7 +1613,7 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries, status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
