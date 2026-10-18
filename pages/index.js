@@ -98,158 +98,93 @@ function localizedValue(raw) {
 function parseReceiptOcr(text) {
   const source = String(text || '');
   const lines = source.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
-  const unitPattern = /\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i;
-
-  const normalizeLine = (line) => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  const lineIsNoise = (line) => {
-    const n = normalizeLine(line);
-    return /\b(CNPJ|CPF|DOCUMENTO AUXILIAR|NOTA FISCAL|PROTOCOLO|CHAVE DE ACESSO|CONSULTE|CONSUMIDOR|INSCRICAO ESTADUAL|TELEFONE|FONE|RUA ANDRADE|AVENIDA|CEP|SERIE|DATA DE AUTORIZACAO|TROCO|DESCONTO|SUBTOTAL|VALOR TOTAL|VALOR PAGO|TOTAL A PAGAR|QTD(?:E)? TOTAL|TRIBUTOS|ICMS|COFINS|PIS|DINHEIRO|CARTAO|CREDITO|DEBITO|PIX|P\.I\.X|FORMA DE PAGAMENTO|FORMA PAGAMENTO)\b/.test(n)
-      || (/VL\s*UNIT/.test(n) && /VL\s*TOTAL/.test(n))
-      || (/CODIGO/.test(n) && /DESCRIC/.test(n))
-      || (/DESCRIC/.test(n) && /QTDE/.test(n) && /UN/.test(n));
-  };
-  const cleanName = (value) => String(value || '')
-    .replace(/^\s*[A-Z]?\d{2,14}\s+/, '')
-    .replace(amountPattern, ' ')
-    .replace(unitPattern, ' ')
-    .replace(/[|:;]+/g, ' ')
-    .replace(/[^A-Za-zÀ-ÿ0-9 '&()./-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s.,-]+|[\s.,-]+$/g, '')
-    .trim();
-
-  const candidates = [];
-  let current = null;
-
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const amountPattern = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2,4}|\d+\.\d{2,4}/g;
+  const codePattern = /^([A-Z]?\d{3,12})(?:\s+(.+))?$/i;
+  const unitPattern = /\b(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD)\b/i;
+  const cents = (number) => Math.round(number * 100) / 100;
+  const header = lines.findIndex((line) => {
+    const n = normalize(line);
+    return /C[O0]DIGO/.test(n) && /DESCRI[CCT]/.test(n);
+  });
+  const start = header >= 0 ? header + 1 : 0;
+  const endsTable = (value) =>
+    /(?:Q(?:TD|TDE|TID)[., ]*TOTAL|Q(?:TD|TDE)[., ]*DE[., ]*ITENS|SUB[\s-]*TOTAL|VALOR[\s-]*TOTAL|FORMA[\s-]*PAGAMENTO|VALOR[\s-]*PAGO|CONSULTE[\s-]*PELA|CAIXA[\s-]*DELTA|TRIBUTOS|PROTOCOLO[\s-]*DE[\s-]*AUTORIZACAO)/.test(normalize(value));
+  const cleanDescription = (value) => String(value || '')
+    .split(/(?:Q(?:TD|TDE)[., ]*TOTAL|SUB[\s-]*TOTAL|VALOR[\s-]*TOTAL)/i)[0]
+    .replace(/[|:;]+/g, ' ').replace(/\s+/g, ' ')
+    .replace(/^[\s\W]+|[\s\W]+$/g, '').trim();
+  const rows = [];
+  let row = null;
+  let seenProductCode = false;
   const flush = () => {
-    if (!current) return;
-    const name = cleanName(current.nameParts.join(' '));
+    if (!row) return;
+    const name = cleanDescription(row.names.join(' '));
     const letters = (name.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-    if (name.length < 3 || letters < 3 || !current.amounts.length) {
-      current = null;
-      return;
+    const values = row.amounts.filter(Number.isFinite);
+    if (letters < 3 || values.length < 2) { row = null; return; }
+    const quantity = values[0];
+    if (!(quantity > 0) || quantity > 100000) { row = null; return; }
+    let unitPrice = values[1];
+    let lineTotal = values.length >= 3 ? values[values.length - 1] : null;
+    // On a two-number OCR row (quantity + amount), the unit price may have
+    // disappeared. Do not treat the second printed number as quantity.
+    if (lineTotal === null) lineTotal = quantity * unitPrice;
+    if (!(lineTotal >= 0) || lineTotal > 1000000 || !(unitPrice >= 0) || unitPrice > 1000000) {
+      row = null; return;
     }
-
-    const values = current.amounts.map((x) => x.value).filter((x) => Number.isFinite(x) && x >= 0);
-    if (!values.length) { current = null; return; }
-    let quantity = values[0];
-    let unitPrice = values.length >= 2 ? values[1] : 0;
-    let lineTotal = values.length >= 3 ? values[values.length - 1] : 0;
-
-    if (values.length >= 3) {
-      const expected = quantity * unitPrice;
-      const allowedError = Math.max(0.05, Math.abs(lineTotal) * 0.035);
-      if (Math.abs(expected - lineTotal) > allowedError && quantity > 0) {
-        // The second OCR pass sometimes reads 5,0000 as 858,0000 while retaining
-        // the printed line total. In that case derive the unit price from total/quantity.
-        const inferredPrice = lineTotal / quantity;
-        if (Number.isFinite(inferredPrice) && inferredPrice >= 0) unitPrice = inferredPrice;
-      }
-    } else if (values.length === 2) {
-      const first = values[0], second = values[1];
-      // For the common two-number case, a quantity greater than 1 plus a much smaller
-      // second value is usually quantity + line total, not quantity + unit price.
-      quantity = first;
-      unitPrice = second;
-      lineTotal = quantity * unitPrice;
-    } else {
-      quantity = 1;
-      unitPrice = values[0];
-      lineTotal = unitPrice;
-    }
-
-    if (!(quantity > 0) || quantity > 100000 || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000) {
-      current = null;
-      return;
-    }
-
-    let unit = (current.units.find(Boolean) || 'un').toLocaleLowerCase('pt-BR');
-    if (unit === 'unidade' || unit === 'und') unit = 'un';
-    if (unit === 'kgs') unit = 'kg';
-    if (unit === 'gr') unit = 'g';
-
-    candidates.push({
-      name: name.slice(0, 120),
-      code: current.code || '',
-      quantity: Math.round(quantity * 1000) / 1000,
-      unit,
-      unitPrice: Math.round(unitPrice * 10000) / 10000,
-      lineTotal: Math.round(Math.max(0, lineTotal) * 100) / 100
+    const mismatch = Math.abs(quantity * unitPrice - lineTotal);
+    if (values.length >= 3 && mismatch > 0.025) unitPrice = cents(lineTotal / quantity);
+    rows.push({
+      code: row.code, name: name.slice(0, 120),
+      quantity, unit: row.unit || 'un',
+      unitPrice, lineTotal: cents(lineTotal)
     });
-    current = null;
+    row = null;
   };
-
-  for (const line of lines) {
-    if (lineIsNoise(line)) {
-      // Ignore payment/header/footer rows without flushing the current product unless
-      // the line marks the start of the fiscal summary.
-      if (/QTD(?:E)? TOTAL|VALOR TOTAL|FORMA DE PAGAMENTO|FORMA PAGAMENTO|CONSUMIDOR NAO IDENTIFICADO|PROTOCOLO DE AUTORIZACAO/i.test(normalizeLine(line))) flush();
-      continue;
-    }
-
-    const trimmed = line.trim();
-    const codeLine = trimmed.match(/^([A-Z]?\d{2,14})(?:\s+(.+))?$/i);
-    const suffix = codeLine?.[2]?.trim() || '';
-    const suffixHasLetters = (suffix.match(/[A-Za-zÀ-ÿ]/g) || []).length >= 3;
-    const isProductCodeRow = Boolean(codeLine && (
-      !suffix ||
-      (suffixHasLetters && !/^\d[\d\s.,/-]*$/.test(suffix))
-    ));
-
-    if (isProductCodeRow) {
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    const n = normalize(line);
+    if (endsTable(line)) { flush(); break; }
+    if (/\b(DESCONTO|VALOR LIQUIDO|TROCO|P\.?I\.?X|CARTAO)\b/.test(n)) continue;
+    if (/^(?:C[O0]DIGO|DESCRICAO|QTDE|QTD|UN\b|VL\b|V\.UNIT\b|V\.TOTAL\b)/.test(n) && !/^\d/.test(n)) continue;
+    const codeMatch = line.match(codePattern);
+    const suffix = codeMatch?.[2]?.trim() || '';
+    const isProductCode = Boolean(codeMatch && (!suffix || (suffix.match(/[A-Za-zÀ-ÿ]/g) || []).length >= 3));
+    if (isProductCode) {
+      seenProductCode = true;
       flush();
-      current = { code: codeLine[1], nameParts: [], amounts: [], units: [] };
-      if (suffixHasLetters) current.nameParts.push(cleanName(suffix));
+      row = { code: codeMatch[1], names: [], amounts: [], unit: '' };
+      if (suffix) {
+        const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
+        if (nameOnly) row.names.push(nameOnly);
+      }
       continue;
     }
-
-    if (!current) continue;
-
-    const unitMatches = [...line.matchAll(new RegExp(unitPattern.source, 'ig'))];
-    unitMatches.forEach((match) => current.units.push(match[1]));
-
-    const amountMatches = [...line.matchAll(amountPattern)].map((match) => ({
-      raw: match[0],
-      value: localizedValue(match[0]),
-      index: match.index || 0
-    }));
-    if (amountMatches.length) {
-      current.amounts.push(...amountMatches);
+    if (!row) continue;
+    const unitMatch = line.match(unitPattern);
+    if (unitMatch) {
+      const rawUnit = unitMatch[1].toLowerCase();
+      row.unit = ({und:'un',unidade:'un',in:'un',kgs:'kg',gr:'g'}[rawUnit] || rawUnit);
+    }
+    const values = [...line.matchAll(amountPattern)].map((match) => localizedValue(match[0]));
+    if (values.length) {
+      row.amounts.push(...values);
       continue;
     }
-
-    // In some thermal printers the code, name, quantity, unit and prices are each
-    // on their own line. Only collect probable name lines before the numeric fields.
-    if (!current.amounts.length && !unitMatches.length) {
-      const cleaned = cleanName(line);
-      const letters = (cleaned.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-      if (letters >= 3 && !lineIsNoise(line)) current.nameParts.push(cleaned);
+    if (!row.amounts.length && !unitMatch && (line.match(/[A-Za-zÀ-ÿ]/g) || []).length >= 3) {
+      row.names.push(cleanDescription(line));
     }
   }
   flush();
-
-  // A fallback preserves compatibility with receipts that have no product codes.
-  // Code-bearing receipts use the structured result above to avoid header/payment rows.
-  if (candidates.length) {
-    const deduped = [];
-    for (const item of candidates) {
-      const key = norm(item.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '') + '|' + item.unit;
-      const existingIndex = deduped.findIndex((x) =>
-        (x.code && item.code && x.code === item.code) ||
-        (norm(x.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '') + '|' + x.unit) === key
-      );
-      if (existingIndex < 0) deduped.push(item);
-      else {
-        const old = deduped[existingIndex];
-        const oldErr = Math.abs(Number(old.quantity) * Number(old.unitPrice) - Number(old.lineTotal || old.quantity * old.unitPrice));
-        const newErr = Math.abs(Number(item.quantity) * Number(item.unitPrice) - Number(item.lineTotal || item.quantity * item.unitPrice));
-        if (newErr < oldErr) deduped[existingIndex] = { ...item, code: item.code || old.code };
-      }
-    }
-    return deduped.slice(0, 80);
+  if (!seenProductCode) return parseReceiptOcrLegacy(source);
+  const deduped = [];
+  for (const item of rows) {
+    const existing = deduped.findIndex((other) => other.code === item.code);
+    if (existing < 0) deduped.push(item);
+    else if (item.name.length > deduped[existing].name.length) deduped[existing] = item;
   }
-  return parseReceiptOcrLegacy(source);
+  return deduped.slice(0, 80);
 }
 
 function parseReceiptOcrLegacy(text) {
