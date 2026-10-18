@@ -107,6 +107,7 @@ export default function Home() {
   const [detailDoc, setDetailDoc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
   const uploadRef = useRef(null);
 
@@ -187,6 +188,7 @@ export default function Home() {
     setError('');
     const xml = /\.xml$/i.test(file.name) || file.type === 'text/xml' || file.type === 'application/xml';
     if (xml) {
+      setProcessingType('xml');
       setBusy(true);
       const reader = new FileReader();
       reader.onload = () => {
@@ -203,6 +205,7 @@ export default function Home() {
       return;
     }
     if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+      setProcessingType('ocr');
       setBusy(true);
       setOcrProgress(0);
       setView('documents');
@@ -297,7 +300,7 @@ export default function Home() {
 
         {view === 'documents' && <>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Envie o XML da NF-e para ler os itens automaticamente. Fotos de cupons e PDFs podem ser registrados com conferência manual nesta versão.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Escolher arquivo</button></section>
-          {busy && <div className="notice">Reconhecendo texto da imagem{ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR"}…</div>}
+          {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
