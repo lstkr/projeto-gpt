@@ -341,6 +341,18 @@ function findSupplierAliasProduct(item, catalog, supplierCnpj) {
     String(alias.cnpj || '').replace(/\D/g, '') === issuer &&
     normalizeProductCode(alias.code) === code)) || null;
 }
+function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
+  const fiscalCode = normalizeProductCode(item?.code);
+  if (!fiscalCode) return [];
+  const issuer = String(supplierCnpj || '').replace(/\D/g,'');
+  return catalog.filter((p) => {
+    if ([p.sku, ...(p.alternateSkus || [])].some((code) =>
+      normalizeProductCode(code) === fiscalCode)) return true;
+    return Boolean(issuer && (p.supplierCodes || []).some((alias) =>
+      String(alias.cnpj || '').replace(/\D/g,'') === issuer &&
+      normalizeProductCode(alias.code) === fiscalCode));
+  });
+}
 function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
   const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
   if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
@@ -1272,14 +1284,16 @@ export default function Home() {
     if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
     const targetProduct = products.find((p) => p.id === it.productId);
     const mappedProduct = targetProduct || findReceiptCatalogProduct(it, products, draft.supplierCnpj);
-    if (!mappedProduct && shouldPostReceiptItem(it)) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
+    if (!mappedProduct && shouldPostReceiptItem(it) && it.productId !== '__new__')
+      issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
+    if (it.productId === '__new__') issues.push('Novo cadastro solicitado: confirme se não existe um item equivalente antes de lançar.');
     const aliasProduct = findSupplierAliasProduct(it, products, draft.supplierCnpj);
     const candidateDuplicates = !targetProduct && shouldPostReceiptItem(it) ?
       findDuplicatesForCandidate({
         id: '__item_fiscal_' + index, name: it.name, sku: it.code, unit: it.unit,
         supplierCodes: draft.supplierCnpj && it.code ? [{ cnpj: draft.supplierCnpj, code: it.code }] : []
       }, products) : [];
-    if (!mappedProduct && candidateDuplicates.length) issues.push(
+    if (!mappedProduct && candidateDuplicates.length && it.productId !== '__new__') issues.push(
       'Possível duplicidade com "' + candidateDuplicates[0].left.name +
       '". Confira e selecione o produto existente antes de criar outro.');
     if (aliasProduct && !targetProduct &&
@@ -1768,6 +1782,14 @@ export default function Home() {
       return;
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
+    const unresolvedCodes = draft.items.filter(shouldPostReceiptItem).filter((it) =>
+      !it.productId && !findReceiptCatalogProduct(it, products, draft.supplierCnpj) &&
+      findReceiptCodeConflicts(it, products, draft.supplierCnpj).length > 0);
+    if (unresolvedCodes.length) {
+      setError('Código fiscal equivalente a produto já cadastrado: "' + unresolvedCodes[0].name +
+        '". Escolha o produto existente ou selecione explicitamente "Criar cadastro distinto", após conferir a nota.');
+      return;
+    }
     if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
       const mapped = findSupplierAliasProduct(it, products, draft.supplierCnpj);
       if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
@@ -2105,7 +2127,7 @@ export default function Home() {
                     background: attention ? '#fffbeb' : undefined
                   });
                   return <tr key={i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
-                    <td><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/></td>
+                    <td><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</td>
                     <td><input className="inline-input small-field" style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -2125,7 +2147,8 @@ export default function Home() {
                         value={it.productId || ''}
                         onChange={(e) => changeItem(i,'productId',e.target.value)}>
                         <option value="">Automático por nome/código (ou novo cadastro)</option>
-                        {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>)}
+                        {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
+                        <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
                       </select>
                       {(() => {
                         const target = products.find((p) => p.id === it.productId);
