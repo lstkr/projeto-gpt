@@ -124,7 +124,7 @@ function confirmReview(form){
  const invoiceNo=String(form.get('invoiceNumber')||'').trim(),supplier=String(form.get('supplier')||'').trim();
  if(invoiceNo&&state.documents.some(d=>d.invoiceNumber===invoiceNo&&norm(d.supplier)===norm(supplier))&&!confirm('Já existe uma nota com esse número e fornecedor. Quer lançar novamente?'))return;
  for(const it of items){const p=state.products.find(x=>norm(x.name)===norm(it.name)&&norm(x.unit)===norm(it.unit));if(p){p.stock=Math.round((Number(p.stock)+it.quantity)*1000)/1000;if(it.unitPrice>0)p.cost=it.unitPrice;p.updated=dateNow()}else state.products.unshift({id:uid(),name:it.name,sku:it.code||('PRD-'+Date.now().toString().slice(-5)),category:'Outros',unit:it.unit||'un',stock:it.quantity,min:0,cost:it.unitPrice,updated:dateNow()});state.movements.unshift({id:uid(),product:it.name,type:'Entrada',quantity:it.quantity,reason:'Documento '+(invoiceNo?'#'+invoiceNo:'importado'),date:dateNow(),by:checkedBy})}
- state.documents.unshift({...draft,id:uid(),supplier,invoiceNumber:invoiceNo,date:String(form.get('date')||'').trim(),checkedBy,items,status:'Conferido e lançado',importedAt:dateNow()});draft=null;modal=null;view='documents';render();queueSave();showToast('Entrada registrada após conferência.');
+ const {ocrText,...documentFields}=draft;state.documents.unshift({...documentFields,id:uid(),supplier,invoiceNumber:invoiceNo,date:String(form.get('date')||'').trim(),checkedBy,items,status:'Conferido e lançado',importedAt:dateNow()});draft=null;modal=null;view='documents';render();queueSave();showToast('Entrada registrada após conferência.');
 }
 async function init(){
  if(!code){goGate('Este endereço não contém o código privado da equipe. Peça o link completo ao responsável.');return}
