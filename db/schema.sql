@@ -641,6 +641,7 @@ begin
     if p->>'id' = p_keep_id then
       p := p || jsonb_build_object(
         'stock', round(stock_total,3),
+        'unit', case when keep_unit='un' then 'un' else keep_item->>'unit' end,
         'cost', weighted_cost,
         'min', greatest(coalesce((keep_item->>'min')::numeric,0), coalesce((discard_item->>'min')::numeric,0)),
         'supplierCodes', codes,
