@@ -1897,7 +1897,9 @@ export default function Home() {
             <label style={{display:'flex',gap:9,alignItems:'center',margin:'12px 0'}}><input type="checkbox" checked={Boolean(settingsForm.enabled)} onChange={(e)=>setSettingsForm({...settingsForm,enabled:e.target.checked})}/> Exigir contagem periódica</label>
             <div className="meta-fields">
               <label><span>Periodicidade</span><select value={settingsForm.mode} onChange={(e)=>setSettingsForm({...settingsForm,mode:e.target.value})}><option value="interval">A cada X dias</option><option value="weekly">Dia fixo da semana</option><option value="monthly">Dia fixo do mês</option></select></label>
-              {/* COUNT CONFIG DAY */}
+              {settingsForm.mode==='interval'&&<label><span>Intervalo em dias (1 a 365)</span><input type="number" min="1" max="365" value={settingsForm.intervalDays} onChange={(e)=>setSettingsForm({...settingsForm,intervalDays:Number(e.target.value)})}/></label>}
+              {settingsForm.mode==='weekly'&&<label><span>Dia da semana</span><select value={settingsForm.weekday} onChange={(e)=>setSettingsForm({...settingsForm,weekday:Number(e.target.value)})}>{['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'].map((d,i)=><option value={i+1} key={d}>{d}</option>)}</select></label>}
+              {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
           </div>}{/* COUNT TABLE */}{/* COUNT HISTORY */}
