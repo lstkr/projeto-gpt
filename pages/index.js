@@ -1286,6 +1286,13 @@ export default function Home() {
     if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
     const targetProduct = products.find((p) => p.id === it.productId);
     const mappedProduct = targetProduct || findReceiptCatalogProduct(it, products, draft.supplierCnpj);
+    const previousPurchase = currentHistoryMatches[index];
+    if (previousPurchase && (!previousPurchase.confident || !previousPurchase.productId ||
+        (it.productId && it.productId !== '__new__' && it.productId !== previousPurchase.productId))) {
+      issues.push('Compra anterior deste fornecedor: "' + previousPurchase.historicalName +
+        '" (NF ' + (previousPurchase.invoiceNumber || 'sem número') +
+        '). Revise o vínculo para evitar duplicatas.');
+    }
     if (!mappedProduct && shouldPostReceiptItem(it) && it.productId !== '__new__')
       issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
     if (it.productId === '__new__') issues.push('Novo cadastro solicitado: confirme se não existe um item equivalente antes de lançar.');
@@ -1333,6 +1340,9 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
+  const readyForFinalReview = Boolean(draft?.items?.length && !officialMissing &&
+    receiptReviewRows.every((row) => row.done) &&
+    (!totalsRequireReview || draft.totalsReviewed));
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
   const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
@@ -1773,7 +1783,7 @@ export default function Home() {
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
         return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
       }),
-      reviewedItems: {}, totalsReviewed: false,
+      reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
       officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
       discount: d.officialDiscount ?? d.discount,
@@ -1799,7 +1809,7 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if (!draft?.finalReviewed || !draft?.checkedBy?.trim()) {
+    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
       setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
     }
     const missingHistoricalLinks = draft.items.some((item, index) => {
@@ -1901,7 +1911,7 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries, status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
@@ -2218,6 +2228,12 @@ export default function Home() {
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
                         <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
                       </select>
+                      {currentHistoryMatches[i] && <div className="receipt-history-match" role="status">
+                        <b>Compra anterior do mesmo fornecedor</b>
+                        <span>{currentHistoryMatches[i].historicalName} · {currentHistoryMatches[i].invoiceNumber ? 'NF nº ' + currentHistoryMatches[i].invoiceNumber : 'sem nº'} · descrição {currentHistoryMatches[i].similarity}% semelhante.</span>
+                        {currentHistoryMatches[i].productId && !it.productId && <button className="text-btn" type="button" onClick={() => changeItem(i,'productId',currentHistoryMatches[i].productId)}>Vincular ao produto anterior</button>}
+                        {!currentHistoryMatches[i].confident && <small>⚠ Confira a descrição, o código e a unidade antes de lançar.</small>}
+                      </div>}
                       {(() => {
                         const target = products.find((p) => p.id === it.productId);
                         return target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit)
@@ -2234,7 +2250,7 @@ export default function Home() {
                       {review.requiresReview ? <>
                         <label style={{display:'flex',gap:6,alignItems:'center',fontSize:12,fontWeight:600,cursor:'pointer'}}>
                           <input type="checkbox" checked={Boolean(draft.reviewedItems?.[i])}
-                            onChange={(e) => setDraft((d) => ({ ...d, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
+                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
                           Conferido pelo encarregado
                         </label>
                         {!review.done && <small style={{display:'block',marginTop:6,color:'#92400e'}}>{review.issues.join(' ')}</small>}
@@ -2242,7 +2258,7 @@ export default function Home() {
                     </td>
                     <td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: {},
-                      totalsReviewed: false, officialVerified: false
+                      totalsReviewed: false, finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
                 })}</tbody>
@@ -2265,12 +2281,19 @@ export default function Home() {
             {totalsRequireReview && <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
                 <input type="checkbox" checked={Boolean(draft.totalsReviewed)}
-                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked }))}/>
+                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked, finalReviewed:false }))}/>
                 <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
               </label>
               <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+              <div className="review-final-fields">
+                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
+                <label className="field review-final-person"><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável"/></label>
+              </div>
+            </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
