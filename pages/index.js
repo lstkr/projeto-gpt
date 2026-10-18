@@ -134,11 +134,13 @@ function parseReceiptOcr(text) {
       row = null; return;
     }
     const mismatch = Math.abs(quantity * unitPrice - lineTotal);
-    if (values.length >= 3 && mismatch > 0.025) unitPrice = cents(lineTotal / quantity);
+    // Never silently overwrite the printed unit price (thermal receipts can round it).
+    const readingWarning = values.length >= 3 && mismatch > 0.055
+      ? 'Quantidade × preço difere do total impresso. Confira os três campos.' : '';
     rows.push({
       code: row.code, name: name.slice(0, 120),
       quantity, unit: row.unit || 'un',
-      unitPrice, lineTotal: cents(lineTotal)
+      unitPrice, lineTotal: cents(lineTotal), readingWarning
     });
     row = null;
   };
@@ -178,13 +180,9 @@ function parseReceiptOcr(text) {
   }
   flush();
   if (!seenProductCode) return parseReceiptOcrLegacy(source);
-  const deduped = [];
-  for (const item of rows) {
-    const existing = deduped.findIndex((other) => other.code === item.code);
-    if (existing < 0) deduped.push(item);
-    else if (item.name.length > deduped[existing].name.length) deduped[existing] = item;
-  }
-  return deduped.slice(0, 80);
+  // Same product code can appear on multiple legitimate lines of one NFC-e.
+  // A second OCR pass is reconciled separately; never deduplicate fiscal lines here.
+  return rows;
 }
 
 function parseReceiptOcrLegacy(text) {
@@ -298,78 +296,72 @@ function parseReceiptOcrLegacy(text) {
     }
   });
 
-  const deduped = [];
-  const seen = new Set();
-  for (const item of output) {
-    const key = norm(item.name) + '|' + item.quantity + '|' + item.unitPrice;
-    if (!seen.has(key)) { seen.add(key); deduped.push(item); }
-  }
-  return deduped.slice(0, 80);
+  // Two identical purchases in one document are two distinct fiscal lines.
+  return output;
+}
+
+
+function normalizeReceiptUnit(value) {
+  const unit = norm(value || 'un');
+  return ({ unidade:'un', und:'un', in:'un', pc:'un', pca:'un',
+    kgs:'kg', gr:'g', lt:'l', litro:'l', litros:'l',
+    cx:'cx', caixa:'cx', pct:'pct', pacote:'pct', fd:'fd', fardo:'fd' })[unit] || unit;
+}
+
+function normalizeReceiptName(value) {
+  return norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function mergeReceiptCandidates(primary, alternate) {
-  const normalizeName = (value) => norm(value).normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const score = (item) => {
-    const nameScore = Math.min(1, normalizeName(item.name).length / 16);
-    const unit = item.unit ? 0.1 : 0;
-    const code = item.code ? 0.08 : 0;
-    const total = Number(item.lineTotal || Number(item.quantity || 0) * Number(item.unitPrice || 0));
-    const actual = Number(item.quantity || 0) * Number(item.unitPrice || 0);
-    const err = Math.abs(actual - total) / Math.max(Math.abs(total), 0.1);
-    return nameScore + unit + code + Math.max(0, 0.5 - Math.min(0.5, err));
-  };
+  // Align the two passes one-to-one. Never merge *all* occurrences of a
+  // product code: a fiscal receipt can legitimately contain repeated lines.
   const merged = (primary || []).map((item) => ({ ...item }));
-  for (const item of (alternate || [])) {
-    const key = normalizeName(item.name);
-    if (!key) continue;
-    const unit = norm(item.unit || 'un');
-    const idx = merged.findIndex((existing) => {
-      // A stable product code identifies the same item even if one OCR pass misreads its unit.
-      if (item.code && existing.code && item.code.toLowerCase() === existing.code.toLowerCase()) return true;
-      if (norm(existing.unit || 'un') !== unit) return false;
-      const other = normalizeName(existing.name);
-      if (key === other) return true;
-      const shorter = Math.min(key.length, other.length);
-      const longer = Math.max(key.length, other.length);
-      return shorter >= 8 && longer > 0 && (key.startsWith(other) || other.startsWith(key) ||
-        (() => {
-          let previous = Array.from({ length: other.length + 1 }, (_, i) => i);
-          for (let i = 1; i <= key.length; i++) {
-            const current = [i];
-            for (let j = 1; j <= other.length; j++) current[j] = Math.min(current[j-1] + 1, previous[j] + 1, previous[j-1] + (key[i-1] === other[j-1] ? 0 : 1));
-            previous = current;
-          }
-          return previous[other.length] / longer < 0.12;
-        })());
-    });
-    if (idx < 0) {
-      merged.push({ ...item });
-    } else {
-      const current = merged[idx];
-      const currentError = Math.abs(Number(current.quantity || 0) * Number(current.unitPrice || 0) - receiptItemTotal(current));
-      const candidateError = Math.abs(Number(item.quantity || 0) * Number(item.unitPrice || 0) - receiptItemTotal(item));
-      // Never replace a fiscally consistent primary pass with a different quantity
-      // from an alternate pass solely because the alternate description is longer.
-      const primaryValid = Number(current.quantity) > 0 && currentError < 0.055;
-      const candidateValid = Number(item.quantity) > 0 && candidateError < 0.055;
-      if (!primaryValid && candidateValid) {
-        merged[idx] = { ...item, code: item.code || current.code };
-      } else if (!primaryValid && score(item) > score(current)) {
-        merged[idx] = { ...item, code: item.code || current.code };
-      } else if (primaryValid && candidateValid && Math.abs(Number(current.quantity) - Number(item.quantity)) <= 0.001 &&
-        Math.abs(receiptItemTotal(current) - receiptItemTotal(item)) < 0.025 &&
-        normalizeName(item.name).length > normalizeName(current.name).length) {
-        merged[idx] = { ...current, name: item.name };
-      } else {
-        merged[idx].code = merged[idx].code || item.code;
-      }
+  const matched = new Set();
+  for (let alternateIndex = 0; alternateIndex < (alternate || []).length; alternateIndex++) {
+    const other = alternate[alternateIndex];
+    const otherName = normalizeReceiptName(other.name);
+    if (!otherName) continue;
+    const candidates = merged.map((item, index) => {
+      if (matched.has(index)) return null;
+      const sameCode = item.code && other.code && norm(item.code) === norm(other.code);
+      if (item.code && other.code && !sameCode) return null;
+      const name = normalizeReceiptName(item.name);
+      const sameName = name === otherName || (Math.min(name.length, otherName.length) >= 7 &&
+        (name.startsWith(otherName) || otherName.startsWith(name)));
+      const difference = Math.abs(receiptItemTotal(item) - receiptItemTotal(other));
+      const nearRow = Math.abs(index - alternateIndex) <= 1;
+      if (!(sameCode && (sameName || nearRow)) && !(sameName && difference <= 0.10)) return null;
+      return { index, rank: (sameCode ? 100 : 0) + (sameName ? 35 : 0) +
+        (normalizeReceiptUnit(item.unit) === normalizeReceiptUnit(other.unit) ? 10 : 0) -
+        Math.abs(index - alternateIndex) * 8 - Math.min(40, difference) };
+    }).filter(Boolean).sort((a, b) => b.rank - a.rank);
+    const choice = candidates[0];
+    if (!choice) {
+      merged.push({ ...other, readingWarning: other.readingWarning ||
+        'Esta linha apareceu somente em uma leitura do OCR. Confira no cupom.' });
+      matched.add(merged.length - 1);
+      continue;
     }
+    const i = choice.index;
+    matched.add(i);
+    const current = merged[i];
+    const differences = [];
+    if (normalizeReceiptUnit(current.unit) !== normalizeReceiptUnit(other.unit)) differences.push('unidade');
+    if (Math.abs(Number(current.quantity) - Number(other.quantity)) > 0.001) differences.push('quantidade');
+    if (Math.abs(Number(current.unitPrice) - Number(other.unitPrice)) > 0.02) differences.push('preço');
+    if (Math.abs(receiptItemTotal(current) - receiptItemTotal(other)) > 0.02) differences.push('total');
+    const warning = [current.readingWarning, other.readingWarning,
+      differences.length ? 'Leituras OCR discordam em: ' + differences.join(', ') + '.' : ''].filter(Boolean).join(' ');
+    const valid = (it) => Number(it.quantity) > 0 &&
+      Math.abs(Number(it.quantity) * Number(it.unitPrice) - receiptItemTotal(it)) <= 0.055;
+    // Keep the first reading if both are plausible; differences require human review.
+    const chosen = !valid(current) && valid(other) ? other : current;
+    merged[i] = { ...chosen, code: chosen.code || current.code || other.code,
+      name: normalizeReceiptName(current.name).length >= otherName.length ? current.name : other.name,
+      readingWarning: warning };
   }
-  return merged.slice(0, 80);
+  return merged;
 }
 
 // Each NFC-e key is exactly 44 digits. Validate the document model (65) and
@@ -780,41 +772,43 @@ function parseOfficialConsultaItems(text) {
   return mergeReceiptCandidates(structured, inline);
 }
 
+
 function compareInvoiceItems(ocrItems, officialItems) {
-  const normalize = (value) => norm(value).normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
   const used = new Set();
-  return (ocrItems || []).map((ocr) => {
-    const code = normalize(ocr.code || '');
-    const name = normalize(ocr.name);
-    let matchIndex = (officialItems || []).findIndex((official, index) => {
-      if (used.has(index)) return false;
-      const officialCode = normalize(official.code || '');
-      const officialName = normalize(official.name);
-      if (code && officialCode && code === officialCode) return true;
-      if (name && officialName && name === officialName) return true;
-      const shorter = Math.min(name.length, officialName.length);
-      return shorter >= 6 && (name.startsWith(officialName) || officialName.startsWith(name));
-    });
-    const official = matchIndex >= 0 ? officialItems[matchIndex] : null;
-    if (matchIndex >= 0) used.add(matchIndex);
-    if (!official) return { ocr, official: null, status: 'Não localizado na consulta pública' };
-    const sameQty = Math.abs(Number(ocr.quantity || 0) - Number(official.quantity || 0)) <= 0.001;
-    const samePrice = Math.abs(Number(ocr.unitPrice || 0) - Number(official.unitPrice || 0)) <= 0.02;
-    const sameTotal = Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official)) <= 0.02;
-    return {
-      ocr,
-      official,
-      status: sameQty && samePrice && sameTotal ? 'Confere' : 'Divergência de valor/quantidade'
-    };
-  }).concat((officialItems || []).filter((_, index) => !used.has(index)).map((official) => ({
-    ocr: null, official, status: 'Item da consulta não encontrado no OCR'
+  const rows = (ocrItems || []).map((ocr, ocrIndex) => {
+    const code = norm(ocr.code);
+    const name = normalizeReceiptName(ocr.name);
+    const matches = (officialItems || []).map((official, index) => {
+      if (used.has(index)) return null;
+      const officialCode = norm(official.code);
+      const officialName = normalizeReceiptName(official.name);
+      if (code && officialCode && code !== officialCode) return null;
+      const sameCode = Boolean(code && code === officialCode);
+      const sameName = name === officialName || (Math.min(name.length, officialName.length) >= 7 &&
+        (name.startsWith(officialName) || officialName.startsWith(name)));
+      if (!sameCode && !sameName) return null;
+      const totalDelta = Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official));
+      const qtyDelta = Math.abs(Number(ocr.quantity) - Number(official.quantity));
+      return { index, rank: (sameCode ? 100 : 0) + (sameName ? 30 : 0) -
+        Math.min(70, totalDelta * 4) - Math.min(70, qtyDelta * 10) - Math.abs(ocrIndex - index) };
+    }).filter(Boolean).sort((a, b) => b.rank - a.rank);
+    const index = matches.length ? matches[0].index : -1;
+    const official = index >= 0 ? officialItems[index] : null;
+    if (index >= 0) used.add(index);
+    if (!official) return { ocr, official: null, ocrIndex,
+      issues: ['Produto não encontrado na consulta.'], status: 'Item ausente na consulta' };
+    const issues = [];
+    if (normalizeReceiptUnit(ocr.unit) !== normalizeReceiptUnit(official.unit)) issues.push('Unidade diferente');
+    if (Math.abs(Number(ocr.quantity) - Number(official.quantity)) > 0.001) issues.push('Quantidade diferente');
+    if (Math.abs(Number(ocr.unitPrice) - Number(official.unitPrice)) > 0.02) issues.push('Preço diferente');
+    if (Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official)) > 0.02) issues.push('Total diferente');
+    return { ocr, official, ocrIndex, issues,
+      status: issues.length ? 'Conferir: ' + issues.join(', ') : 'Confere' };
+  });
+  return rows.concat((officialItems || []).filter((_, index) => !used.has(index)).map((official) => ({
+    ocr: null, official, ocrIndex: -1, issues: ['Item ausente no OCR.'], status: 'Item ausente no OCR'
   })));
 }
-
 
 async function prepareReceiptCanvases(file) {
   const image = new Image();
