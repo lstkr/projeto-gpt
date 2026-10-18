@@ -1902,7 +1902,8 @@ export default function Home() {
               {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
-          </div>}{/* COUNT TABLE */}{/* COUNT HISTORY */}
+          </div>}{!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
+          {/* COUNT TABLE */}{/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
