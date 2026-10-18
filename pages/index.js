@@ -970,6 +970,17 @@ const COUNT_DEFAULTS={enabled:false,mode:'interval',intervalDays:7,weekday:1,mon
 const countDay=(d)=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d?new Date(d):new Date());
 const countDateLabel=(s)=>s?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'Não definida';
 
+function countDueDate(cfg,history){
+ if(!cfg?.enabled)return null;
+ const base=history[0]?.completedAt?countDay(history[0].completedAt):(cfg.configuredAt||countDay());
+ const [y,m,d]=base.split('-').map(Number);const date=new Date(Date.UTC(y,m-1,d));
+ if(cfg.mode==='weekly'){date.setUTCDate(date.getUTCDate()+(((Number(cfg.weekday)-(date.getUTCDay()||7)+6)%7)+1));}
+ else if(cfg.mode==='monthly'){
+  const at=(year,month)=>new Date(Date.UTC(year,month,Math.min(Number(cfg.monthDay),new Date(Date.UTC(year,month+1,0)).getUTCDate())));
+  let next=at(y,m-1);if(next<=date)next=at(y,m);return next.toISOString().slice(0,10);
+ }else date.setUTCDate(date.getUTCDate()+Number(cfg.intervalDays));
+ return date.toISOString().slice(0,10);
+}
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
