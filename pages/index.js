@@ -166,8 +166,9 @@ function parseReceiptOcr(text) {
 }
 
 function mergeReceiptCandidates(primary, alternate) {
-  const merged = [];
+  const merged = [...(primary || [])];
   const normalizeName = (value) => norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const numericTokens = (value) => (normalizeName(value).match(/\d+/g) || []).join('|');
   const distance = (a, b) => {
     if (!a || !b) return Math.max(a.length, b.length);
     let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -178,16 +179,18 @@ function mergeReceiptCandidates(primary, alternate) {
     }
     return previous[b.length];
   };
-  for (const item of [...(primary || []), ...(alternate || [])]) {
+  for (const item of (alternate || [])) {
     const key = normalizeName(item.name);
     if (!key) continue;
-    const duplicate = merged.some((existing) => {
+    const duplicate = (primary || []).some((existing) => {
       const other = normalizeName(existing.name);
-      if (key === other || key.startsWith(other) || other.startsWith(key)) return true;
+      // Preserve distinct variants such as different bag sizes and product codes.
+      const numsA = numericTokens(item.name), numsB = numericTokens(existing.name);
+      if (numsA && numsB && numsA !== numsB) return false;
+      if (key === other) return true;
       const shorter = Math.min(key.length, other.length);
-      if (shorter >= 10 && (key.slice(0, 10) === other.slice(0, 10))) return true;
       const longer = Math.max(key.length, other.length);
-      return shorter >= 7 && distance(key, other) / longer < 0.18;
+      return shorter >= 10 && distance(key, other) / longer < 0.10;
     });
     if (!duplicate) merged.push(item);
   }
