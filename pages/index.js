@@ -104,6 +104,7 @@ export default function Home() {
   const [authBusy, setAuthBusy] = useState(false);
   const [dataReady, setDataReady] = useState(!HAS_SUPABASE_CONFIG);
   const [saveStatus, setSaveStatus] = useState('');
+  const [dataRetry, setDataRetry] = useState(0);
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
@@ -198,7 +199,7 @@ export default function Home() {
         setLoaded(true);
       });
     return () => { active = false; };
-  }, [supabase, session?.user?.id, authChecked]);
+  }, [supabase, session?.user?.id, authChecked, dataRetry]);
 
   useEffect(() => {
     if (!loaded || supabase) return;
@@ -399,7 +400,7 @@ export default function Home() {
     return <div className="auth-screen"><section className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-eyebrow">CONTROLE DE ESTOQUE</div><h1>{authMode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h1><p className="auth-intro">{authMode === 'login' ? 'Entre para acessar produtos, compras e movimentações.' : 'Sua conta terá seus próprios dados de estoque.'}</p><form className="auth-form" onSubmit={handleAuthSubmit}><label className="field"><span>E-mail</span><input type="email" autoComplete="email" required value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="voce@exemplo.com"/></label><label className="field"><span>Senha</span><input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} required value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="Pelo menos 8 caracteres"/></label>{authMessage && <div className="auth-message" role="status">{authMessage}</div>}<button className="btn primary auth-submit" type="submit" disabled={authBusy}>{authBusy ? 'Aguarde…' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</button></form><div className="auth-switch">{authMode === 'login' ? 'Ainda não tem uma conta?' : 'Já tem uma conta?'} <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }}>{authMode === 'login' ? 'Criar conta' : 'Entrar'}</button></div><div className="auth-security"><Icon type="check" size={16}/> Cada usuário só acessa seu próprio estoque.</div></section></div>;
   }
   if (supabase && session && !dataReady) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando seu estoque…</b><p>Buscando seus dados salvos.</p>{authMessage && <span className="auth-message">{authMessage}</span>}</div></div></div>;
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando seu estoque…</b><p>Buscando seus dados salvos.</p>{authMessage && <span className="auth-message">{authMessage}</span>}{authMessage && <button className="btn secondary auth-retry" onClick={() => { setAuthMessage(''); setDataRetry((n) => n + 1); }}>Tentar novamente</button>}</div></div></div>;
   }
 
   return <div className="shell">
