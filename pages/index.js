@@ -553,6 +553,8 @@ function detectReceiptSupplier(text) {
   const lines = String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 24);
   const skip = /(CNPJ|CPF|RUA\b|AVENIDA|AV\.|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CONSUMIDOR|CHAVE DE ACESSO|PROTOCOLO|CUPOM FISCAL|NFC-?E|N[ÚU]MERO|S[ÉE]RIE|TERMINAL|CAIXA|CONSULTE|TRIBUTOS|INSCRI[CÇ][AÃ]O ESTADUAL|EMISS[AÃ]O|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
   const clean = (line) => String(line || '')
+    .replace(/^[A-Za-zÀ-ÿ]{1,2}\s+[A-Za-zÀ-ÿ]{1,2}\s+/, '')
+    .replace(/\bRUDTI\b/gi, 'RUDI')
     .replace(/\s*-?\s*CNPJ\s*:?.*$/i, '')
     .replace(/\s*-?\s*CPF\s*:?.*$/i, '')
     .replace(/\s+/g, ' ')
