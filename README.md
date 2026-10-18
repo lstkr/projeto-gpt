@@ -1,32 +1,43 @@
 # Projeto GPT — Estoque da Cafeteria
 
-Aplicação web para controle compartilhado do estoque da cafeteria, com contas individuais para identificar quem acessa o sistema.
+Aplicação web para o estoque da cafeteria, com contas individuais, leitura assistida de cupons e notas e controle de reposição.
 
 ## Funcionalidades
 
-- Visão geral do catálogo, custos estimados e alertas de estoque mínimo.
-- Cadastro e edição de produtos, categorias, unidades e custos.
-- Registro de entradas, saídas e motivo/responsável pela movimentação.
-- Importação de XML de NF-e com itens extraídos do XML.
-- OCR experimental em português para fotos de cupons; valide nome, quantidade, unidade e preço.
-- PDF com preenchimento manual.
-- Histórico de documentos e movimentações.
-- Campo obrigatório **Quem conferiu** antes de lançar cada nota.
-- Banco Supabase compartilhado com autenticação individual por usuário.
+- Consulta e alteração das quantidades em estoque.
+- Cadastro de produtos, categorias, unidades e estoque mínimo.
+- Histórico de entradas, saídas, notas e responsáveis pelas conferências.
+- Importação de XML de NF-e.
+- OCR de imagens executado em duas passagens, com melhoria de contraste e tentativa de separar cupons lado a lado.
+- Leitura de QR Code NFC-e e extração de chave de acesso quando disponível; atalho à consulta pública oficial.
+- Conferência manual obrigatória antes do lançamento.
+- Área de administrador com valor do estoque, edição de custo e estoque mínimo.
+- Lista de compras com sugestão de quantidade = estoque mínimo − estoque atual, exportável em CSV.
 
-## Contas e sessão
+## Papéis de acesso
 
-O banco registra papéis `admin` e `employee`. As senhas são armazenadas como hashes bcrypt; a aplicação emite tokens temporários de sessão, guarda apenas o hash deles no banco e encerra a sessão ao sair. As sessões expiram após 12 horas. O login tem limite de tentativas incorretas.
+- `admin`: vê valores e custos, configura estoque mínimo e consulta/exporta lista de compras.
+- `employee`: consulta produtos, altera estoque e lança/conferе documentos, sem visualizar custo por produto e valor total do estoque.
+- O banco impõe as restrições: para sessões de funcionários, o RPC de leitura remove o custo dos produtos e o RPC de gravação preserva custos e mínimos já cadastrados. Produtos novos criados por funcionários começam com mínimo e custo zerados, a serem preenchidos pelo dono.
+- Sessões expiram em 12 horas; o login limita tentativas consecutivas. Senhas são guardadas com bcrypt e tokens de sessão como hashes.
 
-As credenciais reais são provisionadas diretamente no banco e **não devem ser incluídas neste repositório**. O papel da conta aparece na interface. Nesta versão, dono e funcionários compartilham as mesmas operações de estoque; uma tela de administração com permissões exclusivas para o dono ainda não foi implementada.
+## QR Code e consulta fiscal
 
-## Banco e segurança
+O leitor tenta obter o conteúdo do QR Code com `jsqr` e o detector nativo do navegador; se não encontrar, também procura a chave de acesso no texto lido por OCR. Quando identifica uma chave, a tela apresenta um link de consulta pública da NFC-e.
 
-O projeto usa uma linha JSONB em `public.shared_inventory` para o estado do estoque. O acesso direto à tabela está bloqueado por RLS; as funções RPC validam uma sessão ativa antes de ler ou gravar. As tabelas internas de usuários, sessões e tentativas ficam no schema `private` e não podem ser consultadas diretamente pelos clientes.
+A consulta pública oficial permite consultar pela chave e pelo QR Code. Isso não equivale a uma API pública gratuita para retornar os itens automaticamente. A API de consulta em massa da NF-e oferecida pelo Serpro exige contratação, credenciais da API e certificado e-CNPJ. Consulte as informações oficiais antes de habilitar uma integração contratada:
+- [Consulta pública de NF-e/NFC-e no RS](https://www.fazenda.rs.gov.br/servicos-ao-cidadao/servicos?servico=2065)
+- [API de consulta de dados de NF-e do Serpro](https://www.gov.br/pt-br/servicos/obter-solucao-digital-de-consulta-de-dados-de-nota-fiscal-eletronica-nfe)
 
-A configuração canônica do banco para novos projetos está em [db/schema.sql](db/schema.sql). Esse arquivo não inclui senhas reais.
+O OCR/QR ainda é assistivo: confirme descrição, quantidade, unidade e preço com o documento original. Uma imagem com vários cupons pode exigir que cada um seja revisado individualmente. Nada é lançado automaticamente.
 
-O Supabase Security Advisor foi verificado após a alteração da autenticação e não retornou alertas. Revise o painel periodicamente, especialmente após mudanças em permissões SQL.
+## Banco de dados
+
+O projeto usa Supabase. A linha JSONB em `public.shared_inventory` guarda o estado compartilhado. RLS bloqueia acesso direto à tabela; RPCs validam a sessão e aplicam regras por papel. As tabelas internas ficam em `private`.
+
+O esquema canônico está em [db/schema.sql](db/schema.sql). As senhas reais de produção não devem ser adicionadas ao repositório.
+
+O Supabase Security Advisor foi consultado após as mudanças de permissão e não retornou alertas.
 
 ## Aplicação Next.js
 
@@ -37,22 +48,10 @@ npm install
 npm run dev
 ```
 
-As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem ser definidas no ambiente. Há valores públicos de fallback no cliente para facilitar a prévia; uma publishable key é pública por projeto. Nunca inserir uma `service_role` ou secret key em código frontend.
+As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem ser definidas no ambiente. O projeto usa uma publishable key pública no cliente. Nunca incluir uma chave `service_role` ou secret key em código de frontend.
 
-## Prévia estática
+## Cuidados operacionais
 
-A página autônoma em [docs/index.html](docs/index.html) usa o mesmo login individual do aplicativo. Não compartilhe tokens de sessão e não coloque senhas no repositório.
-
-Para publicar a prévia pelo GitHub Pages:
-1. Abra **Settings → Pages** no repositório.
-2. Em **Build and deployment**, selecione **GitHub Actions** como fonte.
-3. Volte a **Actions** e reexecute o workflow “Publish inventory preview” se ele não iniciar automaticamente.
-
-O workflow está em [.github/workflows/pages.yml](.github/workflows/pages.yml). O GitHub Actions conectado não tem permissão administrativa para habilitar Pages por API, então a primeira ativação precisa ser feita nas configurações.
-
-## Cuidados antes do uso operacional
-
-- Confira manualmente cada item antes de lançar nota/cupom; o OCR é experimental.
-- Faça testes com documentos reais antes de depender do saldo para compras ou decisões financeiras.
-- Configure backups regulares no Supabase.
-- Use senhas fortes e exclusivas; as credenciais iniciais solicitadas devem ser trocadas assim que possível.
+- Verifique cada OCR antes de confirmar; OCR pode confundir números ou deixar itens de fora.
+- Configure backups regulares do Supabase.
+- Troque as credenciais iniciais por senhas fortes e exclusivas antes do uso diário.
