@@ -134,15 +134,25 @@ begin
 end;
 $function$;
 
-create or replace function private.inventory_save_impl(p_session_token text, p_state jsonb)
-returns jsonb language plpgsql security definer set search_path = ''
-as $function$
+CREATE OR REPLACE FUNCTION private.inventory_save_impl(p_session_token text, p_state jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
 declare
   saved_at timestamptz := now();
   user_row private.app_users%rowtype;
   existing_state jsonb;
   secured_products jsonb;
   retained_products jsonb;
+  cleaned_documents jsonb;
+  retained_documents jsonb;
+  cleaned_movements jsonb;
+  retained_movements jsonb;
+  deleted_ids jsonb;
+  current_revision bigint;
+  incoming_revision bigint;
 begin
   select u.* into user_row from private.app_sessions s
     join private.app_users u on u.id = s.user_id
@@ -160,8 +170,20 @@ begin
   if octet_length(p_state::text) > 1500000 then
     raise exception using errcode = '22001', message = 'O conteúdo do estoque ultrapassa o limite permitido';
   end if;
-  select state into existing_state from public.shared_inventory where id = true;
+  select state into existing_state from public.shared_inventory where id = true for update;
   existing_state := coalesce(existing_state, '{"products":[],"movements":[],"documents":[]}'::jsonb);
+  current_revision := coalesce((existing_state->>'revision')::bigint, 0);
+  if not (p_state ? 'revision') then
+    raise exception using errcode = '40001', message = 'Sua versão do Estoque+ está desatualizada. Atualize a página e entre novamente.';
+  end if;
+  begin
+    incoming_revision := (p_state->>'revision')::bigint;
+  exception when invalid_text_representation or numeric_value_out_of_range then
+    raise exception using errcode = '22023', message = 'Versão de sincronização inválida.';
+  end;
+  if incoming_revision <> current_revision then
+    raise exception using errcode = '40001', message = 'O estoque foi alterado em outra sessão. Atualize a página antes de salvar novamente.';
+  end if;
 
   if user_row.role <> 'admin' then
     -- Staff can adjust quantities and use invoice entry, but cannot modify existing catalog metadata.
@@ -199,8 +221,63 @@ begin
     p_state := jsonb_set(p_state, '{products}', secured_products, true);
   end if;
 
+
+  -- Documents and historical movements are immutable through the generic snapshot
+  -- RPC. Only inventory_delete_document removes one, with role check and stock rollback.
+  deleted_ids := coalesce(existing_state->'deletedDocumentIds', '[]'::jsonb);
+  if jsonb_typeof(deleted_ids) <> 'array' then deleted_ids := '[]'::jsonb; end if;
+
+  select coalesce(jsonb_agg(
+      coalesce((
+        select old.doc
+          from jsonb_array_elements(coalesce(existing_state->'documents', '[]'::jsonb)) old(doc)
+         where old.doc->>'id' = incoming.doc->>'id' limit 1
+      ), incoming.doc) order by incoming.ord
+    ), '[]'::jsonb)
+    into cleaned_documents
+    from jsonb_array_elements(p_state->'documents') with ordinality incoming(doc,ord)
+   where not exists (
+     select 1 from jsonb_array_elements_text(deleted_ids) tomb(id)
+      where tomb.id = incoming.doc->>'id'
+   );
+
+  select coalesce(jsonb_agg(old.doc order by old.ord), '[]'::jsonb)
+    into retained_documents
+    from jsonb_array_elements(coalesce(existing_state->'documents','[]'::jsonb)) with ordinality old(doc,ord)
+   where not exists (
+     select 1 from jsonb_array_elements(cleaned_documents) input(doc)
+      where input.doc->>'id' = old.doc->>'id'
+   );
+  p_state := jsonb_set(p_state, '{documents}', cleaned_documents || retained_documents, true);
+
+  select coalesce(jsonb_agg(
+      coalesce((
+        select old.move
+          from jsonb_array_elements(coalesce(existing_state->'movements','[]'::jsonb)) old(move)
+         where old.move->>'id' = incoming.move->>'id' limit 1
+      ), incoming.move) order by incoming.ord
+    ), '[]'::jsonb)
+    into cleaned_movements
+    from jsonb_array_elements(p_state->'movements') with ordinality incoming(move,ord)
+   where not exists (
+     select 1 from jsonb_array_elements_text(deleted_ids) tomb(id)
+      where tomb.id = incoming.move->>'documentId'
+   );
+  select coalesce(jsonb_agg(old.move order by old.ord), '[]'::jsonb)
+    into retained_movements
+    from jsonb_array_elements(coalesce(existing_state->'movements','[]'::jsonb)) with ordinality old(move,ord)
+   where not exists (
+     select 1 from jsonb_array_elements(cleaned_movements) input(move)
+      where input.move->>'id' = old.move->>'id'
+   );
+  p_state := jsonb_set(p_state, '{movements}', cleaned_movements || retained_movements, true);
+
+  p_state := p_state || jsonb_build_object(
+    'deletedDocumentIds', deleted_ids,
+    'revision', current_revision + 1
+  );
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;
-  return jsonb_build_object('ok', true, 'updated_at', saved_at, 'role', user_row.role);
+  return jsonb_build_object('ok', true, 'updated_at', saved_at, 'role', user_row.role, 'revision', current_revision + 1);
 end;
 $function$;
 
@@ -250,3 +327,124 @@ grant execute on function public.inventory_logout(text) to anon, authenticated;
 
 -- After installing this schema, provision users separately. Store only bcrypt hashes
 -- generated for each password; do not commit plaintext credentials to this repository.
+
+-- Gestor-only deletion of registered fiscal documents, with atomic inventory reversal.
+-- Always preserve private.app_users credentials; never delete users to reset inventory.
+CREATE OR REPLACE FUNCTION private.inventory_delete_document_impl(p_session_token text, p_document_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  actor_role text;
+  inventory_state jsonb;
+  deleted_document jsonb;
+  links jsonb;
+  entry jsonb;
+  item_product_id text;
+  item_quantity numeric;
+  available numeric;
+  changed_products jsonb;
+  kept_documents jsonb;
+  kept_movements jsonb;
+  deleted_ids jsonb;
+  new_revision bigint;
+begin
+  select u.role into actor_role from private.app_sessions s
+    join private.app_users u on u.id = s.user_id
+   where s.token_hash = encode(extensions.digest(coalesce(p_session_token,''), 'sha256'),'hex')
+     and s.expires_at > now() and s.revoked_at is null and u.active = true;
+  if not found then
+    raise exception using errcode = '28000', message = 'Sessão inválida ou expirada. Faça login novamente.';
+  end if;
+  if actor_role <> 'admin' then
+    raise exception using errcode = '42501', message = 'Somente o Gestor pode excluir notas fiscais já lançadas.';
+  end if;
+  if coalesce(length(p_document_id), 0) < 1 or length(p_document_id) > 128 then
+    raise exception using errcode = '22023', message = 'Identificador da nota fiscal inválido.';
+  end if;
+
+  select state into inventory_state from public.shared_inventory where id = true for update;
+  if not found then
+    raise exception using errcode = '22023', message = 'Estado do estoque não encontrado.';
+  end if;
+  select doc.value into deleted_document
+    from jsonb_array_elements(coalesce(inventory_state->'documents', '[]'::jsonb)) doc(value)
+   where doc.value->>'id' = p_document_id limit 1;
+  if not found then
+    raise exception using errcode = '22023', message = 'Documento não encontrado. Atualize o estoque e tente novamente.';
+  end if;
+  links := deleted_document->'stockEntries';
+  if jsonb_typeof(links) <> 'array' or jsonb_array_length(links) = 0 then
+    raise exception using errcode = '22023', message = 'Nota antiga sem vínculos de entrada no estoque. Não é seguro estornar suas quantidades automaticamente.';
+  end if;
+
+  changed_products := coalesce(inventory_state->'products', '[]'::jsonb);
+  for entry in select value from jsonb_array_elements(links) as link(value) loop
+    item_product_id := entry->>'productId';
+    begin
+      item_quantity := (entry->>'quantity')::numeric;
+    exception when invalid_text_representation or numeric_value_out_of_range then
+      raise exception using errcode = '22023', message = 'Quantidade inválida em uma entrada da nota.';
+    end;
+    if coalesce(item_product_id, '') = '' or item_quantity is null or item_quantity <= 0 then
+      raise exception using errcode = '22023', message = 'Nota com vínculo de estoque incompleto; exclusão cancelada.';
+    end if;
+    select (product.value->>'stock')::numeric into available
+      from jsonb_array_elements(changed_products) product(value)
+     where product.value->>'id' = item_product_id limit 1;
+    if not found then
+      raise exception using errcode = '22023', message = 'Um produto associado à nota não existe mais. Exclusão cancelada.';
+    end if;
+    if available < item_quantity then
+      raise exception using errcode = '22023', message = 'Não há saldo suficiente para desfazer esta nota sem deixar estoque negativo. Ajuste o estoque antes de excluir.';
+    end if;
+    select coalesce(jsonb_agg(
+      case when product.value->>'id' = item_product_id
+        then jsonb_set(product.value, '{stock}', to_jsonb(round(((product.value->>'stock')::numeric - item_quantity), 3)), true)
+        else product.value end order by product.ord), '[]'::jsonb)
+      into changed_products
+      from jsonb_array_elements(changed_products) with ordinality product(value,ord);
+  end loop;
+
+  select coalesce(jsonb_agg(doc.value order by doc.ord), '[]'::jsonb)
+    into kept_documents
+    from jsonb_array_elements(coalesce(inventory_state->'documents','[]'::jsonb)) with ordinality doc(value,ord)
+   where doc.value->>'id' is distinct from p_document_id;
+
+  select coalesce(jsonb_agg(move.value order by move.ord), '[]'::jsonb)
+    into kept_movements
+    from jsonb_array_elements(coalesce(inventory_state->'movements','[]'::jsonb)) with ordinality move(value,ord)
+   where move.value->>'documentId' is distinct from p_document_id
+     and not exists (
+       select 1 from jsonb_array_elements(links) item(value)
+        where item.value->>'movementId' = move.value->>'id'
+     );
+
+  deleted_ids := coalesce(inventory_state->'deletedDocumentIds','[]'::jsonb) || jsonb_build_array(p_document_id);
+  new_revision := coalesce((inventory_state->>'revision')::bigint, 0) + 1;
+  update public.shared_inventory
+     set state = inventory_state || jsonb_build_object(
+       'products', changed_products,
+       'documents', kept_documents,
+       'movements', kept_movements,
+       'deletedDocumentIds', deleted_ids,
+       'revision', new_revision
+     ),
+     updated_at = now()
+   where id = true;
+
+  return jsonb_build_object('ok', true, 'deleted_id', p_document_id, 'revision', new_revision);
+end;
+$function$;
+revoke all on function private.inventory_delete_document_impl(text, text) from public;
+grant execute on function private.inventory_delete_document_impl(text, text) to anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.inventory_delete_document(p_session_token text, p_document_id text)
+ RETURNS jsonb
+ LANGUAGE sql
+ SET search_path TO ''
+AS $function$ select private.inventory_delete_document_impl(p_session_token, p_document_id); $function$;
+revoke all on function public.inventory_delete_document(text, text) from public;
+grant execute on function public.inventory_delete_document(text, text) to anon, authenticated;
