@@ -2,6 +2,18 @@
 const ALLOWED_HOST = 'dfe-portal.svrs.rs.gov.br';
 const ALLOWED_PATH = /^\/Dfe\/QrCodeNFce\/?$/i;
 
+function isValidNfceKey(key) {
+  if (!/^\d{44}$/.test(key) || key.slice(20, 22) !== '65') return false;
+  let sum = 0, weight = 2;
+  for (let i = 42; i >= 0; i--) {
+    sum += Number(key[i]) * weight;
+    weight = weight === 9 ? 2 : weight + 1;
+  }
+  const rem = sum % 11;
+  return Number(key[43]) === (rem <= 1 ? 0 : 11 - rem);
+}
+
+
 function decodeEntities(value) {
   const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', aacute:'á', eacute:'é', iacute:'í', oacute:'ó', uacute:'ú', ccedil:'ç', Aacute:'Á', Eacute:'É', Iacute:'Í', Oacute:'Ó', Uacute:'Ú', atilde:'ã', otilde:'õ' };
   return String(value).replace(/&(#x[0-9a-f]+|#\d+|[a-zA-Z]+);/g, (whole, entity) => {
@@ -49,6 +61,12 @@ export default async function handler(req, res) {
   const payload = target.searchParams.get('p') || '';
   if (!/^\d{44}\|/.test(payload)) {
     return res.status(400).json({ error: 'O QR Code está incompleto; a chave isolada não permite consultar o cupom automaticamente.' });
+  }
+  const key = payload.split('|')[0];
+  if (!isValidNfceKey(key)) {
+    return res.status(422).json({
+      error: 'Chave fiscal rejeitada: modelo diferente de 65 ou dígito verificador incorreto. O OCR pode ter trocado ou acrescentado números.'
+    });
   }
   try {
     const response = await fetch(target.toString(), {
