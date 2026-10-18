@@ -77,6 +77,7 @@ function parseNfeXml(text) {
   const total = xmlNumber('vNF');
   return {
     supplier: find(emit, 'xNome') || '',
+    supplierCnpj: find(emit, 'CNPJ') || '',
     invoiceNumber: find(ide, 'nNF') || '',
     date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '',
     source: 'XML de NF-e',
@@ -667,6 +668,12 @@ function detectReceiptSupplier(text) {
   return candidate ? clean(candidate).slice(0, 110) : '';
 }
 
+function detectSupplierCnpj(text) {
+  const match = String(text || '').match(/CNPJ\s*[:.-]?\s*([\d.\/-]{14,20})/i);
+  const digits = String(match?.[1] || '').replace(/\D/g, '');
+  return digits.length === 14 ? digits : '';
+}
+
 function detectReceiptMetadata(text) {
   const raw = String(text || '');
   const invoice = raw.match(/NFC-?e\s*(?:n[ºo°.]?\s*)?([\d.]{5,})/i) ||
@@ -1184,6 +1191,11 @@ export default function Home() {
   ));
   const receiptReviewRows = (draft?.items || []).map((it, index) => {
     const issues = [];
+    const targetProduct = products.find((p) => p.id === it.productId);
+    const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
+    if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
+    if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
+
     const row = officialComparison.find((r) => r.ocrIndex === index);
     if (row && row.issues.length) issues.push(...row.issues);
     if (it.readingWarning) issues.push(it.readingWarning);
@@ -1196,7 +1208,7 @@ export default function Home() {
       issues.push('Sem confirmação oficial automática: conferir com a foto.');
     if (String(draft.source || '').startsWith('PDF'))
       issues.push('PDF preenchido manualmente: conferir com o documento.');
-    const existingByName = products.find((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name));
+    const existingByName = !targetProduct && products.find((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name));
     if (existingByName && normalizeReceiptUnit(existingByName.unit) !== normalizeReceiptUnit(it.unit))
       issues.push('Unidade do produto já cadastrado: ' + existingByName.unit + '. Confira a conversão.');
     return { issues: [...new Set(issues)], requiresReview: issues.length > 0,
@@ -1333,6 +1345,7 @@ export default function Home() {
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
               supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
+              supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText),
               invoiceNumber: meta.invoiceNumber,
               date: meta.date,
               accessKey,
@@ -1383,6 +1396,7 @@ export default function Home() {
             duplicate.items = joinedItems.length ? joinedItems : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }];
             duplicate.ocrText = [duplicate.ocrText, candidate.ocrText].filter(Boolean).join('\n\n--- OUTRO RECORTE DA MESMA NOTA ---\n');
             duplicate.supplier = duplicate.supplier || candidate.supplier;
+            duplicate.supplierCnpj = duplicate.supplierCnpj || candidate.supplierCnpj;
             duplicate.invoiceNumber = duplicate.invoiceNumber || candidate.invoiceNumber;
             duplicate.date = duplicate.date || candidate.date;
             duplicate.accessKey = duplicate.accessKey || candidate.accessKey;
@@ -1470,7 +1484,7 @@ export default function Home() {
       officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
-        const isNumeric = ['quantity', 'unitPrice', 'lineTotal'].includes(key);
+        const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
         const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
         // Printed fiscal line totals are independent facts: do not overwrite them
         // when a reviewer fixes the quantity or unit price.
@@ -1596,6 +1610,11 @@ export default function Home() {
       return;
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
+    if (draft?.items?.some((it) => {
+      const target = products.find((p) => p.id === it.productId);
+      return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
+        !(Number(it.stockQuantity) > 0));
+    })) { setError('Informe a quantidade convertida dos itens ligados a produtos com unidade diferente.'); return; }
     if (!draft || !draft.items.length || draft.items.some((it) =>
       !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
       !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
@@ -1626,21 +1645,34 @@ export default function Home() {
       const base = Math.max(0, itemGross - Math.max(0, Number(it.itemDiscount || 0)));
       const ratio = discountBase > 0 ? base / discountBase : 0;
       const netLine = Math.max(0, base - remainingDiscount * ratio + draftExtras * ratio);
-      const netUnitCost = Math.round(netLine / Number(it.quantity) * 10000) / 10000;
-      const index = nextProducts.findIndex((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
-        normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit));
+      const fiscalCode = norm(it.code);
+      const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
+      const index = nextProducts.findIndex((p) =>
+        (it.productId && p.id === it.productId) ||
+        (issuer && fiscalCode && (p.supplierCodes || []).some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode)) ||
+        (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
+          normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
+      const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
+        ? Number(it.stockQuantity) : Number(it.quantity);
+      const netUnitCost = Math.round(netLine / stockQuantity * 10000) / 10000;
       let productId;
       if (index >= 0) {
         const old = nextProducts[index];
         productId = old.id;
-        nextProducts[index] = { ...old, stock: Math.round((Number(old.stock) + Number(it.quantity)) * 1000) / 1000, cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost, unit: it.unit || old.unit, updated: dateNow() };
+        const supplierCodes = [...(old.supplierCodes || [])];
+        if (issuer && fiscalCode && !supplierCodes.some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode))
+          supplierCodes.push({ cnpj: issuer, code: it.code });
+        nextProducts[index] = { ...old, supplierCodes,
+          stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
+          cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost,
+          unit: old.unit, updated: dateNow() };
       } else {
         productId = uid();
-        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number.isFinite(netUnitCost) ? netUnitCost : 0, updated: dateNow() });
+        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), supplierCodes: issuer && fiscalCode ? [{ cnpj: issuer, code: it.code }] : [], category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number.isFinite(netUnitCost) ? netUnitCost : 0, updated: dateNow() });
       }
       const movementId = uid();
-      stockEntries.push({ productId, movementId, quantity: Number(it.quantity), netUnitCost });
-      nextMovements.unshift({ id: movementId, documentId, productId, product: it.name.trim(), type: 'Entrada', quantity: Number(it.quantity), reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
+      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
+      nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
