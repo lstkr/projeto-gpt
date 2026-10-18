@@ -72,6 +72,163 @@ function localizedValue(raw) {
 }
 
 function parseReceiptOcr(text) {
+  const source = String(text || '');
+  const lines = source.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
+  const unitPattern = /\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i;
+
+  const normalizeLine = (line) => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const lineIsNoise = (line) => {
+    const n = normalizeLine(line);
+    return /\b(CNPJ|CPF|DOCUMENTO AUXILIAR|NOTA FISCAL|PROTOCOLO|CHAVE DE ACESSO|CONSULTE|CONSUMIDOR|INSCRICAO ESTADUAL|TELEFONE|FONE|RUA ANDRADE|AVENIDA|CEP|SERIE|DATA DE AUTORIZACAO|TROCO|DESCONTO|SUBTOTAL|VALOR TOTAL|VALOR PAGO|TOTAL A PAGAR|QTD(?:E)? TOTAL|TRIBUTOS|ICMS|COFINS|PIS|DINHEIRO|CARTAO|CREDITO|DEBITO|PIX|P\.I\.X|FORMA DE PAGAMENTO|FORMA PAGAMENTO)\b/.test(n)
+      || (/VL\s*UNIT/.test(n) && /VL\s*TOTAL/.test(n))
+      || (/CODIGO/.test(n) && /DESCRIC/.test(n))
+      || (/DESCRIC/.test(n) && /QTDE/.test(n) && /UN/.test(n));
+  };
+  const cleanName = (value) => String(value || '')
+    .replace(/^\s*[A-Z]?\d{2,14}\s+/, '')
+    .replace(amountPattern, ' ')
+    .replace(unitPattern, ' ')
+    .replace(/[|:;]+/g, ' ')
+    .replace(/[^A-Za-zÀ-ÿ0-9 '&()./-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s.,-]+|[\s.,-]+$/g, '')
+    .trim();
+
+  const candidates = [];
+  let current = null;
+
+  const flush = () => {
+    if (!current) return;
+    const name = cleanName(current.nameParts.join(' '));
+    const letters = (name.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    if (name.length < 3 || letters < 3 || !current.amounts.length) {
+      current = null;
+      return;
+    }
+
+    const values = current.amounts.map((x) => x.value).filter((x) => Number.isFinite(x) && x >= 0);
+    if (!values.length) { current = null; return; }
+    let quantity = values[0];
+    let unitPrice = values.length >= 2 ? values[1] : 0;
+    let lineTotal = values.length >= 3 ? values[values.length - 1] : 0;
+
+    if (values.length >= 3) {
+      const expected = quantity * unitPrice;
+      const allowedError = Math.max(0.05, Math.abs(lineTotal) * 0.035);
+      if (Math.abs(expected - lineTotal) > allowedError && quantity > 0) {
+        // The second OCR pass sometimes reads 5,0000 as 858,0000 while retaining
+        // the printed line total. In that case derive the unit price from total/quantity.
+        const inferredPrice = lineTotal / quantity;
+        if (Number.isFinite(inferredPrice) && inferredPrice >= 0) unitPrice = inferredPrice;
+      }
+    } else if (values.length === 2) {
+      const first = values[0], second = values[1];
+      // For the common two-number case, a quantity greater than 1 plus a much smaller
+      // second value is usually quantity + line total, not quantity + unit price.
+      quantity = first;
+      unitPrice = second;
+      lineTotal = quantity * unitPrice;
+    } else {
+      quantity = 1;
+      unitPrice = values[0];
+      lineTotal = unitPrice;
+    }
+
+    if (!(quantity > 0) || quantity > 100000 || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000) {
+      current = null;
+      return;
+    }
+
+    let unit = (current.units.find(Boolean) || 'un').toLocaleLowerCase('pt-BR');
+    if (unit === 'unidade' || unit === 'und') unit = 'un';
+    if (unit === 'kgs') unit = 'kg';
+    if (unit === 'gr') unit = 'g';
+
+    candidates.push({
+      name: name.slice(0, 120),
+      code: current.code || '',
+      quantity: Math.round(quantity * 1000) / 1000,
+      unit,
+      unitPrice: Math.round(unitPrice * 10000) / 10000,
+      lineTotal: Math.round(Math.max(0, lineTotal) * 100) / 100
+    });
+    current = null;
+  };
+
+  for (const line of lines) {
+    if (lineIsNoise(line)) {
+      // Ignore payment/header/footer rows without flushing the current product unless
+      // the line marks the start of the fiscal summary.
+      if (/QTD(?:E)? TOTAL|VALOR TOTAL|FORMA DE PAGAMENTO|FORMA PAGAMENTO|CONSUMIDOR NAO IDENTIFICADO|PROTOCOLO DE AUTORIZACAO/i.test(normalizeLine(line))) flush();
+      continue;
+    }
+
+    const trimmed = line.trim();
+    const codeLine = trimmed.match(/^([A-Z]?\d{2,14})(?:\s+(.+))?$/i);
+    const suffix = codeLine?.[2]?.trim() || '';
+    const suffixHasLetters = (suffix.match(/[A-Za-zÀ-ÿ]/g) || []).length >= 3;
+    const isProductCodeRow = Boolean(codeLine && (
+      !suffix ||
+      (suffixHasLetters && !/^\d[\d\s.,/-]*$/.test(suffix))
+    ));
+
+    if (isProductCodeRow) {
+      flush();
+      current = { code: codeLine[1], nameParts: [], amounts: [], units: [] };
+      if (suffixHasLetters) current.nameParts.push(cleanName(suffix));
+      continue;
+    }
+
+    if (!current) continue;
+
+    const unitMatches = [...line.matchAll(new RegExp(unitPattern.source, 'ig'))];
+    unitMatches.forEach((match) => current.units.push(match[1]));
+
+    const amountMatches = [...line.matchAll(amountPattern)].map((match) => ({
+      raw: match[0],
+      value: localizedValue(match[0]),
+      index: match.index || 0
+    }));
+    if (amountMatches.length) {
+      current.amounts.push(...amountMatches);
+      continue;
+    }
+
+    // In some thermal printers the code, name, quantity, unit and prices are each
+    // on their own line. Only collect probable name lines before the numeric fields.
+    if (!current.amounts.length && !unitMatches.length) {
+      const cleaned = cleanName(line);
+      const letters = (cleaned.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+      if (letters >= 3 && !lineIsNoise(line)) current.nameParts.push(cleaned);
+    }
+  }
+  flush();
+
+  // A fallback preserves compatibility with receipts that have no product codes.
+  // Code-bearing receipts use the structured result above to avoid header/payment rows.
+  if (candidates.length) {
+    const deduped = [];
+    for (const item of candidates) {
+      const key = norm(item.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '') + '|' + item.unit;
+      const existingIndex = deduped.findIndex((x) =>
+        (x.code && item.code && x.code === item.code) ||
+        (norm(x.name).normalize('NFD').replace(/[\u0300-\u036f]/g, '') + '|' + x.unit) === key
+      );
+      if (existingIndex < 0) deduped.push(item);
+      else {
+        const old = deduped[existingIndex];
+        const oldErr = Math.abs(Number(old.quantity) * Number(old.unitPrice) - Number(old.lineTotal || old.quantity * old.unitPrice));
+        const newErr = Math.abs(Number(item.quantity) * Number(item.unitPrice) - Number(item.lineTotal || item.quantity * item.unitPrice));
+        if (newErr < oldErr) deduped[existingIndex] = { ...item, code: item.code || old.code };
+      }
+    }
+    return deduped.slice(0, 80);
+  }
+  return parseReceiptOcrLegacy(source);
+}
+
+function parseReceiptOcrLegacy(text) {
   const output = [];
   const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
   const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL|TELEFONE|CEP\b|S[ÉE]RIE|DATA DE AUTORIZA[CÇ][AÃ]O|VALOR PAGO|QTD\.?\s*TOTAL)/i;
@@ -192,33 +349,49 @@ function parseReceiptOcr(text) {
 }
 
 function mergeReceiptCandidates(primary, alternate) {
-  const merged = [...(primary || [])];
-  const normalizeName = (value) => norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  const numericTokens = (value) => (normalizeName(value).match(/\d+/g) || []).join('|');
-  const distance = (a, b) => {
-    if (!a || !b) return Math.max(a.length, b.length);
-    let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
-    for (let i = 1; i <= a.length; i++) {
-      const current = [i];
-      for (let j = 1; j <= b.length; j++) current[j] = Math.min(current[j-1] + 1, previous[j] + 1, previous[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-      previous = current;
-    }
-    return previous[b.length];
+  const normalizeName = (value) => norm(value).normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const score = (item) => {
+    const nameScore = Math.min(1, normalizeName(item.name).length / 16);
+    const unit = item.unit ? 0.1 : 0;
+    const code = item.code ? 0.08 : 0;
+    const total = Number(item.lineTotal || Number(item.quantity || 0) * Number(item.unitPrice || 0));
+    const actual = Number(item.quantity || 0) * Number(item.unitPrice || 0);
+    const err = Math.abs(actual - total) / Math.max(Math.abs(total), 0.1);
+    return nameScore + unit + code + Math.max(0, 0.5 - Math.min(0.5, err));
   };
+  const merged = (primary || []).map((item) => ({ ...item }));
   for (const item of (alternate || [])) {
     const key = normalizeName(item.name);
     if (!key) continue;
-    const duplicate = (primary || []).some((existing) => {
+    const unit = norm(item.unit || 'un');
+    const idx = merged.findIndex((existing) => {
+      if (norm(existing.unit || 'un') !== unit) return false;
       const other = normalizeName(existing.name);
-      // Preserve distinct variants such as different bag sizes and product codes.
-      const numsA = numericTokens(item.name), numsB = numericTokens(existing.name);
-      if (numsA && numsB && numsA !== numsB) return false;
+      if (item.code && existing.code && item.code.toLowerCase() === existing.code.toLowerCase()) return true;
       if (key === other) return true;
       const shorter = Math.min(key.length, other.length);
       const longer = Math.max(key.length, other.length);
-      return shorter >= 10 && distance(key, other) / longer < 0.10;
+      return shorter >= 8 && longer > 0 && (key.startsWith(other) || other.startsWith(key) ||
+        (() => {
+          let previous = Array.from({ length: other.length + 1 }, (_, i) => i);
+          for (let i = 1; i <= key.length; i++) {
+            const current = [i];
+            for (let j = 1; j <= other.length; j++) current[j] = Math.min(current[j-1] + 1, previous[j] + 1, previous[j-1] + (key[i-1] === other[j-1] ? 0 : 1));
+            previous = current;
+          }
+          return previous[other.length] / longer < 0.12;
+        })());
     });
-    if (!duplicate) merged.push(item);
+    if (idx < 0) merged.push({ ...item });
+    else if (score(item) > score(merged[idx])) {
+      merged[idx] = { ...item, name: merged[idx].name.length >= item.name.length ? merged[idx].name : item.name, code: item.code || merged[idx].code };
+    } else {
+      merged[idx].code = merged[idx].code || item.code;
+    }
   }
   return merged.slice(0, 80);
 }
