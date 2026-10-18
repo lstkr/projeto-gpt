@@ -274,6 +274,8 @@ begin
 
   p_state := p_state || jsonb_build_object(
     'deletedDocumentIds', deleted_ids,
+    'stockCounts', coalesce(existing_state->'stockCounts','[]'::jsonb),
+    'countSettings', coalesce(existing_state->'countSettings','{"enabled":false,"mode":"interval","intervalDays":7,"weekday":1,"monthDay":1}'::jsonb),
     'revision', current_revision + 1
   );
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;
