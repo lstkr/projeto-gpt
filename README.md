@@ -84,3 +84,16 @@ As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem
 No menu **Contagem de estoque**, Gestor e funcionários contam todos os produtos (inclusive zeros), conferem diferenças com o saldo atual e concluem a reconciliação. O sistema grava os ajustes e o histórico com data e responsável. O banco rejeita contagens com saldos obsoletos.
 
 Somente o **Gestor** define a contagem obrigatória por intervalo de dias, dia da semana ou dia fixo do mês. O calendário só passa a valer depois de ser habilitado; as contas e senhas não são alteradas por esta funcionalidade.
+
+## Auditoria de possíveis duplicatas
+
+O catálogo é auditado sempre que é carregado ou alterado. Apenas o **Gestor** vê a página **Possíveis duplicatas** e o alerta no painel de estoque. A análise é informativa: os pares são exibidos para conferência e edição dos cadastros, sem fusão ou exclusão automática de saldos, IDs, entradas, histórico fiscal ou usuários.
+
+- Zeros à esquerda em códigos numéricos são ignorados (`00123` = `123`), inclusive em sufixos numéricos com o **mesmo** prefixo (`ABC-00123` = `ABC-123`). Prefixos diferentes continuam distintos.
+- Códigos de fornecedor são comparados apenas sob o mesmo CNPJ; códigos iguais entre fornecedores distintos não provam que o produto é idêntico.
+- A descrição passa por normalização de acentos, pontuação e abreviações comuns, seguida por comparação de tokens e distância de edição. Erros pequenos de digitação em códigos só geram suspeita quando a descrição também é parecida.
+- Embalagens com números diferentes e divergências de unidade exigem conferência, sem classificação de alta probabilidade.
+- Ao cadastrar um produto, a interface apresenta candidatos semelhantes e solicita confirmação se o Gestor insistir em criar o registro. Durante o lançamento de NF-e/NFC-e, o pareamento considera códigos de fornecedor normalizados e alerta sobre descrições divergentes.
+- **Nunca unir saldos manualmente sem revisar movimentos, notas e contagens**: IDs antigos são usados no estorno de documentos. Não existe operação de fusão automática nesta versão.
+
+Cobertura automatizada: `npm test` (arquivo `tests/duplicate-products.test.cjs`).

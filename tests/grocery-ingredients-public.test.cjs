@@ -3,10 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const code = fs.readFileSync('pages/index.js','utf8');
+// Load the real product-code normalizer inside the isolated receipt test VM.
+const productMatching = fs.readFileSync('lib/duplicate-products.mjs','utf8').replace(/^export /gm, '');
 const start = code.indexOf('function localizedValue(raw)');
 const end = code.indexOf('async function prepareReceiptCanvases',start);
 assert.ok(start>=0 && end>start);
-const rules = vm.runInNewContext('const norm=v=>String(v||"").trim().toLowerCase();\n'+code.slice(start,end)+'\n({parseReceiptOcr,mergeReceiptCandidates,compareInvoiceItems,normalizeReceiptUnit})');
+const rules = vm.runInNewContext('const norm=v=>String(v||"").trim().toLowerCase();\n'+productMatching+'\n'+code.slice(start,end)+'\n({parseReceiptOcr,mergeReceiptCandidates,compareInvoiceItems,normalizeReceiptUnit})');
 
 // Actual publicly documented items: MERCADINHO LA PALMA NF-e 23103,
 // Sep 24, 2019, published by Câmara dos Deputados.
