@@ -212,16 +212,34 @@ function parseNfceQrPayload(raw) {
 }
 
 async function detectNfceQrCodes(canvases) {
-  if (typeof window === 'undefined' || !('BarcodeDetector' in window)) {
-    return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
-  }
+  const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '' });
+  if (typeof window === 'undefined') return canvases.map(empty);
+  let decodeQR = null;
   try {
-    const formats = await window.BarcodeDetector.getSupportedFormats();
-    if (!formats.includes('qr_code')) return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
-    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-    const results = [];
-    for (const canvas of canvases) {
-      let found = { accessKey: '', consultaUrl: '', qrRaw: '' };
+    const decoderModule = await import('jsqr');
+    decodeQR = decoderModule.default || decoderModule;
+  } catch (_) {}
+
+  let detector = null;
+  try {
+    if ('BarcodeDetector' in window) {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    }
+  } catch (_) {}
+
+  const results = [];
+  for (const canvas of canvases) {
+    let found = empty();
+    if (decodeQR) {
+      try {
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+        if (decoded?.data) found = parseNfceQrPayload(decoded.data);
+      } catch (_) {}
+    }
+    if (!found.accessKey && !found.consultaUrl && detector) {
       try {
         const detections = await detector.detect(canvas);
         for (const detection of detections || []) {
@@ -229,12 +247,10 @@ async function detectNfceQrCodes(canvases) {
           if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
         }
       } catch (_) {}
-      results.push(found);
     }
-    return results;
-  } catch (_) {
-    return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
+    results.push(found);
   }
+  return results;
 }
 
 
