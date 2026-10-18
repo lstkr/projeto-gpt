@@ -421,16 +421,45 @@ function mergeReceiptCandidates(primary, alternate) {
   return merged.slice(0, 80);
 }
 
+// Each NFC-e key is exactly 44 digits. Validate the document model (65) and
+// the final modulo-11 check digit before ever opening an official consultation.
+function validateNfceAccessKey(raw) {
+  const key = String(raw || '').replace(/\D/g, '');
+  if (!/^\d{44}$/.test(key)) return false;
+  if (key.slice(20, 22) !== '65') return false;
+  let sum = 0;
+  let weight = 2;
+  for (let i = 42; i >= 0; i--) {
+    sum += Number(key[i]) * weight;
+    weight = weight === 9 ? 2 : weight + 1;
+  }
+  const remainder = sum % 11;
+  const digit = remainder === 0 || remainder === 1 ? 0 : 11 - remainder;
+  return digit === Number(key[43]);
+}
+
 function extractAccessKeyFromText(text) {
   const lines = String(text || '').split(/\r?\n/);
   for (const line of lines) {
-    if (!/(?:chave de acesso|consulta pela chave|www\.sefaz|www\.sefazrs)/i.test(line) &&
-        (line.match(/\d/g) || []).length < 35) continue;
     const digits = line.replace(/\D/g, '');
-    const match = digits.match(/\d{44}/);
-    if (match && /^\d{44}$/.test(match[0])) return match[0];
+    // A normal NFC-e key is printed in eleven groups of four. OCR may add one
+    // spurious digit; look for validated 44-digit windows instead of trusting
+    // the first 44 characters of a damaged line.
+    if (digits.length < 44 || digits.length > 65) continue;
+    for (let i = 0; i <= digits.length - 44; i++) {
+      const candidate = digits.slice(i, i + 44);
+      if (validateNfceAccessKey(candidate)) return candidate;
+    }
   }
   return '';
+}
+
+function hasUncertainReceiptKey(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  return lines.some((line) => {
+    const digits = line.replace(/\D/g, '');
+    return digits.length >= 44 && digits.length <= 65 && !extractAccessKeyFromText(line);
+  });
 }
 
 const PUBLIC_NFCE_CONSULTA_URL = 'https://dfe-portal.svrs.rs.gov.br/Dfe/ConsultaPublicaDfe';
@@ -447,18 +476,16 @@ function parseNfceQrPayload(raw) {
   if (parsed) {
     for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
       const digits = String(parsed.searchParams.get(key) || '').replace(/\D/g, '');
-      if (digits.length === 44) { accessKey = digits; break; }
+      if (validateNfceAccessKey(digits)) { accessKey = digits; break; }
     }
     if (!accessKey) {
       const p = parsed.searchParams.get('p') || '';
       const first = p.split('|')[0].replace(/\D/g, '');
-      if (first.length === 44) accessKey = first;
+      if (validateNfceAccessKey(first)) accessKey = first;
     }
   }
-  if (!accessKey) {
-    const digits = value.replace(/\D/g, '');
-    const match = digits.match(/\d{44}/);
-    if (match) accessKey = match[0];
+  if (!accessKey && !parsed) {
+    accessKey = extractAccessKeyFromText(value);
   }
 
   const host = parsed?.hostname?.toLowerCase() || '';
@@ -478,7 +505,7 @@ function parseNfceQrPayload(raw) {
   // Keep a decoded QR URL intact, including version/environment/hash parameters.
   // A 44-digit key alone is NOT a complete QR payload; fabricating ?chNFe=... on
   // the QR endpoint causes the SVRS "900 - parâmetro incorreto" response.
-  const qrUrlPreserved = Boolean(officialHost && !isIncompleteSyntheticQrLink &&
+  const qrUrlPreserved = Boolean(accessKey && officialHost && !isIncompleteSyntheticQrLink &&
     (hasQrPayload || (hasParams && !/\/dfe\/qrcodenfce\/?$/.test(path))));
   let consultaUrl = '';
   if (qrUrlPreserved) {
@@ -1198,8 +1225,11 @@ export default function Home() {
             const alternateMeta = detectReceiptMetadata(alternateText);
             const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
-            const accessKey = qr.accessKey || extractAccessKeyFromText(primaryText) || extractAccessKeyFromText(alternateText);
-            const consultaUrl = qr.consultaUrl || (accessKey ? PUBLIC_NFCE_CONSULTA_URL : '');
+            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
+            const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
+            const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) || hasUncertainReceiptKey(alternateText))
+              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
+              : '';
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
               supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
@@ -1207,7 +1237,8 @@ export default function Home() {
               date: meta.date,
               accessKey,
               consultaUrl,
-              qrDetected: Boolean(qr.qrRaw),
+              keyWarning,
+              qrDetected: Boolean(qr.qrRaw) && Boolean(accessKey),
               qrUrlPreserved: Boolean(qr.qrUrlPreserved),
               source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
               checkedBy: '',
@@ -1253,6 +1284,7 @@ export default function Home() {
             duplicate.date = duplicate.date || candidate.date;
             duplicate.accessKey = duplicate.accessKey || candidate.accessKey;
             duplicate.consultaUrl = duplicate.consultaUrl || candidate.consultaUrl;
+            duplicate.keyWarning = duplicate.accessKey ? '' : (duplicate.keyWarning || candidate.keyWarning);
             duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
             duplicate.qrUrlPreserved = duplicate.qrUrlPreserved || candidate.qrUrlPreserved;
             duplicate.subtotal = duplicate.subtotal ?? candidate.subtotal;
@@ -1504,6 +1536,7 @@ export default function Home() {
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label><label><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do funcionário"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo cupom da mesma imagem.</div>}
+            {draft.keyWarning && !draft.accessKey && <div className="notice" style={{marginTop:12}} role="alert"><b>Chave de NFC-e não validada.</b> {draft.keyWarning}</div>}
             {(draft.accessKey || draft.consultaUrl) && <div className="notice" style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><span><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave de acesso identificada pelo OCR'}</b>{draft.accessKey ? <span style={{display:'block',marginTop:5,overflowWrap:'anywhere',fontFamily:'monospace'}}>{draft.accessKey}</span> : 'O QR Code contém um endereço de consulta.'}</span>{draft.consultaUrl && <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}<a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a></div>}</div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
               <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os dados não são substituídos sem sua revisão.</p></div></div>
