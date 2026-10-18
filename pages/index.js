@@ -74,9 +74,9 @@ function localizedValue(raw) {
 function parseReceiptOcr(text) {
   const output = [];
   const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
-  const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL|TELEFONE|TELEFON|CEP|S[ÉE]RIE|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
+  const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL|TELEFONE|CEP\b|S[ÉE]RIE|DATA DE AUTORIZA[CÇ][AÃ]O|VALOR PAGO|QTD\.?\s*TOTAL)/i;
   const header = /^(?:C[ÓO]DIGO|DESCRI[CÇ][AÃ]O|QTDE|QTD|QUANTIDADE|UNID(?:ADE)?|VALOR|FORMA DE PAGAMENTO)\b/i;
-  const unitOnly = /^(?:UN|UND|UNIDADE|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)$/i;
+  const onlyUnit = /^(?:UN|UND|UNIDADE|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)$/i;
   const cleanDescription = (raw) => String(raw || '')
     .replace(amountPattern, ' ')
     .replace(/^\s*\d{3,14}\s+/, '')
@@ -98,52 +98,60 @@ function parseReceiptOcr(text) {
     const values = amounts.map(localizedValue).filter((value) => Number.isFinite(value) && value >= 0);
     const rawName = cleanDescription(line);
     const letters = (rawName.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-    const hasItemName = letters >= 3 && !unitOnly.test(rawName);
+    const hasItemName = letters >= 3 && !onlyUnit.test(rawName);
+    const lineLooksLikeProduct = hasItemName && /^\s*\d{3,14}\s+[A-Za-zÀ-ÿ]/.test(line);
 
     if (values.length >= 2) {
-      const inlineName = hasItemName ? rawName : '';
-      const name = inlineName || pendingName;
-      if (name && name.length >= 3) {
-        const quantity = values.length >= 3 ? values[values.length - 3] : 1;
-        const unitPrice = values[values.length - 2];
-        const total = values[values.length - 1];
-        const unitMatch = line.match(/\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i);
-        let unit = unitMatch ? unitMatch[1].toLocaleLowerCase('pt-BR') : 'un';
-        if (unit === 'unidade' || unit === 'und') unit = 'un';
-        if (unit === 'kgs') unit = 'kg';
-        if (unit === 'gr') unit = 'g';
-        if (!(quantity > 0) || !Number.isFinite(quantity)) {
-          pendingName = '';
-          return;
-        }
-        output.push({
-          name: name.slice(0, 120),
-          code: '',
-          quantity: Math.round(quantity * 1000) / 1000,
-          unit,
-          unitPrice: Math.round(Math.max(0, unitPrice) * 10000) / 10000,
-          lineTotal: Math.round(Math.max(0, total) * 100) / 100
-        });
+      const inlineName = hasItemName && !lineLooksLikeProduct ? rawName : '';
+      const name = inlineName || pendingName || (lineLooksLikeProduct ? rawName : '');
+      if (!name || name.length < 3) {
+        if (lineLooksLikeProduct) pendingName = rawName;
+        return;
       }
+
+      // Printed coupons usually put quantity, unit price, then line total left-to-right.
+      // When OCR sees only two values, interpret them as quantity and unit price;
+      // the employee can correct uncertain values in the mandatory review step.
+      const quantity = values[0];
+      const unitPrice = values[1];
+      const lineTotal = values.length >= 3 ? values[values.length - 1] : quantity * unitPrice;
+      const unitMatch = line.match(/\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i);
+      let unit = unitMatch ? unitMatch[1].toLocaleLowerCase('pt-BR') : 'un';
+      if (unit === 'unidade' || unit === 'und') unit = 'un';
+      if (unit === 'kgs') unit = 'kg';
+      if (unit === 'gr') unit = 'g';
+      if (!(quantity > 0) || !Number.isFinite(quantity) || quantity > 100000 ||
+          !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000) {
+        pendingName = lineLooksLikeProduct ? rawName : '';
+        return;
+      }
+      output.push({
+        name: name.slice(0, 120),
+        code: '',
+        quantity: Math.round(quantity * 1000) / 1000,
+        unit,
+        unitPrice: Math.round(unitPrice * 10000) / 10000,
+        lineTotal: Math.round(Math.max(0, lineTotal) * 100) / 100
+      });
       pendingName = '';
       return;
     }
 
     if (values.length === 1 && pendingName && !hasItemName) {
       const value = values[0];
-      if (value > 0) {
-        output.push({ name: pendingName.slice(0, 120), code: '', quantity: 1, unit: 'un', unitPrice: value, lineTotal: value });
-      }
+      if (value > 0) output.push({
+        name: pendingName.slice(0, 120), code: '', quantity: 1, unit: 'un',
+        unitPrice: value, lineTotal: value
+      });
       pendingName = '';
       return;
     }
 
     if (!hasItemName) return;
 
-    const hasLeadingCode = /^\s*\d{3,14}\s+[A-Za-zÀ-ÿ]/.test(line);
-    if (hasLeadingCode || !pendingName) {
+    if (lineLooksLikeProduct || !pendingName) {
       pendingName = rawName;
-    } else if (!unitOnly.test(rawName)) {
+    } else if (!onlyUnit.test(rawName)) {
       pendingName = (pendingName + ' ' + rawName).replace(/\s+/g, ' ').trim();
     }
   });
@@ -156,6 +164,79 @@ function parseReceiptOcr(text) {
   }
   return deduped.slice(0, 80);
 }
+
+function extractAccessKeyFromText(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    if (!/(?:chave de acesso|consulta pela chave|www\.sefaz|www\.sefazrs)/i.test(line) &&
+        (line.match(/\d/g) || []).length < 35) continue;
+    const digits = line.replace(/\D/g, '');
+    const match = digits.match(/\d{44}/);
+    if (match && /^\d{44}$/.test(match[0])) return match[0];
+  }
+  const digits = String(text || '').replace(/\D/g, '');
+  const match = digits.match(/\d{44}/);
+  return match ? match[0] : '';
+}
+
+function parseNfceQrPayload(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return { accessKey: '', consultaUrl: '', qrRaw: '' };
+  let parsed = null;
+  try {
+    parsed = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value.replace(/^\/+/, ''));
+  } catch (_) {}
+  let accessKey = '';
+  if (parsed) {
+    for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
+      const digits = String(parsed.searchParams.get(key) || '').replace(/\D/g, '');
+      if (digits.length === 44) { accessKey = digits; break; }
+    }
+    if (!accessKey) {
+      const p = parsed.searchParams.get('p') || '';
+      const first = p.split('|')[0].replace(/\D/g, '');
+      if (first.length === 44) accessKey = first;
+    }
+  }
+  if (!accessKey) {
+    const digits = value.replace(/\D/g, '');
+    const match = digits.match(/\d{44}/);
+    if (match) accessKey = match[0];
+  }
+  const officialHost = parsed && /(^|\.)sefaz\.rs\.gov\.br$/i.test(parsed.hostname);
+  let consultaUrl = officialHost ? parsed.toString() : '';
+  if (!consultaUrl && accessKey) {
+    consultaUrl = 'https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?chNFe=' + accessKey;
+  }
+  return { accessKey, consultaUrl, qrRaw: value.slice(0, 700) };
+}
+
+async function detectNfceQrCodes(canvases) {
+  if (typeof window === 'undefined' || !('BarcodeDetector' in window)) {
+    return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
+  }
+  try {
+    const formats = await window.BarcodeDetector.getSupportedFormats();
+    if (!formats.includes('qr_code')) return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    const results = [];
+    for (const canvas of canvases) {
+      let found = { accessKey: '', consultaUrl: '', qrRaw: '' };
+      try {
+        const detections = await detector.detect(canvas);
+        for (const detection of detections || []) {
+          const candidate = parseNfceQrPayload(detection.rawValue);
+          if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
+        }
+      } catch (_) {}
+      results.push(found);
+    }
+    return results;
+  } catch (_) {
+    return canvases.map(() => ({ accessKey: '', consultaUrl: '', qrRaw: '' }));
+  }
+}
+
 
 function detectReceiptSupplier(text) {
   const skip = /(CNPJ|CPF|RUA\b|AVENIDA|AV\.|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CONSUMIDOR|CHAVE DE ACESSO|PROTOCOLO|CUPOM FISCAL|NFC-?E|N[ÚU]MERO|S[ÉE]RIE|TERMINAL|CAIXA|CONSULTE|TRIBUTOS|INSCRI[CÇ][AÃ]O ESTADUAL|EMISS[AÃ]O|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
