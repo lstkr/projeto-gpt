@@ -996,6 +996,13 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [stockCounts,setStockCounts]=useState([]);
+  const [countSettings,setCountSettings]=useState(COUNT_DEFAULTS);
+  const [settingsForm,setSettingsForm]=useState(COUNT_DEFAULTS);
+  const [countDraft,setCountDraft]=useState(null);
+  const [countBasis,setCountBasis]=useState(null);
+  const [countBusy,setCountBusy]=useState(false);
+  const [countError,setCountError]=useState('');
   const [view, setView] = useState('stock');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
@@ -1044,6 +1051,9 @@ export default function Home() {
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
+    const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
+    setCountSettings(schedule);setSettingsForm(schedule);
     setCurrentUser(state.user || null);
     setAccessCode(token);
     setAccessGranted(true);
