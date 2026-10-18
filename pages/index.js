@@ -966,7 +966,10 @@ async function prepareReceiptCanvases(file) {
 }
 
 
-// Count screen: tracking due dates and physical inventory.
+const COUNT_DEFAULTS={enabled:false,mode:'interval',intervalDays:7,weekday:1,monthDay:1,configuredAt:''};
+const countDay=(d)=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d?new Date(d):new Date());
+const countDateLabel=(s)=>s?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'Não definida';
+
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
