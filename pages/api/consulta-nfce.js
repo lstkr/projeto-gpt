@@ -1,6 +1,11 @@
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
-const ALLOWED_HOST = 'dfe-portal.svrs.rs.gov.br';
-const ALLOWED_PATH = /^\/Dfe\/QrCodeNFce\/?$/i;
+import { load } from 'cheerio';
+
+const OFFICIAL_HOST = 'dfe-portal.svrs.rs.gov.br';
+const ALLOWED_INPUTS = new Map([
+  ['dfe-portal.svrs.rs.gov.br', /^\/Dfe\/QrCodeNFce\/?$/i],
+  ['www.sefaz.rs.gov.br', /^\/NFCE\/NFCE-COM\.aspx$/i]
+]);
 
 function isValidNfceKey(key) {
   if (!/^\d{44}$/.test(key) || key.slice(20, 22) !== '65') return false;
@@ -42,6 +47,80 @@ function htmlToText(html) {
     .slice(0, 180000);
 }
 
+function parseMoney(raw) {
+  const tokens = String(raw || '').match(/(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{2,4}|\.\d{2,4})/g) || [];
+  if (!tokens.length) return null;
+  const candidate = tokens[tokens.length - 1];
+  const number = Number(candidate.includes(',') ? candidate.replace(/\./g, '').replace(',', '.') : candidate);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseOfficialItems(html) {
+  const $ = load(html);
+  const items = [];
+  const rows = $('#tabResult tbody tr, tr[id^="Item"], tr[id^="item"]');
+  rows.each((_, tr) => {
+    const row = $(tr);
+    const title = row.find('.txtTit').first();
+    const name = title.text().replace(/\s+/g, ' ').trim();
+    const quantity = parseMoney(row.find('.Rqtd').first().text());
+    const unitPrice = parseMoney(row.find('.RvlUnit').first().text());
+    const printedTotal = parseMoney(row.find('.valor').last().text());
+    if (!name || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 ||
+        !Number.isFinite(printedTotal) || printedTotal < 0) return;
+    const codeText = row.find('.RCod').first().text();
+    const match = codeText.match(/(?:C[oó]digo\s*:\s*)?(\d{2,14})/i);
+    const unitText = row.find('.RUN').first().text().replace(/^\s*UN\s*:\s*/i, '').trim();
+    const unit = unitText && /^[a-zA-Z]{1,8}$/.test(unitText) ? unitText.toLowerCase() : 'un';
+    items.push({
+      name: name.slice(0, 160), code: match ? match[1] : '',
+      quantity, unit, unitPrice, lineTotal: printedTotal
+    });
+  });
+  return items;
+}
+
+function parseFiscalTotals(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const result = { subtotal: null, discount: null, total: null };
+  for (const line of lines) {
+    const name = line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const value = parseMoney(line);
+    if (value === null) continue;
+    if (result.subtotal === null && /SUB[ -]?TOTAL/.test(name)) result.subtotal = value;
+    if (result.discount === null && /\bDESCONTO\b/.test(name)) result.discount = value;
+    if (result.total === null && /VALOR A PAGAR|VALOR TOTAL|TOTAL DA NOTA/.test(name)) result.total = value;
+  }
+  return result;
+}
+
+async function fetchOfficial(url) {
+  let target = new URL(url);
+  for (let redirect = 0; redirect < 4; redirect++) {
+    if (target.protocol !== 'https:' || !ALLOWED_INPUTS.has(target.hostname) ||
+        target.username || target.password || target.port) {
+      throw new Error('A SEFAZ redirecionou para um endereço não autorizado.');
+    }
+    const response = await fetch(target.toString(), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EstoquePlus/1.0)', 'Accept': 'text/html,application/xhtml+xml' },
+      redirect: 'manual', signal: AbortSignal.timeout(14000), cache: 'no-store'
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) throw new Error('O portal redirecionou sem informar o destino.');
+      target = new URL(location, target);
+      continue;
+    }
+    if (!response.ok) throw new Error('O portal fiscal retornou HTTP ' + response.status + '.');
+    const type = response.headers.get('content-type') || '';
+    if (!type.includes('text/html')) throw new Error('A SEFAZ não retornou HTML.');
+    const html = await response.text();
+    if (html.length > 1600000) throw new Error('Página grande demais para processar.');
+    return { html, sourceUrl: target.toString() };
+  }
+  throw new Error('O portal fiscal redirecionou a consulta diversas vezes.');
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
@@ -53,10 +132,10 @@ export default async function handler(req, res) {
   } catch (_) {
     return res.status(400).json({ error: 'Endereço do QR Code inválido.' });
   }
-  if (target.protocol !== 'https:' || target.hostname !== ALLOWED_HOST ||
-      !ALLOWED_PATH.test(target.pathname) || !target.searchParams.has('p') ||
-      target.username || target.password || target.port) {
-    return res.status(400).json({ error: 'É necessário um QR Code completo da NFC-e no portal oficial da SVRS.' });
+  if (target.protocol !== 'https:' || !ALLOWED_INPUTS.has(target.hostname) ||
+      !ALLOWED_INPUTS.get(target.hostname).test(target.pathname) ||
+      !target.searchParams.has('p') || target.username || target.password || target.port) {
+    return res.status(400).json({ error: 'Informe a URL completa do QR Code da NFC-e do Rio Grande do Sul.' });
   }
   const payload = target.searchParams.get('p') || '';
   if (!/^\d{44}\|/.test(payload)) {
@@ -69,29 +148,25 @@ export default async function handler(req, res) {
     });
   }
   try {
-    const response = await fetch(target.toString(), {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EstoquePlus/1.0; NFCe public lookup)', 'Accept': 'text/html,application/xhtml+xml' },
-      redirect: 'manual',
-      signal: AbortSignal.timeout(14000),
-      cache: 'no-store'
-    });
-    if (response.status >= 300 && response.status < 400) {
-      return res.status(502).json({ error: 'O portal redirecionou a consulta; não foi possível ler os itens automaticamente.' });
-    }
-    if (!response.ok) {
-      return res.status(502).json({ error: 'O portal da SVRS retornou HTTP ' + response.status + '.' });
-    }
-    const type = response.headers.get('content-type') || '';
-    if (!type.includes('text/html')) return res.status(502).json({ error: 'A consulta não retornou uma página HTML legível.' });
-    const html = await response.text();
-    if (html.length > 1600000) return res.status(502).json({ error: 'A página fiscal é grande demais para processar.' });
+    // Both official QR encodings from RS are accepted. Query the SVRS portal
+    // canonical endpoint after validating the NFC-e key and full QR payload.
+    const canonical = new URL('https://' + OFFICIAL_HOST + '/Dfe/QrCodeNFce');
+    canonical.searchParams.set('p', payload);
+    const { html, sourceUrl } = await fetchOfficial(canonical);
     const text = htmlToText(html);
-    if (text.length < 80) return res.status(502).json({ error: 'A página da SVRS não trouxe texto suficiente para conferir os produtos.' });
+    if (text.length < 80) throw new Error('Página oficial sem dados legíveis.');
     if (/captcha|recaptcha|verifique que voc[eê] n[aã]o [eé] um rob[oô]/i.test(text)) {
-      return res.status(502).json({ error: 'O portal solicitou uma verificação humana; abra a consulta oficial para conferir.' });
+      throw new Error('O portal exige verificação humana; confira a nota na SEFAZ.');
     }
-    return res.status(200).json({ text, source: 'SVRS', url: target.toString() });
-  } catch (_) {
-    return res.status(502).json({ error: 'Não foi possível acessar o portal da SVRS neste momento. Confira a nota manualmente.' });
+    if (/par[aâ]metro incorreto|modelo de documento n[aã]o reconhecido|nota fiscal n[aã]o encontrada/i.test(text)) {
+      throw new Error('O portal recusou a consulta. Confira a chave e o QR Code original.');
+    }
+    const items = parseOfficialItems(html);
+    if (!items.length) {
+      return res.status(502).json({ error: 'A SEFAZ abriu a página, mas a lista de produtos não veio em um formato estruturado reconhecido. Confira manualmente.' });
+    }
+    return res.status(200).json({ items, totals: parseFiscalTotals(text), source: 'SVRS', url: sourceUrl });
+  } catch (e) {
+    return res.status(502).json({ error: e.message || 'Não foi possível acessar o portal da SVRS neste momento.' });
   }
 }
