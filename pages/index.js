@@ -441,7 +441,7 @@ async function prepareReceiptCanvases(file) {
     if (score < valley) { valley = score; seam = x; }
   }
   const twoReceipts = width > 500 && peakLeft > 0.48 && peakRight > 0.48 &&
-    valley < Math.min(peakLeft, peakRight) * 0.65 && valley < 0.42;
+    valley < Math.min(peakLeft, peakRight) * 0.80 && valley < 0.62;
   const segments = [];
   if (twoReceipts) segments.push([0, seam], [seam, width]);
   else segments.push([0, width]);
