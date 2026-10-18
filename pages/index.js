@@ -397,6 +397,7 @@ export default function Home() {
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
   const [draft, setDraft] = useState(null);
   const [draftQueue, setDraftQueue] = useState([]);
+  const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -547,7 +548,18 @@ export default function Home() {
   }), [products, query, category, filter]);
 
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos e confira os itens antes de atualizar o estoque.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+
+  const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(norm(b.name), 'pt-BR'));
+
+  function downloadPurchaseList() {
+    if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
+    const rows = [['Produto','Categoria','Estoque atual','Estoque mínimo','Comprar','Unidade','Custo unitário estimado','Subtotal estimado'], ...purchaseList.map((p) => [p.name,p.category || '',Number(p.stock || 0),Number(p.min || 0),p.buy,p.unit || 'un',Number(p.cost || 0),Math.round(p.buy * Number(p.cost || 0) * 100) / 100])];
+    const csv = '\uFEFF' + rows.map((row) => row.map((value) => '"' + String(value ?? '').replace(/"/g, '""') + '"').join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'lista-de-compras-cafeteria-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); setToast('Lista de compras exportada.');
+  }
 
   function openProduct(product) {
     setEditing(product || null);
