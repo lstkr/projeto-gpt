@@ -73,25 +73,221 @@ function localizedValue(raw) {
 
 function parseReceiptOcr(text) {
   const output = [];
-  const valuePattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
-  const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL)/i;
+  const amountPattern = /\d{1,3}(?:\.\d{3})*,\d{2,4}|\d+(?:[.,]\d{2,4})/g;
+  const ignore = /(CNPJ|CPF|CUPOM FISCAL|DOCUMENTO AUXILIAR|CHAVE DE ACESSO|PROTOCOLO|SUBTOTAL|TOTAL A PAGAR|VALOR TOTAL|VALOR APROXIMADO|TRIBUTOS|ICMS|COFINS|PIS\b|TROCO|DESCONTO|DINHEIRO|CART[AÃ]O|CR[EÉ]DITO|D[EÉ]BITO|PIX\b|FORMA DE PAGAMENTO|CONSUMIDOR|CONSULTA|ENDERE[CÇ]O|INSCRI[CÇ][AÃ]O ESTADUAL|TELEFONE|TELEFON|CEP|S[ÉE]RIE|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
+  const header = /^(?:C[ÓO]DIGO|DESCRI[CÇ][AÃ]O|QTDE|QTD|QUANTIDADE|UNID(?:ADE)?|VALOR|FORMA DE PAGAMENTO)\b/i;
+  const unitOnly = /^(?:UN|UND|UNIDADE|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)$/i;
+  const cleanDescription = (raw) => String(raw || '')
+    .replace(amountPattern, ' ')
+    .replace(/^\s*\d{3,14}\s+/, '')
+    .replace(/\b(?:UNIDADE|UND|UN|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)\b/gi, ' ')
+    .replace(/[|:;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .trim();
+  let pendingName = '';
+
   String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).forEach((line) => {
-    if (ignore.test(line)) return;
-    const matches = line.match(valuePattern) || [];
-    if (!matches.length) return;
-    const values = matches.map(localizedValue).filter((value) => Number.isFinite(value) && value >= 0);
-    if (!values.length) return;
-    const total = values[values.length - 1];
-    const unitPrice = values.length > 1 ? values[values.length - 2] : total;
-    let quantity = unitPrice > 0 ? total / unitPrice : 1;
-    if (!Number.isFinite(quantity) || quantity < 0.001 || quantity > 10000) quantity = 1;
-    quantity = Math.round(quantity * 1000) / 1000;
-    let name = line.replace(valuePattern, ' ').replace(/\b(?:UN|UND|KG|KGS|G|GR|LT|L|ML|CX|PC|PCT|FD)\b/gi, ' ').replace(/^\s*(?:\d{1,6}\s+){1,3}/, '').replace(/\s+/g, ' ').trim();
-    if (name.length < 3 || ignore.test(name)) return;
-    output.push({ name, code: '', quantity: quantity || 1, unit: 'un', unitPrice: unitPrice || total });
+    if (ignore.test(line) || header.test(line)) {
+      pendingName = '';
+      return;
+    }
+
+    const amounts = line.match(amountPattern) || [];
+    const values = amounts.map(localizedValue).filter((value) => Number.isFinite(value) && value >= 0);
+    const rawName = cleanDescription(line);
+    const letters = (rawName.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    const hasItemName = letters >= 3 && !unitOnly.test(rawName);
+
+    if (values.length >= 2) {
+      const inlineName = hasItemName ? rawName : '';
+      const name = inlineName || pendingName;
+      if (name && name.length >= 3) {
+        const quantity = values.length >= 3 ? values[values.length - 3] : 1;
+        const unitPrice = values[values.length - 2];
+        const total = values[values.length - 1];
+        const unitMatch = line.match(/\b(KGS?|GR?|G|ML|LT|L|UNIDADE|UND|UN|CX|PC|PCT|FD)\b/i);
+        let unit = unitMatch ? unitMatch[1].toLocaleLowerCase('pt-BR') : 'un';
+        if (unit === 'unidade' || unit === 'und') unit = 'un';
+        if (unit === 'kgs') unit = 'kg';
+        if (unit === 'gr') unit = 'g';
+        if (!(quantity > 0) || !Number.isFinite(quantity)) {
+          pendingName = '';
+          return;
+        }
+        output.push({
+          name: name.slice(0, 120),
+          code: '',
+          quantity: Math.round(quantity * 1000) / 1000,
+          unit,
+          unitPrice: Math.round(Math.max(0, unitPrice) * 10000) / 10000,
+          lineTotal: Math.round(Math.max(0, total) * 100) / 100
+        });
+      }
+      pendingName = '';
+      return;
+    }
+
+    if (values.length === 1 && pendingName && !hasItemName) {
+      const value = values[0];
+      if (value > 0) {
+        output.push({ name: pendingName.slice(0, 120), code: '', quantity: 1, unit: 'un', unitPrice: value, lineTotal: value });
+      }
+      pendingName = '';
+      return;
+    }
+
+    if (!hasItemName) return;
+
+    const hasLeadingCode = /^\s*\d{3,14}\s+[A-Za-zÀ-ÿ]/.test(line);
+    if (hasLeadingCode || !pendingName) {
+      pendingName = rawName;
+    } else if (!unitOnly.test(rawName)) {
+      pendingName = (pendingName + ' ' + rawName).replace(/\s+/g, ' ').trim();
+    }
   });
-  return output.slice(0, 50);
+
+  const deduped = [];
+  const seen = new Set();
+  for (const item of output) {
+    const key = norm(item.name) + '|' + item.quantity + '|' + item.unitPrice;
+    if (!seen.has(key)) { seen.add(key); deduped.push(item); }
+  }
+  return deduped.slice(0, 80);
 }
+
+function detectReceiptSupplier(text) {
+  const skip = /(CNPJ|CPF|RUA\b|AVENIDA|AV\.|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CONSUMIDOR|CHAVE DE ACESSO|PROTOCOLO|CUPOM FISCAL|NFC-?E|N[ÚU]MERO|S[ÉE]RIE|TERMINAL|CAIXA|CONSULTE|TRIBUTOS|INSCRI[CÇ][AÃ]O ESTADUAL|EMISS[AÃ]O|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 22);
+  const candidate = lines.find((line) => {
+    const letters = (line.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    return letters >= 7 && !skip.test(line) && !/^[\d\s.,:/-]+$/.test(line);
+  });
+  return candidate ? candidate.replace(/^\d+\s*/, '').slice(0, 110) : '';
+}
+
+function detectReceiptMetadata(text) {
+  const raw = String(text || '');
+  const invoice = raw.match(/NFC-?e\s*(?:n[ºo°.]?\s*)?([\d.]{5,})/i) ||
+    raw.match(/N[úu]mero\s*:\s*([\d.]{4,})/i);
+  const date = raw.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+  return { invoiceNumber: invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
+}
+
+async function prepareReceiptCanvases(file) {
+  const image = new Image();
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    image.src = objectUrl;
+    await image.decode();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  const base = document.createElement('canvas');
+  base.width = width;
+  base.height = height;
+  const baseCtx = base.getContext('2d', { willReadFrequently: true });
+  baseCtx.drawImage(image, 0, 0, width, height);
+  const pixels = baseCtx.getImageData(0, 0, width, height).data;
+  const isPaper = (r, g, b) => Math.min(r, g, b) > 168 && Math.max(r, g, b) - Math.min(r, g, b) < 72;
+
+  const xScores = new Float32Array(width);
+  const yTop = Math.floor(height * 0.12);
+  const yBottom = Math.floor(height * 0.90);
+  for (let x = 0; x < width; x++) {
+    let count = 0, samples = 0;
+    for (let y = yTop; y < yBottom; y += 3) {
+      const i = (y * width + x) * 4;
+      if (isPaper(pixels[i], pixels[i + 1], pixels[i + 2])) count++;
+      samples++;
+    }
+    xScores[x] = samples ? count / samples : 0;
+  }
+  const smooth = (scores, index, radius) => {
+    let sum = 0, count = 0;
+    for (let i = Math.max(0, index - radius); i <= Math.min(scores.length - 1, index + radius); i++) {
+      sum += scores[i]; count++;
+    }
+    return count ? sum / count : 0;
+  };
+  const radius = Math.max(2, Math.round(width * 0.006));
+  const leftFrom = Math.floor(width * 0.20), leftTo = Math.floor(width * 0.43);
+  const valleyFrom = Math.floor(width * 0.43), valleyTo = Math.floor(width * 0.57);
+  const rightFrom = Math.floor(width * 0.57), rightTo = Math.floor(width * 0.80);
+  const peakLeft = Math.max(...Array.from({ length: leftTo - leftFrom }, (_, k) => smooth(xScores, leftFrom + k, radius)));
+  const peakRight = Math.max(...Array.from({ length: rightTo - rightFrom }, (_, k) => smooth(xScores, rightFrom + k, radius)));
+  let valley = 1, seam = Math.floor(width / 2);
+  for (let x = valleyFrom; x < valleyTo; x++) {
+    const score = smooth(xScores, x, radius);
+    if (score < valley) { valley = score; seam = x; }
+  }
+  const twoReceipts = width > 500 && peakLeft > 0.28 && peakRight > 0.28 &&
+    valley < Math.min(peakLeft, peakRight) * 0.80;
+  const segments = [];
+  if (twoReceipts) segments.push([0, seam], [seam, width]);
+  else segments.push([0, width]);
+
+  const trimX = (start, end) => {
+    const peak = Math.max(...Array.from({ length: end - start }, (_, k) => xScores[start + k]));
+    const threshold = Math.max(0.13, peak * 0.32);
+    let lo = start, hi = end - 1;
+    while (lo < end && xScores[lo] < threshold) lo++;
+    while (hi >= lo && xScores[hi] < threshold) hi--;
+    if (hi <= lo) return [start, end];
+    const pad = Math.max(5, Math.round(width * 0.012));
+    return [Math.max(start, lo - pad), Math.min(end, hi + pad + 1)];
+  };
+
+  const crops = [];
+  for (const segment of segments) {
+    const [sx, ex] = trimX(segment[0], segment[1]);
+    const sw = Math.max(1, ex - sx);
+    const rowScores = new Float32Array(height);
+    const scanFrom = Math.floor(height * 0.10), scanTo = Math.floor(height * 0.92);
+    for (let y = scanFrom; y < scanTo; y += 1) {
+      let count = 0, samples = 0;
+      for (let x = sx; x < ex; x += 2) {
+        const i = (y * width + x) * 4;
+        if (isPaper(pixels[i], pixels[i + 1], pixels[i + 2])) count++;
+        samples++;
+      }
+      rowScores[y] = samples ? count / samples : 0;
+    }
+    const rowThreshold = 0.20;
+    let y0 = scanFrom, y1 = scanTo - 1;
+    while (y0 < scanTo && rowScores[y0] < rowThreshold) y0++;
+    while (y1 > y0 && rowScores[y1] < rowThreshold) y1--;
+    if (y1 - y0 < height * 0.20) { y0 = scanFrom; y1 = scanTo - 1; }
+    const yPad = Math.max(8, Math.round(height * 0.012));
+    y0 = Math.max(0, y0 - yPad);
+    y1 = Math.min(height, y1 + yPad + 1);
+    const sh = Math.max(1, y1 - y0);
+
+    const scaledWidth = Math.max(1200, Math.min(1800, Math.round(sw * 2.8)));
+    const scaledHeight = Math.round(sh * scaledWidth / sw);
+    const canvas = document.createElement('canvas');
+    canvas.width = scaledWidth;
+    canvas.height = scaledHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, sx, y0, sw, sh, 0, 0, scaledWidth, scaledHeight);
+    const data = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
+    for (let i = 0; i < data.data.length; i += 4) {
+      const gray = data.data[i] * 0.299 + data.data[i + 1] * 0.587 + data.data[i + 2] * 0.114;
+      const enhanced = Math.max(0, Math.min(255, (gray - 72) * 1.7));
+      data.data[i] = enhanced;
+      data.data[i + 1] = enhanced;
+      data.data[i + 2] = enhanced;
+    }
+    ctx.putImageData(data, 0, 0);
+    crops.push(canvas);
+  }
+  return { canvases: crops, split: twoReceipts };
+}
+
 
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
@@ -119,6 +315,7 @@ export default function Home() {
   const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
   const [draft, setDraft] = useState(null);
+  const [draftQueue, setDraftQueue] = useState([]);
   const [detailDoc, setDetailDoc] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -309,6 +506,7 @@ export default function Home() {
   }
   function uploadFile(file) {
     if (!file) return;
+    setDraftQueue([]);
     if (uploadRef.current) uploadRef.current.value = '';
     setError('');
     setView('documents');
@@ -338,18 +536,57 @@ export default function Home() {
       (async () => {
         let worker;
         try {
+          const prepared = await prepareReceiptCanvases(file);
+          const canvases = prepared.canvases.length ? prepared.canvases : [file];
           const { createWorker } = await import('tesseract.js');
-          worker = await createWorker('por', 1, { logger: (message) => { if (message.status === 'recognizing text') setOcrProgress(Math.round((message.progress || 0) * 100)); } });
-          const result = await worker.recognize(file);
-          const items = parseReceiptOcr(result.data.text || '');
-          setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (OCR local)', checkedBy: '', fileName: file.name, status: 'Aguardando conferência', ocrText: result.data.text || '', items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
-          setToast(items.length ? 'OCR encontrou ' + items.length + ' linhas candidatas. Confira com atenção.' : 'Texto lido, mas não consegui separar os itens; preencha-os manualmente.');
-          if (!items.length) setError('A leitura do texto não encontrou itens com preço de forma confiável. O texto reconhecido ficará disponível para consulta; preencha os produtos manualmente.');
+          worker = await createWorker('por', 1, {
+            logger: (message) => {
+              if (message.status === 'recognizing text') {
+                const progress = ((message.progress || 0) + (window.__ocrReceiptIndex || 0)) / canvases.length;
+                setOcrProgress(Math.round(progress * 100));
+              }
+            }
+          });
+          await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+          const receipts = [];
+          for (let index = 0; index < canvases.length; index++) {
+            window.__ocrReceiptIndex = index;
+            const result = await worker.recognize(canvases[index]);
+            const text = result.data.text || '';
+            const items = parseReceiptOcr(text);
+            const meta = detectReceiptMetadata(text);
+            const multiple = prepared.split && canvases.length > 1;
+            receipts.push({
+              supplier: detectReceiptSupplier(text) || (multiple ? 'Cupom ' + (index + 1) : ''),
+              invoiceNumber: meta.invoiceNumber,
+              date: meta.date,
+              source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — OCR local)' : 'Foto (OCR local, imagem melhorada)',
+              checkedBy: '',
+              fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
+              status: 'Aguardando conferência',
+              ocrText: text,
+              items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
+            });
+          }
+          window.__ocrReceiptIndex = 0;
+          setDraft(receipts[0]);
+          setDraftQueue(receipts.slice(1));
+          const identifiedItems = receipts.reduce((sum, receipt) => sum + receipt.items.filter((item) => item.name.trim()).length, 0);
+          setError('');
+          if (receipts.length > 1) {
+            setToast('Separei ' + receipts.length + ' cupons. Confira e confirme cada um separadamente.');
+          } else if (identifiedItems) {
+            setToast('OCR sugeriu ' + identifiedItems + ' itens. Confira nomes, quantidades e preços com o cupom original.');
+          } else {
+            setError('A foto foi processada, mas os produtos não puderam ser separados com confiança. O texto reconhecido ficou disponível; preencha ou corrija os itens manualmente.');
+          }
         } catch (e) {
           setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
-          setError('Não foi possível fazer o reconhecimento automático desta imagem. Você pode informar os produtos manualmente.');
+          setDraftQueue([]);
+          setError('Não foi possível interpretar a imagem automaticamente. Preencha os itens manualmente ou tente uma foto de cada cupom, com o texto maior e mais nítido.');
         } finally {
           if (worker) await worker.terminate().catch(() => {});
+          delete window.__ocrReceiptIndex;
           setBusy(false);
           setOcrProgress(0);
         }
@@ -386,10 +623,12 @@ export default function Home() {
     setMovements(nextMovements);
     const { ocrText, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: uid(), status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
-    setDraft(null);
+    const nextDraft = draftQueue[0] || null;
+    setDraft(nextDraft);
+    setDraftQueue((old) => old.slice(1));
     setError('');
     if (uploadRef.current) uploadRef.current.value = '';
-    setToast('Entrada de ' + items.length + (items.length === 1 ? ' item registrada.' : ' itens registrada.'));
+    setToast(nextDraft ? 'Entrada registrada. Confira o próximo cupom antes de lançar.' : 'Entrada de ' + items.length + (items.length === 1 ? ' item registrada.' : ' itens registrada.'));
     setView('documents');
   }
 
@@ -452,13 +691,13 @@ export default function Home() {
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Envie o XML da NF-e para ler os itens automaticamente. Fotos de cupons e PDFs podem ser registrados com conferência manual nesta versão.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Escolher arquivo</button></section>
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
-          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setDraftQueue([]);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label><label><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do funcionário"/></label></div>
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <div className="table-wrap review-table"><table><thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL</th><th></th></tr></thead><tbody>{draft.items.map((it, i) => <tr key={i}><td><input className="inline-input name-field" value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/></td><td><input className="inline-input small-field" type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td><td><input className="inline-input unit-field" value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td><td><input className="inline-input small-field" type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td><td><b>{money(Number(it.quantity || 0) * Number(it.unitPrice || 0))}</b></td><td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }))}><Icon type="close" size={15}/></button></td></tr>)}</tbody></table></div>
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total estimado</span><b>{money(draft.items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0))}</b></div></div>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
-            <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
+            <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span><button className="row-chevron" title="Ver detalhes" onClick={() => setDetailDoc(d)}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p><button className="btn secondary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={16}/>Importar primeiro documento</button></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: os arquivos são lidos no navegador e não enviados a um servidor. O histórico salva os campos conferidos, não o documento original.</span></div>
