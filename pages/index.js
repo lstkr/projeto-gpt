@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
 const initialProducts = [
   { id: '1', name: 'Café em grãos', sku: 'CAF-001', category: 'Cafés', unit: 'kg', stock: 8.5, min: 3, cost: 42.9 },
@@ -18,6 +19,9 @@ const qty = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).
 const norm = (v) => String(v || '').trim().toLocaleLowerCase('pt-BR');
 const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 function Icon({ type, size = 20 }) {
   const p = {
@@ -90,8 +94,18 @@ function parseReceiptOcr(text) {
 }
 
 export default function Home() {
-  const [products, setProducts] = useState(initialProducts);
-  const [movements, setMovements] = useState(initialMovements);
+  const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(!HAS_SUPABASE_CONFIG);
+  const [authMode, setAuthMode] = useState('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [dataReady, setDataReady] = useState(!HAS_SUPABASE_CONFIG);
+  const [saveStatus, setSaveStatus] = useState('');
+  const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
+  const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
   const [view, setView] = useState('stock');
   const [query, setQuery] = useState('');
@@ -112,6 +126,27 @@ export default function Home() {
   const uploadRef = useRef(null);
 
   useEffect(() => {
+    if (supabase) {
+      let active = true;
+      supabase.auth.getSession().then(({ data, error: sessionError }) => {
+        if (!active) return;
+        if (sessionError) setAuthMessage('Não foi possível consultar a sessão. Atualize a página e tente novamente.');
+        setSession(data?.session || null);
+        setAuthChecked(true);
+      }).catch(() => {
+        if (!active) return;
+        setAuthMessage('Não foi possível conectar ao serviço de autenticação.');
+        setAuthChecked(true);
+      });
+      const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+        setSession(nextSession || null);
+        setAuthChecked(true);
+        setLoaded(false);
+        setDataReady(false);
+        setAuthMessage('');
+      });
+      return () => { active = false; data.subscription.unsubscribe(); };
+    }
     try {
       const saved = localStorage.getItem('projeto-gpt-stock-v1');
       if (saved) {
@@ -122,11 +157,100 @@ export default function Home() {
       }
     } catch (_) {}
     setLoaded(true);
-  }, []);
+    setDataReady(true);
+  }, [supabase]);
+
   useEffect(() => {
-    if (!loaded) return;
+    if (!supabase || !session) {
+      if (supabase && authChecked && !session) {
+        setProducts([]);
+        setMovements([]);
+        setDocuments([]);
+        setLoaded(true);
+        setDataReady(false);
+      }
+      return;
+    }
+    let active = true;
+    setLoaded(false);
+    setDataReady(false);
+    supabase.from('inventory_state')
+      .select('state')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data, error: dbError }) => {
+        if (!active) return;
+        if (dbError) {
+          setAuthMessage('Não foi possível ler o banco de dados. Verifique se a estrutura SQL foi aplicada no projeto Supabase.');
+          setLoaded(true);
+          return;
+        }
+        const state = data?.state || { products: [], movements: [], documents: [] };
+        setProducts(Array.isArray(state.products) ? state.products : []);
+        setMovements(Array.isArray(state.movements) ? state.movements : []);
+        setDocuments(Array.isArray(state.documents) ? state.documents : []);
+        setLoaded(true);
+        setDataReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAuthMessage('Falha ao carregar os dados. Confira a conexão com o banco e tente novamente.');
+        setLoaded(true);
+      });
+    return () => { active = false; };
+  }, [supabase, session?.user?.id, authChecked]);
+
+  useEffect(() => {
+    if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents })); } catch (_) {}
-  }, [loaded, products, movements, documents]);
+  }, [loaded, products, movements, documents, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !session || !dataReady) return;
+    setSaveStatus('Salvando…');
+    const timer = setTimeout(async () => {
+      const payload = { user_id: session.user.id, state: { products, movements, documents }, updated_at: new Date().toISOString() };
+      const { error: saveError } = await supabase.from('inventory_state').upsert(payload, { onConflict: 'user_id' });
+      if (saveError) {
+        setSaveStatus('Falha ao salvar');
+        setToast('Não foi possível salvar no banco. Confira a conexão antes de continuar.');
+      } else {
+        setSaveStatus('Sincronizado');
+      }
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [supabase, session?.user?.id, dataReady, products, movements, documents]);
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!supabase || !authEmail.trim() || authPassword.length < 8) {
+      setAuthMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.');
+      return;
+    }
+    setAuthBusy(true);
+    setAuthMessage('');
+    try {
+      if (authMode === 'signup') {
+        const { data, error: signUpError } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword });
+        if (signUpError) throw signUpError;
+        setAuthMessage(data.session ? 'Conta criada. Entrando…' : 'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.');
+        if (data.session) setSession(data.session);
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
+        if (signInError) throw signInError;
+      }
+    } catch (error) {
+      setAuthMessage(error?.message || 'Não foi possível autenticar. Confira os dados e tente novamente.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!supabase) return;
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) setToast('Não foi possível encerrar a sessão.');
+  }
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 3300);
@@ -268,6 +392,16 @@ export default function Home() {
     setView('documents');
   }
 
+  if (supabase && !authChecked) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Conectando com segurança…</b><p>Verificando sua sessão.</p></div></div></div>;
+  }
+  if (supabase && !session) {
+    return <div className="auth-screen"><section className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-eyebrow">CONTROLE DE ESTOQUE</div><h1>{authMode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h1><p className="auth-intro">{authMode === 'login' ? 'Entre para acessar produtos, compras e movimentações.' : 'Sua conta terá seus próprios dados de estoque.'}</p><form className="auth-form" onSubmit={handleAuthSubmit}><label className="field"><span>E-mail</span><input type="email" autoComplete="email" required value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="voce@exemplo.com"/></label><label className="field"><span>Senha</span><input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} required value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="Pelo menos 8 caracteres"/></label>{authMessage && <div className="auth-message" role="status">{authMessage}</div>}<button className="btn primary auth-submit" type="submit" disabled={authBusy}>{authBusy ? 'Aguarde…' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</button></form><div className="auth-switch">{authMode === 'login' ? 'Ainda não tem uma conta?' : 'Já tem uma conta?'} <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }}>{authMode === 'login' ? 'Criar conta' : 'Entrar'}</button></div><div className="auth-security"><Icon type="check" size={16}/> Cada usuário só acessa seu próprio estoque.</div></section></div>;
+  }
+  if (supabase && session && !dataReady) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando seu estoque…</b><p>Buscando seus dados salvos.</p>{authMessage && <span className="auth-message">{authMessage}</span>}</div></div></div>;
+  }
+
   return <div className="shell">
     <aside className="sidebar">
       <button className="brand" onClick={() => setView('stock')}><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
@@ -277,10 +411,10 @@ export default function Home() {
         <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Documentos fiscais</span><i>{documents.length + (draft ? 1 : 0)}</i></button>
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
       </nav>
-      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p><button onClick={() => uploadRef.current?.click()}>Importar documento <Icon type="chevron" size={14}/></button></div><div className="user-row"><span className="user-avatar">LG</span><span><b>Administrador</b><small>Protótipo local</small></span><button title="Sobre os dados" onClick={() => setToast('Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
+      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p><button onClick={() => uploadRef.current?.click()}>Importar documento <Icon type="chevron" size={14}/></button></div><div className="user-row"><span className="user-avatar">LG</span><span><b>{session?.user?.email || "Administrador"}</b><small>{supabase ? saveStatus || "Banco compartilhado" : "Protótipo local"}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco de dados.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
     </aside>
     <main className="main"><input ref={uploadRef} className="hidden-input" type="file" accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => uploadFile(e.target.files && e.target.files[0])}/>
-      <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>Protótipo local</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><span className="user-avatar">LG</span></div></header>
+      <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>{supabase ? "Banco conectado" : "Protótipo local"}</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><button className="user-avatar user-avatar-button" title={session?.user?.email || "Administrador"} onClick={handleSignOut}>{supabase ? "Sair" : "LG"}</button></div></header>
       <div className="content">
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}<button className="btn primary" onClick={view === 'documents' ? () => uploadRef.current?.click() : () => openProduct(null)}><Icon type={view === 'documents' ? 'upload' : 'plus'} size={18}/>{view === 'documents' ? 'Importar documento' : 'Novo produto'}</button></div></div>
 
@@ -295,7 +429,7 @@ export default function Home() {
           <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}}><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
             <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th><th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td><td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button title="Ajustar estoque" onClick={() => openAdjustment(p)}><Icon type="arrows" size={16}/></button><button title="Editar produto" onClick={() => openProduct(p)}><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan="7"><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
-            <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>Dados salvos neste navegador</span></div>
+            <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
           <section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')}>Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)}><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
           <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')}>Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section>
@@ -318,7 +452,7 @@ export default function Home() {
         </>}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
-        <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {loaded ? 'Dados salvos localmente' : 'Carregando dados'}</span></footer>
+        <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
       </div>
     </main>
 
