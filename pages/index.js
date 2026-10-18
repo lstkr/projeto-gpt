@@ -1192,6 +1192,12 @@ export default function Home() {
   const receiptReviewRows = (draft?.items || []).map((it, index) => {
     const issues = [];
     const targetProduct = products.find((p) => p.id === it.productId);
+    const mappedProduct = targetProduct || products.find((p) =>
+      (draft.supplierCnpj && it.code && (p.supplierCodes || []).some((alias) =>
+        alias.cnpj === draft.supplierCnpj && norm(alias.code) === norm(it.code))) ||
+      (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
+        normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
+    if (!mappedProduct) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
     const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
     if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
     if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
@@ -1466,6 +1472,8 @@ export default function Home() {
         accessKeyInput: key,
         consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
         qrUrlPreserved: false,
+        officialCompared: false, officialItems: [], officialVerified: false,
+        officialOrigin: '', officialStatus: '', officialApplied: false,
         keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 65 e dígito verificador correto.'
       };
     });
@@ -1565,6 +1573,7 @@ export default function Home() {
       ...d,
       officialItems,
       officialCompared: true,
+      officialVerified: false, officialApplied: false,
       officialOrigin: 'texto-manual',
       reviewedItems: {}, totalsReviewed: false,
       officialSubtotal: totals.subtotal,
@@ -1832,7 +1841,7 @@ export default function Home() {
             </div>
             <div className="table-wrap review-table">
               <table>
-                <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>CONFERÊNCIA</th><th></th></tr></thead>
+                <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>PRODUTO NO ESTOQUE</th><th>CONFERÊNCIA</th><th></th></tr></thead>
                 <tbody>{draft.items.map((it, i) => {
                   const review = receiptReviewRows[i];
                   const attention = review.requiresReview && !review.done;
@@ -1846,6 +1855,26 @@ export default function Home() {
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td style={{minWidth:225}}>
+                      <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
+                        aria-label={'Associar ' + it.name + ' ao estoque'}
+                        value={it.productId || ''}
+                        onChange={(e) => changeItem(i,'productId',e.target.value)}>
+                        <option value="">Automático por nome/código (ou novo cadastro)</option>
+                        {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>)}
+                      </select>
+                      {(() => {
+                        const target = products.find((p) => p.id === it.productId);
+                        return target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit)
+                          ? <label style={{display:'block',marginTop:6,fontSize:12,color:'#92400e'}}>
+                            ⚠ Quantidade real no estoque ({target.unit}) *
+                            <input className="inline-input small-field" type="number" min="0.001" step="any"
+                              value={it.stockQuantity || ''} onChange={(e) => changeItem(i,'stockQuantity',e.target.value)}
+                              placeholder={'Quantidade em ' + target.unit}/>
+                            </label>
+                          : null;
+                      })()}
+                    </td>
                     <td style={{minWidth:195}}>
                       {review.requiresReview ? <>
                         <label style={{display:'flex',gap:6,alignItems:'center',fontSize:12,fontWeight:600,cursor:'pointer'}}>
