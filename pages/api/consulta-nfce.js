@@ -114,9 +114,31 @@ async function fetchOfficial(url, signal) {
     if (!response.ok) throw new Error('O portal fiscal retornou HTTP ' + response.status + '.');
     const type = response.headers.get('content-type') || '';
     if (!type.includes('text/html')) throw new Error('A SEFAZ não retornou HTML.');
-    const html = await response.text();
-    if (html.length > 1600000) throw new Error('Página grande demais para processar.');
-    return { html, sourceUrl: target.toString() };
+    // Bound memory *while* downloading, not only after response.text() allocates.
+    const cap = 1600000;
+    const declared = Number(response.headers.get('content-length') || 0);
+    if (declared > cap) throw new Error('A resposta fiscal excedeu o limite de segurança.');
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Resposta da SEFAZ sem corpo legível.');
+    const decoder = new TextDecoder('utf-8');
+    const chunks = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > cap) throw new Error('Resposta da SEFAZ muito grande para processar.');
+        chunks.push(decoder.decode(value, { stream: true }));
+      }
+      chunks.push(decoder.decode());
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+    return { html: chunks.join(''), sourceUrl: target.toString() };
   }
   throw new Error('O portal fiscal redirecionou a consulta diversas vezes.');
 }
