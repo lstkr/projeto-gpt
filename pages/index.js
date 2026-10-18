@@ -102,7 +102,7 @@ function parseReceiptOcr(text) {
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   const amountPattern = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2,4}|\d+\.\d{2,4}/g;
   const codePattern = /^((?:[A-Z]\d{2,12}|\d{3,12}))(?:\s+(.+))?$/i;
-  const unitPattern = /\b(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD)\b/i;
+  const unitPattern = /\b(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD|PT)\b/i;
   const cents = (number) => Math.round(number * 100) / 100;
   const header = lines.findIndex((line) => {
     const n = normalize(line);
@@ -311,7 +311,7 @@ function parseReceiptOcrLegacy(text) {
 
 function normalizeReceiptUnit(value) {
   const unit = norm(value || 'un');
-  return ({ unidade:'un', und:'un', in:'un', pc:'un', pca:'un',
+  return ({ pt:'pt', pote:'pt', unidade:'un', und:'un', in:'un', pc:'un', pca:'un',
     kgs:'kg', gr:'g', lt:'l', litro:'l', litros:'l',
     cx:'cx', caixa:'cx', pct:'pct', pacote:'pct', fd:'fd', fardo:'fd' })[unit] || unit;
 }
