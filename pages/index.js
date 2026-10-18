@@ -279,9 +279,10 @@ function parseNfceQrPayload(raw) {
   // Keep a decoded QR URL intact, including version/environment/hash parameters.
   // A 44-digit key alone is NOT a complete QR payload; fabricating ?chNFe=... on
   // the QR endpoint causes the SVRS "900 - parâmetro incorreto" response.
+  const qrUrlPreserved = Boolean(officialHost && !isIncompleteSyntheticQrLink &&
+    (hasQrPayload || (hasParams && !/\/dfe\/qrcodenfce\/?$/.test(path))));
   let consultaUrl = '';
-  if (officialHost && !isIncompleteSyntheticQrLink &&
-      (hasQrPayload || (hasParams && !/\/dfe\/qrcodenfce\/?$/.test(path)))) {
+  if (qrUrlPreserved) {
     consultaUrl = parsed.toString();
   } else if (isPublicQueryPage) {
     consultaUrl = parsed.toString();
@@ -289,7 +290,7 @@ function parseNfceQrPayload(raw) {
     consultaUrl = PUBLIC_NFCE_CONSULTA_URL;
   }
 
-  return { accessKey, consultaUrl, qrRaw: value.slice(0, 700) };
+  return { accessKey, consultaUrl, qrRaw: value.slice(0, 700), qrUrlPreserved };
 }
 
 async function decodeNfceQrWithZXing(canvas) {
@@ -322,7 +323,7 @@ async function decodeNfceQrWithZXing(canvas) {
 }
 
 async function detectNfceQrCodes(canvases, rawCanvases = []) {
-  const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '' });
+  const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
   try {
@@ -819,6 +820,7 @@ export default function Home() {
               accessKey,
               consultaUrl,
               qrDetected: Boolean(qr.qrRaw),
+              qrUrlPreserved: Boolean(qr.qrUrlPreserved),
               source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
@@ -860,6 +862,7 @@ export default function Home() {
             duplicate.accessKey = duplicate.accessKey || candidate.accessKey;
             duplicate.consultaUrl = duplicate.consultaUrl || candidate.consultaUrl;
             duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
+            duplicate.qrUrlPreserved = duplicate.qrUrlPreserved || candidate.qrUrlPreserved;
             duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
           }
 
@@ -1002,7 +1005,7 @@ export default function Home() {
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label><label><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do funcionário"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo cupom da mesma imagem.</div>}
-            {(draft.accessKey || draft.consultaUrl) && <div className="notice" style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><span><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave de acesso identificada pelo OCR'}</b>{draft.accessKey ? <span style={{display:'block',marginTop:5,overflowWrap:'anywhere',fontFamily:'monospace'}}>{draft.accessKey}</span> : 'O QR Code contém um endereço de consulta.'}</span>{draft.consultaUrl && <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}<a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>{draft.qrDetected ? 'Abrir QR Code original ↗' : 'Abrir consulta pública ↗'}</a></div>}</div>}
+            {(draft.accessKey || draft.consultaUrl) && <div className="notice" style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><span><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave de acesso identificada pelo OCR'}</b>{draft.accessKey ? <span style={{display:'block',marginTop:5,overflowWrap:'anywhere',fontFamily:'monospace'}}>{draft.accessKey}</span> : 'O QR Code contém um endereço de consulta.'}</span>{draft.consultaUrl && <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}<a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a></div>}</div>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <div className="table-wrap review-table"><table><thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL</th><th></th></tr></thead><tbody>{draft.items.map((it, i) => <tr key={i}><td><input className="inline-input name-field" value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/></td><td><input className="inline-input small-field" type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td><td><input className="inline-input unit-field" value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td><td><input className="inline-input small-field" type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td><td><b>{money(Number(it.quantity || 0) * Number(it.unitPrice || 0))}</b></td><td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }))}><Icon type="close" size={15}/></button></td></tr>)}</tbody></table></div>
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total estimado</span><b>{money(draft.items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unitPrice || 0), 0))}</b></div></div>
