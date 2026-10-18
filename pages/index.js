@@ -95,16 +95,12 @@ function parseReceiptOcr(text) {
 
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
-  const [session, setSession] = useState(null);
-  const [authChecked, setAuthChecked] = useState(!HAS_SUPABASE_CONFIG);
-  const [authMode, setAuthMode] = useState('login');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authMessage, setAuthMessage] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
+  const [accessLoaded, setAccessLoaded] = useState(!HAS_SUPABASE_CONFIG);
+  const [accessGranted, setAccessGranted] = useState(!HAS_SUPABASE_CONFIG);
+  const [accessMessage, setAccessMessage] = useState('');
   const [dataReady, setDataReady] = useState(!HAS_SUPABASE_CONFIG);
   const [saveStatus, setSaveStatus] = useState('');
-  const [dataRetry, setDataRetry] = useState(0);
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
@@ -126,35 +122,52 @@ export default function Home() {
   const [ocrProgress, setOcrProgress] = useState(0);
   const uploadRef = useRef(null);
 
+  async function loadSharedInventory(code) {
+    if (!supabase || !code) return false;
+    const { data, error: loadError } = await supabase.rpc('inventory_get', { p_access_code: code });
+    if (loadError || !data) {
+      setAccessMessage('O link de acesso não é válido ou o estoque está indisponível. Peça ao responsável o link atualizado.');
+      setAccessGranted(false);
+      setDataReady(false);
+      setAccessCode('');
+      try { sessionStorage.removeItem('projeto-gpt-access'); } catch (_) {}
+      return false;
+    }
+    const state = data || { products: [], movements: [], documents: [] };
+    setProducts(Array.isArray(state.products) ? state.products : []);
+    setMovements(Array.isArray(state.movements) ? state.movements : []);
+    setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    setAccessCode(code);
+    setAccessGranted(true);
+    setDataReady(true);
+    setLoaded(true);
+    setSaveStatus('Sincronizado');
+    try { sessionStorage.setItem('projeto-gpt-access', code); } catch (_) {}
+    return true;
+  }
+
   useEffect(() => {
     if (supabase) {
-      let active = true;
-      supabase.auth.getSession().then(({ data, error: sessionError }) => {
-        if (!active) return;
-        if (sessionError) setAuthMessage('Não foi possível consultar a sessão. Atualize a página e tente novamente.');
-        setSession(data?.session || null);
-        setAuthChecked(true);
-      }).catch(() => {
-        if (!active) return;
-        setAuthMessage('Não foi possível conectar ao serviço de autenticação.');
-        setAuthChecked(true);
-      });
-      const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-        setSession(nextSession || null);
-        setAuthChecked(true);
-        setLoaded(false);
+      let code = '';
+      try {
+        code = new URLSearchParams(window.location.hash.slice(1)).get('access') || sessionStorage.getItem('projeto-gpt-access') || '';
+      } catch (_) {}
+      setAccessLoaded(true);
+      if (code) loadSharedInventory(code);
+      else {
+        setAccessMessage('Abra o link compartilhado pela cafeteria para acessar o estoque.');
+        setAccessGranted(false);
         setDataReady(false);
-        setAuthMessage('');
-      });
-      return () => { active = false; data.subscription.unsubscribe(); };
+      }
+      return;
     }
     try {
       const saved = localStorage.getItem('projeto-gpt-stock-v1');
       if (saved) {
-        const data = JSON.parse(saved);
-        if (Array.isArray(data.products)) setProducts(data.products);
-        if (Array.isArray(data.movements)) setMovements(data.movements);
-        if (Array.isArray(data.documents)) setDocuments(data.documents);
+        const state = JSON.parse(saved);
+        if (Array.isArray(state.products)) setProducts(state.products);
+        if (Array.isArray(state.movements)) setMovements(state.movements);
+        if (Array.isArray(state.documents)) setDocuments(state.documents);
       }
     } catch (_) {}
     setLoaded(true);
@@ -162,96 +175,37 @@ export default function Home() {
   }, [supabase]);
 
   useEffect(() => {
-    if (!supabase || !session) {
-      if (supabase && authChecked && !session) {
-        setProducts([]);
-        setMovements([]);
-        setDocuments([]);
-        setLoaded(true);
-        setDataReady(false);
-      }
-      return;
-    }
-    let active = true;
-    setLoaded(false);
-    setDataReady(false);
-    supabase.from('inventory_state')
-      .select('state')
-      .eq('user_id', session.user.id)
-      .maybeSingle()
-      .then(({ data, error: dbError }) => {
-        if (!active) return;
-        if (dbError) {
-          setAuthMessage('Não foi possível ler o banco de dados. Verifique se a estrutura SQL foi aplicada no projeto Supabase.');
-          setLoaded(true);
-          return;
-        }
-        const state = data?.state || { products: [], movements: [], documents: [] };
-        setProducts(Array.isArray(state.products) ? state.products : []);
-        setMovements(Array.isArray(state.movements) ? state.movements : []);
-        setDocuments(Array.isArray(state.documents) ? state.documents : []);
-        setLoaded(true);
-        setDataReady(true);
-      })
-      .catch(() => {
-        if (!active) return;
-        setAuthMessage('Falha ao carregar os dados. Confira a conexão com o banco e tente novamente.');
-        setLoaded(true);
-      });
-    return () => { active = false; };
-  }, [supabase, session?.user?.id, authChecked, dataRetry]);
-
-  useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents })); } catch (_) {}
   }, [loaded, products, movements, documents, supabase]);
 
   useEffect(() => {
-    if (!supabase || !session || !dataReady) return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode) return;
     setSaveStatus('Salvando…');
     const timer = setTimeout(async () => {
-      const payload = { user_id: session.user.id, state: { products, movements, documents }, updated_at: new Date().toISOString() };
-      const { error: saveError } = await supabase.from('inventory_state').upsert(payload, { onConflict: 'user_id' });
+      const { error: saveError } = await supabase.rpc('inventory_save', {
+        p_access_code: accessCode,
+        p_state: { products, movements, documents }
+      });
       if (saveError) {
         setSaveStatus('Falha ao salvar');
-        setToast('Não foi possível salvar no banco. Confira a conexão antes de continuar.');
+        setToast('Não foi possível salvar no estoque compartilhado. Confira a conexão antes de continuar.');
       } else {
         setSaveStatus('Sincronizado');
       }
     }, 650);
     return () => clearTimeout(timer);
-  }, [supabase, session?.user?.id, dataReady, products, movements, documents]);
+  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents]);
 
-  async function handleAuthSubmit(event) {
-    event.preventDefault();
-    if (!supabase || !authEmail.trim() || authPassword.length < 8) {
-      setAuthMessage('Informe um e-mail válido e uma senha com pelo menos 8 caracteres.');
-      return;
-    }
-    setAuthBusy(true);
-    setAuthMessage('');
-    try {
-      if (authMode === 'signup') {
-        const { data, error: signUpError } = await supabase.auth.signUp({ email: authEmail.trim(), password: authPassword });
-        if (signUpError) throw signUpError;
-        setAuthMessage(data.session ? 'Conta criada. Entrando…' : 'Conta criada. Confira seu e-mail para confirmar o cadastro e depois entre.');
-        if (data.session) setSession(data.session);
-      } else {
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email: authEmail.trim(), password: authPassword });
-        if (signInError) throw signInError;
-      }
-    } catch (error) {
-      setAuthMessage(error?.message || 'Não foi possível autenticar. Confira os dados e tente novamente.');
-    } finally {
-      setAuthBusy(false);
-    }
+  function handleLock() {
+    try { sessionStorage.removeItem('projeto-gpt-access'); } catch (_) {}
+    setAccessCode('');
+    setAccessGranted(false);
+    setDataReady(false);
+    setAccessMessage('Abra o link compartilhado pela cafeteria para acessar o estoque.');
+    setSaveStatus('');
   }
 
-  async function handleSignOut() {
-    if (!supabase) return;
-    const { error: signOutError } = await supabase.auth.signOut();
-    if (signOutError) setToast('Não foi possível encerrar a sessão.');
-  }
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 3300);
@@ -393,14 +347,14 @@ export default function Home() {
     setView('documents');
   }
 
-  if (supabase && !authChecked) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Conectando com segurança…</b><p>Verificando sua sessão.</p></div></div></div>;
+  if (supabase && !accessLoaded) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
   }
-  if (supabase && !session) {
-    return <div className="auth-screen"><section className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-eyebrow">CONTROLE DE ESTOQUE</div><h1>{authMode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h1><p className="auth-intro">{authMode === 'login' ? 'Entre para acessar produtos, compras e movimentações.' : 'Sua conta terá seus próprios dados de estoque.'}</p><form className="auth-form" onSubmit={handleAuthSubmit}><label className="field"><span>E-mail</span><input type="email" autoComplete="email" required value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="voce@exemplo.com"/></label><label className="field"><span>Senha</span><input type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} minLength={8} required value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="Pelo menos 8 caracteres"/></label>{authMessage && <div className="auth-message" role="status">{authMessage}</div>}<button className="btn primary auth-submit" type="submit" disabled={authBusy}>{authBusy ? 'Aguarde…' : authMode === 'login' ? 'Entrar' : 'Criar conta'}</button></form><div className="auth-switch">{authMode === 'login' ? 'Ainda não tem uma conta?' : 'Já tem uma conta?'} <button onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setAuthMessage(''); }}>{authMode === 'login' ? 'Criar conta' : 'Entrar'}</button></div><div className="auth-security"><Icon type="check" size={16}/> Cada usuário só acessa seu próprio estoque.</div></section></div>;
+  if (supabase && !accessGranted) {
+    return <div className="auth-screen"><section className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-eyebrow">ESTOQUE DA EQUIPE</div><h1>Acesso compartilhado</h1><p className="auth-intro">Este estoque não usa contas individuais. Abra o link de acesso fornecido pelo responsável da cafeteria. O link pode ser salvo nos computadores usados pela equipe.</p>{accessMessage && <div className="auth-message" role="status">{accessMessage}</div>}<div className="auth-security"><Icon type="check" size={16}/> Um estoque único para os três funcionários e o dono.</div></section></div>;
   }
-  if (supabase && session && !dataReady) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>PROJETO GPT</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando seu estoque…</b><p>Buscando seus dados salvos.</p>{authMessage && <span className="auth-message">{authMessage}</span>}{authMessage && <button className="btn secondary auth-retry" onClick={() => { setAuthMessage(''); setDataRetry((n) => n + 1); }}>Tentar novamente</button>}</div></div></div>;
+  if (supabase && accessGranted && !dataReady) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
   return <div className="shell">
@@ -412,10 +366,10 @@ export default function Home() {
         <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Documentos fiscais</span><i>{documents.length + (draft ? 1 : 0)}</i></button>
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
       </nav>
-      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p><button onClick={() => uploadRef.current?.click()}>Importar documento <Icon type="chevron" size={14}/></button></div><div className="user-row"><span className="user-avatar">LG</span><span><b>{session?.user?.email || "Administrador"}</b><small>{supabase ? saveStatus || "Banco compartilhado" : "Protótipo local"}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco de dados.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
+      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p><button onClick={() => uploadRef.current?.click()}>Importar documento <Icon type="chevron" size={14}/></button></div><div className="user-row"><span className="user-avatar">LG</span><span><b>Equipe da cafeteria</b><small>{supabase ? saveStatus || "Banco compartilhado" : "Protótipo local"}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco compartilhado da equipe.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
     </aside>
     <main className="main"><input ref={uploadRef} className="hidden-input" type="file" accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => uploadFile(e.target.files && e.target.files[0])}/>
-      <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>{supabase ? "Banco conectado" : "Protótipo local"}</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><button className="user-avatar user-avatar-button" title={session?.user?.email || "Administrador"} onClick={handleSignOut}>{supabase ? "Sair" : "LG"}</button></div></header>
+      <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><button className="user-avatar user-avatar-button" title={supabase ? "Bloquear este dispositivo" : "Administrador"} onClick={supabase ? handleLock : () => setToast("Modo de demonstração local.")}>{supabase ? "Bloq." : "LG"}</button></div></header>
       <div className="content">
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}<button className="btn primary" onClick={view === 'documents' ? () => uploadRef.current?.click() : () => openProduct(null)}><Icon type={view === 'documents' ? 'upload' : 'plus'} size={18}/>{view === 'documents' ? 'Importar documento' : 'Novo produto'}</button></div></div>
 
