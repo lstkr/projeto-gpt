@@ -1812,7 +1812,8 @@ export default function Home() {
         normalizeReceiptName(d.supplier) === normalizeReceiptName(draft.supplier) &&
         (!d.date || !draft.date || d.date === draft.date)));
     if (duplicate) { setError('Esta nota já foi lançada no estoque. Para corrigir, peça ao Gestor o estorno da entrada anterior.'); return; }
-    const items = draft.items;
+    // Keep an immutable copy: each fiscal row stores the definitive catalog ID.
+    const items = draft.items.map((item) => ({ ...item }));
     const nextProducts = [...products];
     const nextMovements = [...movements];
     const documentId = uid();
@@ -1827,7 +1828,7 @@ export default function Home() {
     const lineDiscounts = items.reduce((sum, item) => sum + Math.max(0, Number(item.itemDiscount || 0)), 0);
     const remainingDiscount = Math.max(0, Number(draftDiscount) - lineDiscounts);
     const discountBase = Math.max(0, gross - lineDiscounts);
-    items.forEach((it) => {
+    items.forEach((it, itemIndex) => {
       if (!shouldPostReceiptItem(it)) return; // Retain in fiscal history; do not mutate stock.
       const itemGross = receiptItemTotal(it);
       const base = Math.max(0, itemGross - Math.max(0, Number(it.itemDiscount || 0)));
@@ -1861,6 +1862,9 @@ export default function Home() {
         productId = uid();
         nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), supplierCodes: issuer && fiscalCode ? [{ cnpj: issuer, code: it.code }] : [], category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number.isFinite(netUnitCost) ? netUnitCost : 0, updated: dateNow() });
       }
+      // Even when the reviewer explicitly selected "novo cadastro", never
+      // persist the sentinel; an invoice must reference the real product ID.
+      items[itemIndex] = { ...it, productId };
       const movementId = uid();
       stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
       nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
