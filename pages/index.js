@@ -1407,32 +1407,33 @@ export default function Home() {
 
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, [key]: number };
-      if (key === 'subtotal' || key === 'discount') {
-        const subtotal = key === 'subtotal' ? number : Number(d.subtotal ?? d.items.reduce((sum, item) => sum + receiptItemTotal(item), 0));
-        const discount = key === 'discount' ? number : Number(d.discount || 0);
-        next.total = Math.round((subtotal - discount) * 100) / 100;
-      }
-      return next;
-    });
+    setDraft((d) => d ? ({ ...d, [key]: number, totalsReviewed: false,
+      officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
+      reviewedItems: { ...(d.reviewedItems || {}), [index]: false },
+      totalsReviewed: false,
+      officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
         const isNumeric = ['quantity', 'unitPrice', 'lineTotal'].includes(key);
         const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
+        // Printed fiscal line totals are independent facts: do not overwrite them
+        // when a reviewer fixes the quantity or unit price.
         if (key === 'quantity' || key === 'unitPrice') {
-          next.lineTotal = Math.round(Number(next.quantity || 0) * Number(next.unitPrice || 0) * 100) / 100;
+          next.readingWarning = 'Quantidade ou preço alterado; confira também o total da linha.';
         }
         return next;
       })
     }));
   }
-  async function consultOfficialAutomatically(url, expectedKey = '') {
+
+  useEffect(() => {
+    if (!draft?.consultaUrl || !draft?.qrUrlPreserved || draft.officialCompared) return;
+    const url = draft.consultaUrl;
+    const expectedKey = draft.accessKey;
     let validQr = false;
     try {
       const parsed = new URL(url);
@@ -1440,44 +1441,50 @@ export default function Home() {
       const pathOk = /^\/Dfe\/QrCodeNFce\/?$/i.test(parsed.pathname) || /^\/NFCE\/NFCE-COM\.aspx$/i.test(parsed.pathname);
       const payload = parsed.searchParams.get('p') || '';
       validQr = parsed.protocol === 'https:' && hosts.includes(parsed.hostname) && pathOk &&
-        /^\d{44}\|/.test(payload) && validateNfceAccessKey(payload.split('|')[0]);
+        /^\d{44}\|/.test(payload) && validateNfceAccessKey(payload.split('|')[0]) &&
+        payload.split('|')[0] === expectedKey;
     } catch (_) {}
     if (!validQr) {
-      setDraft((d) => d ? ({ ...d, officialStatus: 'Não encontrei uma URL de QR Code completa e válida. Confira os dados manualmente.' }) : d);
+      setDraft((d) => d && d.consultaUrl === url
+        ? { ...d, officialStatus: 'QR Code incompleto. Confira a nota manualmente.', officialOrigin: '' } : d);
       return;
     }
-    setDraft((d) => d ? ({ ...d, officialStatus: 'Consultando automaticamente a NFC-e na SVRS…' }) : d);
-    try {
-      const response = await fetch('/api/consulta-nfce', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
-      const officialItems = Array.isArray(data.items) ? data.items : [];
-      if (!officialItems.length) throw new Error('A página oficial foi aberta, mas os itens não puderam ser extraídos com segurança.');
-      const totals = data.totals || {};
-      setDraft((d) => {
-        if (!d || d.consultaUrl !== url || (expectedKey && d.accessKey && expectedKey !== d.accessKey)) return d;
-        return {
-          ...d, officialItems, officialCompared: true,
-          officialSubtotal: totals.subtotal,
-          officialDiscount: totals.discount,
-          officialTotal: totals.total,
-          officialStatus: 'Consulta oficial lida automaticamente: ' + officialItems.length + ' itens. Confira as divergências abaixo.'
-        };
-      });
-      setError('');
-    } catch (err) {
-      setDraft((d) => d && d.consultaUrl === url ? ({ ...d, officialStatus: err.message || 'Não foi possível consultar a NFC-e automaticamente.' }) : d);
-    }
-  }
-
-  useEffect(() => {
-    if (!draft?.consultaUrl || !draft?.qrUrlPreserved || draft.officialCompared || draft.officialStatus) return;
-    void consultOfficialAutomatically(draft.consultaUrl, draft.accessKey);
-  }, [draft?.consultaUrl, draft?.qrUrlPreserved, draft?.officialCompared, draft?.officialStatus]);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    setDraft((d) => d && d.consultaUrl === url ? { ...d, officialStatus: 'Consultando a SEFAZ (até 10 segundos)…' } : d);
+    (async () => {
+      try {
+        const response = await fetch('/api/consulta-nfce', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }), signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (controller.signal.aborted) return;
+        if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
+        if (data.source !== 'SVRS' || data.accessKey !== expectedKey)
+          throw new Error('A resposta fiscal não corresponde à chave deste cupom.');
+        const officialItems = Array.isArray(data.items) ? data.items : [];
+        if (!officialItems.length) throw new Error('A SEFAZ não disponibilizou os itens num formato legível.');
+        const totals = data.totals || {};
+        setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
+          ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
+              officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
+              officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
+              officialStatus: 'Consulta automática concluída. Compare as linhas antes de lançar.' } : d);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setDraft((d) => d && d.consultaUrl === url
+          ? { ...d, officialStatus: err.message || 'SEFAZ indisponível. Confira a nota manualmente.' } : d);
+      } finally {
+        clearTimeout(timeout);
+        if (controller.signal.aborted) {
+          setDraft((d) => d && d.consultaUrl === url && !d.officialCompared
+            ? { ...d, officialStatus: 'A SEFAZ não respondeu em até 10 segundos. Confira os campos destacados.' } : d);
+        }
+      }
+    })();
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [draft?.consultaUrl, draft?.qrUrlPreserved, draft?.accessKey]);
 
   function checkOfficialText() {
     const raw = String(draft?.officialText || '').trim();
@@ -1492,6 +1499,8 @@ export default function Home() {
       ...d,
       officialItems,
       officialCompared: true,
+      officialOrigin: 'texto-manual',
+      reviewedItems: {}, totalsReviewed: false,
       officialSubtotal: totals.subtotal,
       officialDiscount: totals.discount,
       officialTotal: totals.total
@@ -1504,12 +1513,14 @@ export default function Home() {
     setDraft((d) => ({
       ...d,
       items: d.officialItems.map((item) => ({ ...item })),
+      reviewedItems: {}, totalsReviewed: false,
+      officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
       discount: d.officialDiscount ?? d.discount,
       total: d.officialTotal ?? d.total,
-      officialVerified: true,
+      officialVerified: d.officialOrigin === 'sefaz',
       source: String(d.source || '').includes('consulta pública') ? d.source : (String(d.source || '') + ' + consulta pública'),
-      totalsSource: 'Consulta pública (conferida manualmente)'
+      totalsSource: d.officialOrigin === 'sefaz' ? 'SEFAZ (consulta automática)' : 'Texto de consulta (não autenticado)'
     }));
     setError('');
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
