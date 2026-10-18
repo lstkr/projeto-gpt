@@ -140,7 +140,8 @@ function parseReceiptOcr(text) {
     rows.push({
       code: row.code, name: name.slice(0, 120),
       quantity, unit: row.unit || 'un',
-      unitPrice, lineTotal: cents(lineTotal), readingWarning
+      unitPrice, lineTotal: cents(lineTotal), itemDiscount: cents(row.itemDiscount || 0),
+      unitInferred: !row.unit, readingWarning
     });
     row = null;
   };
@@ -148,7 +149,13 @@ function parseReceiptOcr(text) {
     const line = lines[i];
     const n = normalize(line);
     if (endsTable(line)) { flush(); break; }
-    if (/\b(DESCONTO|VALOR LIQUIDO|TROCO|P\.?I\.?X|CARTAO)\b/.test(n)) continue;
+    if (/\bDESCONTO\b/.test(n)) {
+      // Item-level discount commonly appears immediately below its product on thermal paper.
+      const amounts = [...line.matchAll(amountPattern)].map((m) => localizedValue(m[0]));
+      if (row && amounts.length) row.itemDiscount = (row.itemDiscount || 0) + amounts[amounts.length - 1];
+      continue;
+    }
+    if (/\b(VALOR LIQUIDO|TROCO|P\.?I\.?X|CARTAO)\b/.test(n)) continue;
     if (/^(?:C[O0]DIGO|DESCRICAO|QTDE|QTD|UN\b|VL\b|V\.UNIT\b|V\.TOTAL\b)/.test(n) && !/^\d/.test(n)) continue;
     const codeMatch = line.match(codePattern);
     const suffix = codeMatch?.[2]?.trim() || '';
@@ -156,7 +163,7 @@ function parseReceiptOcr(text) {
     if (isProductCode) {
       seenProductCode = true;
       flush();
-      row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '' };
+      row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '', itemDiscount: 0 };
       if (suffix) {
         const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
         if (nameOnly) row.names.push(nameOnly);
@@ -359,7 +366,9 @@ function mergeReceiptCandidates(primary, alternate) {
     const chosen = !valid(current) && valid(other) ? other : current;
     merged[i] = { ...chosen, code: chosen.code || current.code || other.code,
       name: normalizeReceiptName(current.name).length >= otherName.length ? current.name : other.name,
-      readingWarning: warning };
+      readingWarning: warning,
+      itemDiscount: Math.max(Number(current.itemDiscount || 0), Number(other.itemDiscount || 0)),
+      unitInferred: Boolean(current.unitInferred && other.unitInferred) };
   }
   return merged;
 }
@@ -673,6 +682,7 @@ function receiptItemTotal(item) {
   return Math.round(Number(item?.quantity || 0) * Number(item?.unitPrice || 0) * 100) / 100;
 }
 
+
 function parseReceiptTotals(text) {
   const totals = { subtotal: null, discount: null, total: null };
   const moneyPattern = /(?:R\$\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+)[,.]\d{2})/g;
@@ -680,14 +690,17 @@ function parseReceiptTotals(text) {
   const amountValues = (line) => [...String(line || '').matchAll(moneyPattern)]
     .map((match) => localizedValue(match[1]))
     .filter((value) => Number.isFinite(value) && value >= 0);
+  let summary = false;
   for (const line of String(text || '').split(/\r?\n/)) {
     const n = normalize(line);
+    if (/QTD(?:E)?\s*TOTAL|TOTAL DE ITENS|SUB[ -]?TOTAL/.test(n)) summary = true;
     const values = amountValues(line);
     if (!values.length) continue;
-    if (totals.subtotal === null && /\bSUB[\s-]*TOTAL\b|\bSUBTOTAL\b/.test(n)) totals.subtotal = values[0];
-    if (totals.discount === null && /\bDESCONTO\b/.test(n)) totals.discount = values[0];
-    if (totals.total === null && (/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
-        !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n)) totals.total = values[0];
+    if (/\bSUB[\s-]*TOTAL\b/.test(n)) totals.subtotal = values[0];
+    if (/\bDESCONTO\b/.test(n) && (summary || totals.discount === null)) totals.discount = values[0];
+    if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
+        !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n))
+      totals.total = values[0];
   }
   return totals;
 }
@@ -696,21 +709,27 @@ function reconcileReceiptTotals(primaryText, alternateText, items) {
   const primary = parseReceiptTotals(primaryText);
   const alternate = parseReceiptTotals(alternateText);
   const itemSubtotal = Math.round((items || []).reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100;
+  const itemDiscount = Math.round((items || []).reduce((sum, item) => sum + Number(item.itemDiscount || 0), 0) * 100) / 100;
   const subtotal = primary.subtotal ?? alternate.subtotal ?? itemSubtotal;
-  const discount = primary.discount ?? alternate.discount ?? 0;
+  const discount = primary.discount ?? alternate.discount ?? itemDiscount;
   const expected = Math.round((Number(subtotal) - Number(discount)) * 100) / 100;
-  const candidates = [primary.total, alternate.total].filter((value) => value !== null);
-  let total = candidates.length ? candidates[0] : expected;
-  if (candidates.length > 1) {
-    total = candidates.sort((a, b) => Math.abs(a - expected) - Math.abs(b - expected))[0];
-  }
+  // Preserve the printed total as independent evidence. Never choose the OCR
+  // total that merely happens to be closer to another OCR-derived number.
+  const total = primary.total ?? alternate.total ?? expected;
+  const warnings = [];
+  if (primary.total != null && alternate.total != null && Math.abs(primary.total - alternate.total) > 0.02)
+    warnings.push('As duas leituras discordam sobre o total final.');
+  if (Math.abs(itemSubtotal - subtotal) > 0.05) warnings.push('Soma das linhas diferente do subtotal fiscal.');
+  if (Math.abs(expected - total) > 0.05) warnings.push('Subtotal menos desconto difere do total impresso.');
+  if (itemDiscount > discount + 0.02) warnings.push('Descontos nas linhas maiores que o desconto total.');
   return {
     subtotal: Math.round(Number(subtotal) * 100) / 100,
     discount: Math.round(Number(discount) * 100) / 100,
     total: Math.round(Number(total) * 100) / 100,
+    totalsWarning: warnings.join(' '),
     totalsSource: primary.total !== null || primary.subtotal !== null || primary.discount !== null
-      ? 'OCR (leitura principal)'
-      : alternate.total !== null || alternate.subtotal !== null || alternate.discount !== null
+      ? 'OCR (leitura principal)' :
+      alternate.total !== null || alternate.subtotal !== null || alternate.discount !== null
         ? 'OCR (leitura alternativa)' : 'Calculado pelos itens'
   };
 }
@@ -1184,7 +1203,7 @@ export default function Home() {
       done: issues.length === 0 || draft.reviewedItems?.[index] === true };
   });
   const totalsRequireReview = Boolean(draft && (
-    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch ||
+    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft.totalsWarning) ||
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
@@ -1332,6 +1351,7 @@ export default function Home() {
               discount: invoiceTotals.discount,
               total: invoiceTotals.total,
               totalsSource: invoiceTotals.totalsSource,
+              totalsWarning: invoiceTotals.totalsWarning,
               items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
             });
           }
@@ -1570,7 +1590,7 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if ((totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch) &&
+    if ((totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft?.totalsWarning)) &&
       String(draft?.divergenceReason || '').trim().length < 8) {
       setError('Justifique a divergência dos totais (mínimo de 8 caracteres) antes de continuar.');
       return;
@@ -1782,7 +1802,7 @@ export default function Home() {
                     <td><input className="inline-input small-field" style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/></td>
+                    <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:195}}>
                       {review.requiresReview ? <>
                         <label style={{display:'flex',gap:6,alignItems:'center',fontSize:12,fontWeight:600,cursor:'pointer'}}>
@@ -1807,6 +1827,7 @@ export default function Home() {
               <label><span>Acréscimos / frete (R$)</span><input type="number" min="0" step="0.01" value={draftExtras} onChange={(e) => changeInvoiceAmount('additionalCharges', e.target.value)}/></label>
               <label><span>Total final (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftTotal} onChange={(e) => changeInvoiceAmount('total', e.target.value)}/></label>
             </div>
+            {draft.totalsWarning && <div className="notice" style={{marginTop:10}}>{draft.totalsWarning}</div>}
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
             {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>Total final ({money(draftTotal)}) diferente de subtotal − desconto + acréscimos ({money(draftSubtotal - draftDiscount + draftExtras)}).</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
@@ -1816,7 +1837,7 @@ export default function Home() {
                   onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked }))}/>
                 <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
               </label>
-              {(totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch) && <label style={{display:'block',marginTop:10}}>
+              {(totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft.totalsWarning)) && <label style={{display:'block',marginTop:10}}>
                 Justificativa para a divergência *
                 <input className="inline-input" style={{display:'block',width:'100%',marginTop:5}}
                   value={draft.divergenceReason || ''} onChange={(e) => changeDraft('divergenceReason',e.target.value)}
