@@ -48,7 +48,7 @@ function htmlToText(html) {
 }
 
 function parseMoney(raw) {
-  const tokens = String(raw || '').match(/(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{2,4}|\.\d{2,4})/g) || [];
+  const tokens = String(raw || '').match(/(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,4}|\.\d{1,4})?/g) || [];
   if (!tokens.length) return null;
   const candidate = tokens[tokens.length - 1];
   const number = Number(candidate.includes(',') ? candidate.replace(/\./g, '').replace(',', '.') : candidate);
