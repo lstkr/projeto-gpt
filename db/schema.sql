@@ -102,7 +102,9 @@ returns jsonb language plpgsql security definer set search_path = ''
 as $function$
 declare
   current_state jsonb;
+  output_state jsonb;
   user_row private.app_users%rowtype;
+  visible_products jsonb;
 begin
   select u.* into user_row from private.app_sessions s
     join private.app_users u on u.id = s.user_id
@@ -111,11 +113,24 @@ begin
   if not found then
     raise exception using errcode = '28000', message = 'Sessão inválida ou expirada. Entre novamente.';
   end if;
+
   select state into current_state from public.shared_inventory where id = true;
-  return coalesce(current_state, '{"products":[],"movements":[],"documents":[]}'::jsonb)
-    || jsonb_build_object('user', jsonb_build_object(
-      'username', user_row.username, 'display_name', user_row.display_name, 'role', user_row.role
-    ));
+  current_state := coalesce(current_state, '{"products":[],"movements":[],"documents":[]}'::jsonb);
+
+  if user_row.role = 'admin' then
+    visible_products := coalesce(current_state->'products', '[]'::jsonb);
+  else
+    select coalesce(jsonb_agg(product - 'cost' order by ord), '[]'::jsonb)
+      into visible_products
+      from jsonb_array_elements(coalesce(current_state->'products', '[]'::jsonb))
+        with ordinality as items(product, ord);
+  end if;
+
+  output_state := current_state || jsonb_build_object(
+    'products', visible_products,
+    'user', jsonb_build_object('username', user_row.username, 'display_name', user_row.display_name, 'role', user_row.role)
+  );
+  return output_state;
 end;
 $function$;
 
@@ -125,6 +140,8 @@ as $function$
 declare
   saved_at timestamptz := now();
   user_row private.app_users%rowtype;
+  existing_state jsonb;
+  secured_products jsonb;
 begin
   select u.* into user_row from private.app_sessions s
     join private.app_users u on u.id = s.user_id
@@ -142,6 +159,38 @@ begin
   if octet_length(p_state::text) > 1500000 then
     raise exception using errcode = '22001', message = 'O conteúdo do estoque ultrapassa o limite permitido';
   end if;
+  select state into existing_state from public.shared_inventory where id = true;
+  existing_state := coalesce(existing_state, '{"products":[],"movements":[],"documents":[]}'::jsonb);
+
+  if user_row.role <> 'admin' then
+    -- Staff can edit stock counts/details, but never overwrite admin-owned cost/minimum fields.
+    select coalesce(jsonb_agg(
+      case
+        when exists (
+          select 1 from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
+          where old_product->>'id' = incoming.product->>'id'
+        ) then
+          (incoming.product - 'cost' - 'min') ||
+          jsonb_build_object(
+            'cost', coalesce((
+              select old_product->'cost'
+              from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
+              where old_product->>'id' = incoming.product->>'id' limit 1
+            ), '0'::jsonb),
+            'min', coalesce((
+              select old_product->'min'
+              from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
+              where old_product->>'id' = incoming.product->>'id' limit 1
+            ), '0'::jsonb)
+          )
+        else (incoming.product - 'cost' - 'min') || jsonb_build_object('cost', 0, 'min', 0)
+      end order by incoming.ord
+    ), '[]'::jsonb)
+    into secured_products
+    from jsonb_array_elements(p_state->'products') with ordinality incoming(product, ord);
+    p_state := jsonb_set(p_state, '{products}', secured_products, true);
+  end if;
+
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;
   return jsonb_build_object('ok', true, 'updated_at', saved_at, 'role', user_row.role);
 end;
