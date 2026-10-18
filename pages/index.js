@@ -1325,6 +1325,9 @@ export default function Home() {
     }catch(e){setCountError(e?.message||'Não foi possível configurar a contagem.');}
     finally{setCountBusy(false);}
   }
+  async function completePhysicalCount() {
+    // Finalize a whole-catalog physical count.
+  }
   function saveAdjustment(event) {
     event.preventDefault();
     const amount = Number(adjust.quantity);
