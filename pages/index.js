@@ -142,6 +142,7 @@ function parseReceiptOcr(text) {
         unitPrice = values[1];
         lineTotal = values.length >= 3 ? values[values.length - 1] : quantity * unitPrice;
       }
+      let unit = unitMatch ? unitMatch[1].toLocaleLowerCase('pt-BR') : 'un';
       if (unit === 'unidade' || unit === 'und') unit = 'un';
       if (unit === 'kgs') unit = 'kg';
       if (unit === 'gr') unit = 'g';
@@ -887,7 +888,8 @@ export default function Home() {
           setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
           setDraftQueue([]);
           setDraftBatch(null);
-          setError('Não foi possível interpretar a imagem automaticamente. Preencha os itens manualmente ou tente uma foto de cada cupom, com o texto maior e mais nítido.');
+          const detail = e && e.message ? String(e.message).slice(0, 180) : 'erro não identificado';
+          setError('A leitura automática falhou nesta imagem (' + detail + '). A imagem foi aberta para preenchimento manual; tente novamente depois de atualizar o sistema.');
         } finally {
           if (worker) await worker.terminate().catch(() => {});
           delete window.__ocrReceiptIndex;
