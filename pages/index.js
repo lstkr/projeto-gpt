@@ -346,11 +346,27 @@ function mergeReceiptCandidates(primary, alternate) {
           return previous[other.length] / longer < 0.12;
         })());
     });
-    if (idx < 0) merged.push({ ...item });
-    else if (score(item) > score(merged[idx])) {
-      merged[idx] = { ...item, name: merged[idx].name.length >= item.name.length ? merged[idx].name : item.name, code: item.code || merged[idx].code };
+    if (idx < 0) {
+      merged.push({ ...item });
     } else {
-      merged[idx].code = merged[idx].code || item.code;
+      const current = merged[idx];
+      const currentError = Math.abs(Number(current.quantity || 0) * Number(current.unitPrice || 0) - receiptItemTotal(current));
+      const candidateError = Math.abs(Number(item.quantity || 0) * Number(item.unitPrice || 0) - receiptItemTotal(item));
+      // Never replace a fiscally consistent primary pass with a different quantity
+      // from an alternate pass solely because the alternate description is longer.
+      const primaryValid = Number(current.quantity) > 0 && currentError < 0.055;
+      const candidateValid = Number(item.quantity) > 0 && candidateError < 0.055;
+      if (!primaryValid && candidateValid) {
+        merged[idx] = { ...item, code: item.code || current.code };
+      } else if (!primaryValid && score(item) > score(current)) {
+        merged[idx] = { ...item, code: item.code || current.code };
+      } else if (primaryValid && candidateValid && Math.abs(Number(current.quantity) - Number(item.quantity)) <= 0.001 &&
+        Math.abs(receiptItemTotal(current) - receiptItemTotal(item)) < 0.025 &&
+        normalizeName(item.name).length > normalizeName(current.name).length) {
+        merged[idx] = { ...current, name: item.name };
+      } else {
+        merged[idx].code = merged[idx].code || item.code;
+      }
     }
   }
   return merged.slice(0, 80);
@@ -1153,7 +1169,14 @@ export default function Home() {
             const alternateResult = await worker.recognize(canvases[index]);
             const alternateText = alternateResult.data.text || '';
             const alternateItems = parseReceiptOcr(alternateText);
-            const items = mergeReceiptCandidates(primaryItems, alternateItems);
+            // If either pass recognized real coded lines inside the receipt table,
+            // discard unstructured guesses from the legacy OCR fallback. Those guesses
+            // were adding Sub-Total, tax, payment and misread fragments as products.
+            const primaryCoded = primaryItems.filter((item) => item.code);
+            const alternateCoded = alternateItems.filter((item) => item.code);
+            const items = primaryCoded.length || alternateCoded.length
+              ? mergeReceiptCandidates(primaryCoded, alternateCoded)
+              : mergeReceiptCandidates(primaryItems, alternateItems);
             const invoiceTotals = reconcileReceiptTotals(primaryText, alternateText, items);
             const combinedText = primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText;
             const primaryMeta = detectReceiptMetadata(primaryText);
