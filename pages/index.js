@@ -1326,7 +1326,13 @@ export default function Home() {
     finally{setCountBusy(false);}
   }
   async function completePhysicalCount() {
-    // Finalize a whole-catalog physical count.
+    if(!countDraft||countBusy||!supabase)return;
+    if(products.some((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='')){setCountError('Preencha todos os produtos, inclusive os zerados.');return;}
+    const lines=products.map((p)=>({productId:p.id,counted:Number(String(countDraft[p.id]).replace(',','.'))}));
+    if(lines.some((v)=>!Number.isFinite(v.counted)||v.counted<0||Math.round(v.counted*1000)/1000!==v.counted)){setCountError('Informe quantidades não negativas, com até 3 casas decimais.');return;}
+    const diffs=lines.filter((x)=>x.counted!==Number(products.find((p)=>p.id===x.productId)?.stock||0)).length;
+    if(!window.confirm('Concluir a contagem? '+diffs+' diferenças serão ajustadas no estoque.'))return;
+
   }
   function saveAdjustment(event) {
     event.preventDefault();
