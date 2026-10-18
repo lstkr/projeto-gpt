@@ -6,11 +6,13 @@ const vm = require('node:vm');
 // Exercise the same pure receipt functions used by the production page, without
 // needing a browser or JSX transpilation.
 const source = fs.readFileSync('pages/index.js', 'utf8');
+// Load the real product-code normalizer inside the isolated receipt test VM.
+const productMatching = fs.readFileSync('lib/duplicate-products.mjs','utf8').replace(/^export /gm, '');
 const start = source.indexOf('function localizedValue(raw)');
 const end = source.indexOf('async function prepareReceiptCanvases', start);
 assert.ok(start >= 0 && end > start, 'Receipt functions must be extractable');
 const code = 'const norm = (v) => String(v || "").trim().toLocaleLowerCase("pt-BR");\n' +
-  source.slice(start, end) +
+  productMatching + '\n' + source.slice(start, end) +
   '\n({ parseReceiptOcr, mergeReceiptCandidates, compareInvoiceItems, reconcileReceiptTotals, normalizeReceiptUnit })';
 const rules = vm.runInNewContext(code, { URL, console, TextDecoder });
 
@@ -113,7 +115,7 @@ test('Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 3
     '1,0000 UN 12,9000 12,90',
     'QTD TOTAL DE ITENS 2',
     'VALOR TOTAL R$ 30,90'
-  ].join('\\n');
+  ].join('\n');
   const items = rules.parseReceiptOcr(receipt);
   const totals = rules.reconcileReceiptTotals(receipt, receipt, items);
   assert.equal(items.length, 2);
@@ -133,7 +135,7 @@ test('Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50', () => {
     '1,0000 UN 17,5000 17,50',
     'QTD TOTAL DE ITENS 2',
     'VALOR TOTAL R$ 34,50'
-  ].join('\\n');
+  ].join('\n');
   const items = rules.parseReceiptOcr(receipt);
   const totals = rules.reconcileReceiptTotals(receipt, receipt, items);
   assert.equal(items.length, 2);
