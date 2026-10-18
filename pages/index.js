@@ -165,6 +165,35 @@ function parseReceiptOcr(text) {
   return deduped.slice(0, 80);
 }
 
+function mergeReceiptCandidates(primary, alternate) {
+  const merged = [];
+  const normalizeName = (value) => norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const distance = (a, b) => {
+    if (!a || !b) return Math.max(a.length, b.length);
+    let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const current = [i];
+      for (let j = 1; j <= b.length; j++) current[j] = Math.min(current[j-1] + 1, previous[j] + 1, previous[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      previous = current;
+    }
+    return previous[b.length];
+  };
+  for (const item of [...(primary || []), ...(alternate || [])]) {
+    const key = normalizeName(item.name);
+    if (!key) continue;
+    const duplicate = merged.some((existing) => {
+      const other = normalizeName(existing.name);
+      if (key === other || key.startsWith(other) || other.startsWith(key)) return true;
+      const shorter = Math.min(key.length, other.length);
+      if (shorter >= 10 && (key.slice(0, 10) === other.slice(0, 10))) return true;
+      const longer = Math.max(key.length, other.length);
+      return shorter >= 7 && distance(key, other) / longer < 0.18;
+    });
+    if (!duplicate) merged.push(item);
+  }
+  return merged.slice(0, 80);
+}
+
 function extractAccessKeyFromText(text) {
   const lines = String(text || '').split(/\r?\n/);
   for (const line of lines) {
@@ -658,29 +687,36 @@ export default function Home() {
               }
             }
           });
-          await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
           const receipts = [];
           for (let index = 0; index < canvases.length; index++) {
             window.__ocrReceiptIndex = index;
-            const result = await worker.recognize(canvases[index]);
-            const text = result.data.text || '';
-            const items = parseReceiptOcr(text);
-            const meta = detectReceiptMetadata(text);
+            await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+            const primaryResult = await worker.recognize(canvases[index]);
+            const primaryText = primaryResult.data.text || '';
+            const primaryItems = parseReceiptOcr(primaryText);
+
+            await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+            const alternateResult = await worker.recognize(canvases[index]);
+            const alternateText = alternateResult.data.text || '';
+            const alternateItems = parseReceiptOcr(alternateText);
+            const items = mergeReceiptCandidates(primaryItems, alternateItems);
+            const combinedText = primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText;
+            const meta = detectReceiptMetadata(primaryText) || detectReceiptMetadata(alternateText);
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
-            const accessKey = qr.accessKey || extractAccessKeyFromText(text);
+            const accessKey = qr.accessKey || extractAccessKeyFromText(primaryText) || extractAccessKeyFromText(alternateText);
             const consultaUrl = qr.consultaUrl || (accessKey ? 'https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?chNFe=' + accessKey : '');
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
-              supplier: detectReceiptSupplier(text) || (multiple ? 'Cupom ' + (index + 1) : ''),
+              supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
               invoiceNumber: meta.invoiceNumber,
               date: meta.date,
               accessKey,
               consultaUrl,
-              source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — OCR local)' : 'Foto (OCR local, imagem melhorada)',
+              source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
-              ocrText: text,
+              ocrText: combinedText,
               items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
             });
           }
