@@ -1888,6 +1888,7 @@ export default function Home() {
         {view === 'count' && <section className="panel" style={{padding:20}}>
           <h2>Contagem física do estoque</h2>
           <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
+          <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
           {/* COUNT CONTENT */}
         </section>}
         {view === 'stock' && <>
