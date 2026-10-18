@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
+import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
 const initialProducts = [
   { id: '1', name: 'Café em grãos', sku: 'CAF-001', category: 'Cafés', unit: 'kg', stock: 8.5, min: 3, cost: 42.9 },
@@ -1052,11 +1053,12 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
   const [filter, setFilter] = useState('Todos');
+  const [supplierFilter, setSupplierFilter] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
   const [editing, setEditing] = useState(null);
-  const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0' });
+  const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
   const [draft, setDraft] = useState(null);
   const [draftQueue, setDraftQueue] = useState([]);
@@ -1260,7 +1262,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1331,11 +1333,25 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(b.name, 'pt-BR'));
+  const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
+  const purchaseList = purchaseData.items;
+  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
+  const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
+  const currentHistoryMatches = useMemo(() =>
+    draft ? findHistoricalMatches(draft, documents, products) : [],
+    [draft, documents, products]);
 
   function downloadPurchaseList() {
     if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
-    const rows = [['Produto','Categoria','Estoque atual','Estoque mínimo','Comprar','Unidade','Custo unitário estimado','Subtotal estimado'], ...purchaseList.map((p) => [p.name,p.category || '',Number(p.stock || 0),Number(p.min || 0),p.buy,p.unit || 'un',Number(p.cost || 0),Math.round(p.buy * Number(p.cost || 0) * 100) / 100])];
+    const rows = [['Categoria','Produto','Fornecedor habitual','Estoque atual','Estoque mínimo','Quantidade a comprar','Unidade','Preço médio pago (R$)','Preço de referência (R$)','Origem do preço','Total estimado (R$)']];
+    for (const group of purchaseData.categories) {
+      rows.push([group.name,'','','','','','','','','','']);
+      for (const p of group.items) rows.push([group.name,p.name,p.usualSupplier || 'A definir',p.stock,p.min,p.buy,p.unit,
+        p.averagePaid ?? '',p.unitEstimate ?? '',p.priceSource,p.estimate ?? '']);
+      rows.push([group.name,'SUBTOTAL','','','','','','','','',group.subtotal]);
+    }
+    rows.push(['TOTAL GERAL','','','','','','','','','',purchaseData.total]);
+    if (purchaseData.missingPrices) rows.push(['AVISO',purchaseData.missingPrices + ' produto(s) sem preço de referência; orçamento parcial','','','','','','','','','']);
     const csv = '\uFEFF' + rows.map((row) => row.map((value) => '"' + String(value ?? '').replace(/"/g, '""') + '"').join(';')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'lista-de-compras-cafeteria-' + new Date().toISOString().slice(0,10) + '.csv';
@@ -1344,7 +1360,7 @@ export default function Home() {
 
   function openProduct(product) {
     setEditing(product || null);
-    setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost) } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0' });
+    setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost), preferredSupplier: product.preferredSupplier || '' } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
     setModal('product');
   }
   function saveProduct(event) {
@@ -1595,7 +1611,8 @@ export default function Home() {
         setOcrProgress(0);
         try {
           const receipts = await parseUploadedFile(file);
-          parsed.push(...receipts);
+          parsed.push(...receipts.map((receipt) =>
+            attachPreviousPurchases(receipt, [...parsed, ...documents], products)));
         } catch (e) {
           issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
           parsed.push({
@@ -1621,7 +1638,8 @@ export default function Home() {
   }
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
-    setDraft((d) => d ? ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
+    setDraft((d) => d ? ({ ...d, finalReviewed: key === 'checkedBy' ? d.finalReviewed : false,
+      [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
   }
   function changeNfceAccessKey(value) {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
@@ -1644,13 +1662,13 @@ export default function Home() {
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
     setDraft((d) => d ? ({ ...d, [key]: number, totalsReviewed: false,
-      officialVerified: false }) : d);
+      finalReviewed: false, officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
       reviewedItems: { ...(d.reviewedItems || {}), [index]: false },
-      totalsReviewed: false,
+      finalReviewed: false, totalsReviewed: false,
       officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
@@ -1781,7 +1799,9 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
+    if (!draft?.finalReviewed || !draft?.checkedBy?.trim()) {
+      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    }
     const unresolvedCodes = draft.items.filter(shouldPostReceiptItem).filter((it) =>
       !it.productId && !findReceiptCatalogProduct(it, products, draft.supplierCnpj) &&
       findReceiptCodeConflicts(it, products, draft.supplierCnpj).length > 0);
