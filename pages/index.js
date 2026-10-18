@@ -1281,6 +1281,9 @@ export default function Home() {
     (draft.officialSubtotal != null && Math.abs(draftSubtotal - Number(draft.officialSubtotal)) > 0.05) ||
     (draft.officialDiscount != null && Math.abs(draftDiscount - Number(draft.officialDiscount)) > 0.02)
   ));
+  const currentHistoryMatches = useMemo(() =>
+    draft ? findHistoricalMatches(draft, documents, products) : [],
+    [draft, documents, products]);
   const receiptReviewRows = (draft?.items || []).map((it, index) => {
     const issues = [];
     if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
@@ -1347,9 +1350,6 @@ export default function Home() {
   const purchaseList = purchaseData.items;
   const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
   const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
-  const currentHistoryMatches = useMemo(() =>
-    draft ? findHistoricalMatches(draft, documents, products) : [],
-    [draft, documents, products]);
 
   function downloadPurchaseList() {
     if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
