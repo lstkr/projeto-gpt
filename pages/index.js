@@ -1886,6 +1886,8 @@ export default function Home() {
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {view === 'count' && <section className="panel" style={{padding:20}}>
+          <h2>Contagem física do estoque</h2>
+          <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
           {/* COUNT CONTENT */}
         </section>}
         {view === 'stock' && <>
