@@ -450,3 +450,84 @@ CREATE OR REPLACE FUNCTION public.inventory_delete_document(p_session_token text
 AS $function$ select private.inventory_delete_document_impl(p_session_token, p_document_id); $function$;
 revoke all on function public.inventory_delete_document(text, text) from public;
 grant execute on function public.inventory_delete_document(text, text) to anon, authenticated;
+
+-- Periodic stock counting: only Gestor can set the cadence; staff and Gestor can complete counts.
+-- Full-count completion adjusts quantities atomically and saves the audit trail.
+CREATE OR REPLACE FUNCTION private.inventory_due_date(p_state jsonb)
+ RETURNS date
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO ''
+AS $function$
+declare cfg jsonb:=p_state->'countSettings'; a date; d int; t date;
+begin
+ if cfg->>'enabled'<>'true' then return null; end if;
+ select max((x->>'completedAt')::timestamptz::date) into a from jsonb_array_elements(coalesce(p_state->'stockCounts','[]'::jsonb)) x;
+ a:=coalesce(a,(cfg->>'configuredAt')::date,current_date);
+ if cfg->>'mode'='weekly' then
+  return a+(((cfg->>'weekday')::int-extract(isodow from a)::int+6)%7)+1;
+ end if;
+ if cfg->>'mode'='monthly' then
+  t:=date_trunc('month',a)::date;
+  d:=least((cfg->>'monthDay')::int,extract(day from t+interval '1 month - 1 day')::int);
+  if t+d-1>a then return t+d-1; end if;
+  t:=(t+interval '1 month')::date;
+  return t+least((cfg->>'monthDay')::int,extract(day from t+interval '1 month - 1 day')::int)-1;
+ end if;
+ return a+(cfg->>'intervalDays')::int;
+end; $function$;
+
+CREATE OR REPLACE FUNCTION public.inventory_count_settings(p_token text, p_config jsonb, p_rev bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare s jsonb; role_name text; v bigint; cfg jsonb;
+begin
+ select u.role into role_name from private.app_sessions sess join private.app_users u on u.id=sess.user_id where sess.token_hash=encode(extensions.digest(p_token,'sha256'),'hex') and sess.expires_at>now() and sess.revoked_at is null and u.active;
+ if role_name is distinct from 'admin' then raise exception 'Somente o Gestor pode definir contagens.' using errcode='42501'; end if;
+ if p_config->>'mode' not in ('interval','weekly','monthly') or (p_config->>'intervalDays')::int not between 1 and 365 or (p_config->>'weekday')::int not between 1 and 7 or (p_config->>'monthDay')::int not between 1 and 31 then raise exception 'Configuração inválida.' using errcode='22023'; end if;
+ select state into s from public.shared_inventory where id=true for update;
+ v:=coalesce((s->>'revision')::bigint,0);
+ if v<>p_rev then raise exception 'Estoque alterado. Recarregue.' using errcode='40001'; end if;
+ cfg:=jsonb_build_object('enabled',coalesce((p_config->>'enabled')::boolean,false),'mode',p_config->>'mode','intervalDays',(p_config->>'intervalDays')::int,'weekday',(p_config->>'weekday')::int,'monthDay',(p_config->>'monthDay')::int,'configuredAt',(now() at time zone 'America/Sao_Paulo')::date);
+ update public.shared_inventory set state=s||jsonb_build_object('countSettings',cfg,'revision',v+1),updated_at=now() where id=true;
+ return jsonb_build_object('ok',true,'revision',v+1);
+end; $function$;
+
+CREATE OR REPLACE FUNCTION public.inventory_count_complete(p_token text, p_lines jsonb, p_rev bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare s jsonb; u_name text; rev bigint; p jsonb; l jsonb; qty numeric; oldqty numeric; d numeric; rows jsonb:='[]'::jsonb; audits jsonb:='[]'::jsonb; moves jsonb:='[]'::jsonb; cid text:=gen_random_uuid()::text;
+begin
+ select u.display_name into u_name from private.app_sessions a join private.app_users u on u.id=a.user_id where a.token_hash=encode(extensions.digest(p_token,'sha256'),'hex') and a.expires_at>now() and a.revoked_at is null and u.active;
+ if not found then raise exception 'Sessão inválida.' using errcode='28000'; end if;
+ if jsonb_typeof(p_lines)<>'array' then raise exception 'Contagem inválida.' using errcode='22023'; end if;
+ select state into s from public.shared_inventory where id=true for update;
+ rev:=coalesce((s->>'revision')::bigint,0);
+ if rev<>p_rev then raise exception 'Estoque mudou. Atualize e reconte antes de concluir.' using errcode='40001'; end if;
+ if jsonb_array_length(p_lines)<>jsonb_array_length(s->'products') or jsonb_array_length(p_lines)=0 then raise exception 'Conte todos os produtos cadastrados.' using errcode='22023'; end if;
+ for p in select value from jsonb_array_elements(s->'products') loop
+   if (select count(*) from jsonb_array_elements(p_lines) x where x->>'productId'=p->>'id')<>1 then raise exception 'Há produto ausente ou repetido.' using errcode='22023'; end if;
+   select x.value into l from jsonb_array_elements(p_lines) x(value) where x.value->>'productId'=p->>'id';
+   qty:=(l->>'counted')::numeric;
+   if qty is null or qty<0 or qty>99999999 or qty<>round(qty,3) then raise exception 'Quantidade inválida (máximo 3 casas decimais).' using errcode='22023'; end if;
+   oldqty:=(p->>'stock')::numeric; d:=qty-oldqty;
+   rows:=rows||jsonb_build_array(jsonb_set(p,'{stock}',to_jsonb(qty),true));
+   audits:=audits||jsonb_build_array(jsonb_build_object('productId',p->>'id','name',p->>'name','unit',p->>'unit','expected',oldqty,'counted',qty,'difference',d));
+   if d<>0 then
+    moves:=moves||jsonb_build_array(jsonb_build_object('id',gen_random_uuid()::text,'countId',cid,'productId',p->>'id','product',p->>'name','type',case when d>0 then 'Entrada' else 'Saída' end,'quantity',abs(d),'reason','Ajuste por contagem física','date',to_char(now() at time zone 'America/Sao_Paulo','DD/MM/YYYY HH24:MI'),'by',u_name));
+   end if;
+ end loop;
+ update public.shared_inventory set state=s||jsonb_build_object('products',rows,'movements',moves||coalesce(s->'movements','[]'::jsonb),'stockCounts',jsonb_build_array(jsonb_build_object('id',cid,'completedAt',now(),'by',u_name,'items',audits))||coalesce(s->'stockCounts','[]'::jsonb),'revision',rev+1),updated_at=now() where id=true;
+ return jsonb_build_object('ok',true,'revision',rev+1,'adjustments',jsonb_array_length(moves));
+end; $function$;
+
+revoke all on function public.inventory_count_settings(text,jsonb,bigint) from public;
+grant execute on function public.inventory_count_settings(text,jsonb,bigint) to anon, authenticated;
+revoke all on function public.inventory_count_complete(text,jsonb,bigint) from public;
+grant execute on function public.inventory_count_complete(text,jsonb,bigint) to anon, authenticated;
