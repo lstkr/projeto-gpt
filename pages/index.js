@@ -979,6 +979,10 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
+  const [deletingDocId, setDeletingDocId] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const revisionRef = useRef(0);
+  const saveQueueRef = useRef(Promise.resolve());
   // Off by default: an external fallback uploads a QR-only crop to a third party.
   const [enableExternalQr, setEnableExternalQr] = useState(false);
   const uploadRef = useRef(null);
@@ -996,6 +1000,7 @@ export default function Home() {
       return false;
     }
     const state = data || { products: [], movements: [], documents: [] };
+    revisionRef.current = Number(state.revision || 0);
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
@@ -1075,17 +1080,24 @@ export default function Home() {
   useEffect(() => {
     if (!supabase || !accessGranted || !dataReady || !accessCode) return;
     setSaveStatus('Salvando…');
-    const timer = setTimeout(async () => {
-      const { error: saveError } = await supabase.rpc('inventory_save', {
-        p_session_token: accessCode,
-        p_state: { products, movements, documents }
+    const timer = setTimeout(() => {
+      // Serialize snapshots: each save uses the revision acknowledged by Supabase.
+      // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
+      saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+        const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
+          p_session_token: accessCode,
+          p_state: { products, movements, documents, revision: revisionRef.current }
+        });
+        if (saveError || !saved?.ok) {
+          setSaveStatus('Falha ao salvar');
+          setToast(saveError?.message?.includes('outra sessão')
+            ? 'O estoque mudou em outra sessão. Atualize a página para evitar sobrescrever dados.'
+            : 'Não foi possível salvar no estoque compartilhado. Confira sua sessão e a conexão.');
+        } else {
+          revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
+          setSaveStatus('Sincronizado');
+        }
       });
-      if (saveError) {
-        setSaveStatus('Falha ao salvar');
-        setToast('Não foi possível salvar no estoque compartilhado. Confira a conexão antes de continuar.');
-      } else {
-        setSaveStatus('Sincronizado');
-      }
     }, 650);
     return () => clearTimeout(timer);
   }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents]);
@@ -1508,18 +1520,27 @@ export default function Home() {
     const items = draft.items.filter((it) => it.name.trim() && Number(it.quantity) > 0);
     const nextProducts = [...products];
     const nextMovements = [...movements];
+    const documentId = uid();
+    const stockEntries = [];
     items.forEach((it) => {
       const index = nextProducts.findIndex((p) => norm(p.name) === norm(it.name) && norm(p.unit || 'un') === norm(it.unit || 'un'));
+      let productId;
       if (index >= 0) {
         const old = nextProducts[index];
+        productId = old.id;
         nextProducts[index] = { ...old, stock: Math.round((Number(old.stock) + Number(it.quantity)) * 1000) / 1000, cost: Number(it.unitPrice) > 0 ? Number(it.unitPrice) : old.cost, unit: it.unit || old.unit, updated: dateNow() };
-      } else nextProducts.unshift({ id: uid(), name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number(it.unitPrice) || 0, updated: dateNow() });
-      nextMovements.unshift({ id: uid(), product: it.name.trim(), type: 'Entrada', quantity: Number(it.quantity), reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
+      } else {
+        productId = uid();
+        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number(it.unitPrice) || 0, updated: dateNow() });
+      }
+      const movementId = uid();
+      stockEntries.push({ productId, movementId, quantity: Number(it.quantity) });
+      nextMovements.unshift({ id: movementId, documentId, productId, product: it.name.trim(), type: 'Entrada', quantity: Number(it.quantity), reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, ...documentToSave } = draft;
-    setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: uid(), status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
+    setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries, status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
     setDraftQueue((old) => old.slice(1));
@@ -1528,6 +1549,50 @@ export default function Home() {
     if (uploadRef.current) uploadRef.current.value = '';
     setToast(nextDraft ? 'Entrada registrada. Confira o próximo cupom antes de lançar.' : 'Entrada de ' + items.length + (items.length === 1 ? ' item registrada.' : ' itens registrada.'));
     setView('documents');
+  }
+
+  async function deleteDocument(document) {
+    if (!document?.id || currentUser?.role !== 'admin') {
+      setDeleteError('Somente o Gestor pode excluir uma nota fiscal lançada.');
+      return;
+    }
+    if (!supabase || !accessCode) {
+      setDeleteError('Entre com a conta do Gestor para remover documentos do banco compartilhado.');
+      return;
+    }
+    if (saveStatus !== 'Sincronizado') {
+      setDeleteError('Aguarde a sincronização terminar antes de excluir a nota.');
+      return;
+    }
+    const label = document.invoiceNumber ? 'nº ' + document.invoiceNumber : (document.fileName || 'selecionada');
+    if (!window.confirm(
+      'Excluir definitivamente a nota ' + label + '?\n\n' +
+      'As quantidades lançadas por esta nota serão estornadas do estoque e ' +
+      'suas movimentações de entrada serão removidas.\n\n' +
+      'Esta ação não pode ser desfeita.'
+    )) return;
+    setDeletingDocId(document.id);
+    setDeleteError('');
+    try {
+      await saveQueueRef.current;
+      const { data, error: removalError } = await supabase.rpc('inventory_delete_document', {
+        p_session_token: accessCode,
+        p_document_id: document.id
+      });
+      if (removalError || !data?.ok) {
+        throw new Error(removalError?.message || 'A nota não pôde ser excluída.');
+      }
+      revisionRef.current = Number(data.revision ?? revisionRef.current + 1);
+      const refreshed = await loadSharedInventory(accessCode);
+      if (!refreshed) throw new Error('A nota foi excluída, mas não foi possível atualizar a tela. Entre novamente.');
+      setDetailDoc(null);
+      setToast('Nota excluída pelo Gestor e entrada estornada do estoque.');
+    } catch (err) {
+      setDeleteError(err?.message || 'Não foi possível excluir a nota.');
+      setToast('Exclusão não concluída. Verifique os detalhes da nota.');
+    } finally {
+      setDeletingDocId('');
+    }
   }
 
   if (supabase && !accessLoaded) {
