@@ -1892,7 +1892,15 @@ export default function Home() {
           {countSettings.enabled && <p style={{color:countDue?'#a33':'#356b54'}}>{countDue ? 'Prazo vencido: conferência obrigatória pendente.' : 'A contagem está em dia.'}</p>}
           {stockCounts[0]&&<p>Última conferência: {new Date(stockCounts[0].completedAt).toLocaleString('pt-BR')} · {stockCounts[0].by}</p>}
           {countError&&<div className="error" role="alert">{countError}</div>}
-          {/* COUNT CONFIG */}{/* COUNT TABLE */}{/* COUNT HISTORY */}
+          {currentUser?.role==='admin'&&<div className="panel" style={{padding:15,marginTop:16}}>
+            <h3>Periodicidade obrigatória · Gestor</h3>
+            <label style={{display:'flex',gap:9,alignItems:'center',margin:'12px 0'}}><input type="checkbox" checked={Boolean(settingsForm.enabled)} onChange={(e)=>setSettingsForm({...settingsForm,enabled:e.target.checked})}/> Exigir contagem periódica</label>
+            <div className="meta-fields">
+              <label><span>Periodicidade</span><select value={settingsForm.mode} onChange={(e)=>setSettingsForm({...settingsForm,mode:e.target.value})}><option value="interval">A cada X dias</option><option value="weekly">Dia fixo da semana</option><option value="monthly">Dia fixo do mês</option></select></label>
+              {/* COUNT CONFIG DAY */}
+            </div>
+            <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
+          </div>}{/* COUNT TABLE */}{/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
