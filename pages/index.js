@@ -185,7 +185,9 @@ export default function Home() {
   }
   function uploadFile(file) {
     if (!file) return;
+    if (uploadRef.current) uploadRef.current.value = '';
     setError('');
+    setView('documents');
     const xml = /\.xml$/i.test(file.name) || file.type === 'text/xml' || file.type === 'application/xml';
     if (xml) {
       setProcessingType('xml');
@@ -257,7 +259,8 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    setDocuments((old) => [{ ...draft, id: uid(), status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
+    const { ocrText, ...documentToSave } = draft;
+    setDocuments((old) => [{ ...documentToSave, id: uid(), status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     setDraft(null);
     setError('');
     if (uploadRef.current) uploadRef.current.value = '';
