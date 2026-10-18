@@ -1610,6 +1610,7 @@ export default function Home() {
       discount: d.officialDiscount ?? d.discount,
       total: d.officialTotal ?? d.total,
       officialVerified: d.officialOrigin === 'sefaz',
+      totalsWarning: d.officialOrigin === 'sefaz' && d.officialTotal != null && d.officialSubtotal != null ? '' : d.totalsWarning,
       source: String(d.source || '').includes('consulta pública') ? d.source : (String(d.source || '') + ' + consulta pública'),
       totalsSource: d.officialOrigin === 'sefaz' ? 'SEFAZ (consulta automática)' : 'Texto de consulta (não autenticado)'
     }));
