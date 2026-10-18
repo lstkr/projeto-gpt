@@ -459,3 +459,55 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .duplicate-merge-body { padding: 0 15px 8px; }
   .duplicate-merge-actions { align-items: flex-start; }
 }
+
+
+/* Compras categorizadas, histórico de fornecedores e conferência no rodapé. */
+.purchases-panel,.suppliers-panel { padding: 20px; }
+.purchases-panel .panel-head,.suppliers-panel .panel-head { padding: 0 0 18px; }
+.purchase-overview { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+.purchase-overview > div { flex: 1 1 200px; border: 1px solid #e4ebdf; border-radius: 11px; background: #f6f9f4; padding: 14px; display: flex; flex-direction: column; gap: 7px; }
+.purchase-overview small { color: #718073; font-size: 10px; line-height: 1.5; }
+.purchase-overview strong { font-size: 23px; color: #385c42; }
+.purchase-category { margin: 22px 0; }
+.purchase-category-head { background: #f0f4ec; border: 1px solid #e3ebdd; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-radius: 10px 10px 0 0; }
+.purchase-category-head h3 { font-size: 14px; color: #3c5841; margin: 0; }
+.purchase-category-head span { font-size: 11px; color: #647366; }
+.purchase-category .table-wrap { border: 1px solid #e6ede5; border-top: 0; border-radius: 0 0 10px 10px; }
+.purchase-detail { display: block; font-size: 10px; color: #8b988b; margin-top: 4px; line-height: 1.4; }
+.purchase-inline-edit { font-size: 10px; padding: 6px 0 0; white-space: normal; text-align: left; }
+.purchase-grand-total { border-top: 2px solid #dbe7d8; padding: 18px 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; color: #37533e; font-size: 13px; font-weight: 700; }
+.purchase-grand-total strong { font-size: 24px; }
+.supplier-filters { margin: 12px 0 18px; }
+.supplier-summary { padding: 14px; border: 1px solid #e5ebe4; border-radius: 10px; margin: 12px 0; background: #fbfdfb; }
+.supplier-summary summary { cursor: pointer; display: flex; gap: 14px; justify-content: space-between; align-items: center; }
+.supplier-summary summary > span { display: grid; gap: 5px; }
+.supplier-summary summary b { color: #36513d; font-size: 13px; }
+.supplier-summary summary small { color: #869287; font-size: 10px; }
+.supplier-summary summary strong { color: #47684c; white-space: nowrap; font-size: 13px; }
+.supplier-documents { margin-top: 13px; display: grid; gap: 12px; }
+.supplier-document { padding: 12px; border-radius: 8px; background: #f1f6f1; }
+.supplier-document-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 11px; margin-bottom: 10px; }
+.supplier-document-head b { color: #34523b; }
+.supplier-document-head span { color: #647666; }
+.supplier-document ul { padding: 0; margin: 0; list-style: none; }
+.supplier-document li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid #dfe9df; font-size: 11px; }
+.supplier-document li span { display: grid; gap: 3px; }
+.supplier-document li small { color: #839183; font-size: 10px; }
+.receipt-history-match { margin-top: 8px; display: grid; gap: 4px; padding: 10px; background: #f5f9ed; border-left: 3px solid #b2c56f; font-size: 11px; color: #4d6643; line-height: 1.5; }
+.receipt-history-match span,.receipt-history-match small { overflow-wrap: anywhere; }
+.receipt-history-match small { color: #94651d; }
+.receipt-history-match .text-btn { justify-self: start; padding: 4px 0; }
+.review-final-confirmation { margin: 14px 0; padding: 16px; border-radius: 10px; border: 1px solid #dee6dd; background: #f6f8f4; }
+.review-final-confirmation.is-ready { border-color: #b1d0ae; background: #f2f8f0; }
+.review-final-heading { display: flex; align-items: flex-start; gap: 9px; color: #47634c; }
+.review-final-heading b { font-size: 13px; }
+.review-final-heading p { font-size: 11px; margin: 5px 0 12px; line-height: 1.5; }
+.review-final-fields { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+.review-final-checkbox { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 700; cursor: pointer; flex: 1 1 240px; }
+.review-final-checkbox input { accent-color: #4f8155; }
+.review-final-person { flex: 1 1 220px; min-width: 0; }
+.review-final-person input:disabled { opacity: .6; }
+@media (max-width: 760px) {
+  .purchases-panel,.suppliers-panel { padding: 13px; }
+  .purchase-category-head { align-items: flex-start; flex-direction: column; }
+}
