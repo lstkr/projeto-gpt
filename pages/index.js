@@ -486,25 +486,27 @@ async function prepareReceiptCanvases(file) {
     const yPad = Math.max(8, Math.round(height * 0.012));
     y0 = Math.max(0, y0 - yPad);
     y1 = Math.min(height, y1 + yPad + 1);
-    // Paper shadows and the dense QR matrix can lower the white-pixel score near the footer.
-    // Keep the last 1.5% of a tall image so the QR's bottom modules aren't clipped.
-    y1 = Math.max(y1, Math.floor(height * 0.985));
-    const sh = Math.max(1, y1 - y0);
+    const ocrHeight = Math.max(1, y1 - y0);
+    // QR scanning gets a footer-preserving crop of its own. Keep the OCR crop tight so
+    // background below the receipt doesn't introduce phantom text or product candidates.
+    const qrY1 = Math.max(y1, Math.floor(height * 0.985));
+    const qrHeight = Math.max(1, qrY1 - y0);
 
     const scaledWidth = Math.max(1200, Math.min(1800, Math.round(sw * 2.8)));
-    const scaledHeight = Math.round(sh * scaledWidth / sw);
+    const scaledHeight = Math.round(ocrHeight * scaledWidth / sw);
+    const qrScaledHeight = Math.round(qrHeight * scaledWidth / sw);
     // Keep an unmodified version for QR decoding; thresholding can erase small modules.
     const qrCanvas = document.createElement('canvas');
     qrCanvas.width = scaledWidth;
-    qrCanvas.height = scaledHeight;
-    qrCanvas.getContext('2d').drawImage(image, sx, y0, sw, sh, 0, 0, scaledWidth, scaledHeight);
+    qrCanvas.height = qrScaledHeight;
+    qrCanvas.getContext('2d').drawImage(image, sx, y0, sw, qrHeight, 0, 0, scaledWidth, qrScaledHeight);
     qrCrops.push(qrCanvas);
 
     const canvas = document.createElement('canvas');
     canvas.width = scaledWidth;
     canvas.height = scaledHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, sx, y0, sw, sh, 0, 0, scaledWidth, scaledHeight);
+    ctx.drawImage(image, sx, y0, sw, ocrHeight, 0, 0, scaledWidth, scaledHeight);
     const data = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
     for (let i = 0; i < data.data.length; i += 4) {
       const gray = data.data[i] * 0.299 + data.data[i + 1] * 0.587 + data.data[i + 2] * 0.114;
