@@ -234,6 +234,8 @@ function extractAccessKeyFromText(text) {
   return '';
 }
 
+const PUBLIC_NFCE_CONSULTA_URL = 'https://dfe-portal.svrs.rs.gov.br/Dfe/ConsultaPublicaDfe';
+
 function parseNfceQrPayload(raw) {
   const value = String(raw || '').trim();
   if (!value) return { accessKey: '', consultaUrl: '', qrRaw: '' };
@@ -241,6 +243,7 @@ function parseNfceQrPayload(raw) {
   try {
     parsed = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value.replace(/^\/+/, ''));
   } catch (_) {}
+
   let accessKey = '';
   if (parsed) {
     for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
@@ -258,12 +261,64 @@ function parseNfceQrPayload(raw) {
     const match = digits.match(/\d{44}/);
     if (match) accessKey = match[0];
   }
-  const officialHost = parsed && /(^|\.)sefaz\.rs\.gov\.br$/i.test(parsed.hostname);
-  let consultaUrl = officialHost ? parsed.toString() : '';
-  if (!consultaUrl && accessKey) {
-    consultaUrl = 'https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?chNFe=' + accessKey;
+
+  const host = parsed?.hostname?.toLowerCase() || '';
+  const officialHost = host === 'dfe-portal.svrs.rs.gov.br' ||
+    /(^|\.)sefaz\.rs\.gov\.br$/i.test(host) ||
+    /(^|\.)sefazrs\.rs\.gov\.br$/i.test(host);
+  const path = (parsed?.pathname || '').toLowerCase();
+  const hasParams = Boolean(parsed && [...parsed.searchParams.keys()].length);
+  const hasQrPayload = Boolean(parsed?.searchParams.has('p'));
+  const isIncompleteSyntheticQrLink = host === 'dfe-portal.svrs.rs.gov.br' &&
+    /\/dfe\/qrcodenfce\/?$/.test(path) &&
+    parsed?.searchParams.has('chNFe') &&
+    [...parsed.searchParams.keys()].length === 1;
+  const isPublicQueryPage = host === 'dfe-portal.svrs.rs.gov.br' &&
+    /\/dfe\/consultapublicadfe\/?$/.test(path);
+
+  // Keep a decoded QR URL intact, including version/environment/hash parameters.
+  // A 44-digit key alone is NOT a complete QR payload; fabricating ?chNFe=... on
+  // the QR endpoint causes the SVRS "900 - parâmetro incorreto" response.
+  let consultaUrl = '';
+  if (officialHost && !isIncompleteSyntheticQrLink &&
+      (hasQrPayload || (hasParams && !/\/dfe\/qrcodenfce\/?$/.test(path)))) {
+    consultaUrl = parsed.toString();
+  } else if (isPublicQueryPage) {
+    consultaUrl = parsed.toString();
+  } else if (accessKey) {
+    consultaUrl = PUBLIC_NFCE_CONSULTA_URL;
   }
+
   return { accessKey, consultaUrl, qrRaw: value.slice(0, 700) };
+}
+
+async function decodeNfceQrWithZXing(canvas) {
+  const z = await import('@zxing/library');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const gray = new Uint8ClampedArray(image.width * image.height);
+  for (let p = 0, q = 0; p < image.data.length; p += 4, q++) {
+    gray[q] = Math.round(image.data[p] * 0.299 + image.data[p + 1] * 0.587 + image.data[p + 2] * 0.114);
+  }
+
+  const hints = new Map();
+  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE]);
+  hints.set(z.DecodeHintType.TRY_HARDER, true);
+  for (const invert of [false, true]) {
+    const luminance = invert ? Uint8ClampedArray.from(gray, (v) => 255 - v) : gray;
+    for (const Binarizer of [z.HybridBinarizer, z.GlobalHistogramBinarizer]) {
+      try {
+        const source = new z.RGBLuminanceSource(luminance, image.width, image.height);
+        const bitmap = new z.BinaryBitmap(new Binarizer(source));
+        const reader = new z.MultiFormatReader();
+        reader.setHints(hints);
+        const result = reader.decode(bitmap);
+        reader.reset();
+        if (result?.getText) return result.getText();
+      } catch (_) {}
+    }
+  }
+  return '';
 }
 
 async function detectNfceQrCodes(canvases) {
@@ -292,6 +347,12 @@ async function detectNfceQrCodes(canvases) {
         const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
         if (decoded?.data) found = parseNfceQrPayload(decoded.data);
+      } catch (_) {}
+    }
+    if (!found.accessKey && !found.consultaUrl) {
+      try {
+        const decoded = await decodeNfceQrWithZXing(canvas);
+        if (decoded) found = parseNfceQrPayload(decoded);
       } catch (_) {}
     }
     if (!found.accessKey && !found.consultaUrl && detector) {
