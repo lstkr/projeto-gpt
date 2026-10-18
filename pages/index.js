@@ -600,6 +600,7 @@ export default function Home() {
   function uploadFile(file) {
     if (!file) return;
     setDraftQueue([]);
+    setDraftBatch(null);
     if (uploadRef.current) uploadRef.current.value = '';
     setError('');
     setView('documents');
@@ -631,6 +632,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
+          const qrResults = await detectNfceQrCodes(canvases);
           const { createWorker } = await import('tesseract.js');
           worker = await createWorker('por', 1, {
             logger: (message) => {
@@ -648,11 +650,16 @@ export default function Home() {
             const text = result.data.text || '';
             const items = parseReceiptOcr(text);
             const meta = detectReceiptMetadata(text);
+            const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
+            const accessKey = qr.accessKey || extractAccessKeyFromText(text);
+            const consultaUrl = qr.consultaUrl || (accessKey ? 'https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?chNFe=' + accessKey : '');
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
               supplier: detectReceiptSupplier(text) || (multiple ? 'Cupom ' + (index + 1) : ''),
               invoiceNumber: meta.invoiceNumber,
               date: meta.date,
+              accessKey,
+              consultaUrl,
               source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — OCR local)' : 'Foto (OCR local, imagem melhorada)',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
@@ -664,6 +671,7 @@ export default function Home() {
           window.__ocrReceiptIndex = 0;
           setDraft(receipts[0]);
           setDraftQueue(receipts.slice(1));
+          setDraftBatch(receipts.length > 1 ? { total: receipts.length, current: 1 } : null);
           const identifiedItems = receipts.reduce((sum, receipt) => sum + receipt.items.filter((item) => item.name.trim()).length, 0);
           setError('');
           if (receipts.length > 1) {
@@ -676,6 +684,7 @@ export default function Home() {
         } catch (e) {
           setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
           setDraftQueue([]);
+          setDraftBatch(null);
           setError('Não foi possível interpretar a imagem automaticamente. Preencha os itens manualmente ou tente uma foto de cada cupom, com o texto maior e mais nítido.');
         } finally {
           if (worker) await worker.terminate().catch(() => {});
@@ -719,6 +728,7 @@ export default function Home() {
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
     setDraftQueue((old) => old.slice(1));
+    setDraftBatch(nextDraft && draftBatch ? { ...draftBatch, current: draftBatch.current + 1 } : null);
     setError('');
     if (uploadRef.current) uploadRef.current.value = '';
     setToast(nextDraft ? 'Entrada registrada. Confira o próximo cupom antes de lançar.' : 'Entrada de ' + items.length + (items.length === 1 ? ' item registrada.' : ' itens registrada.'));
