@@ -321,7 +321,7 @@ async function decodeNfceQrWithZXing(canvas) {
   return '';
 }
 
-async function detectNfceQrCodes(canvases) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '' });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -339,36 +339,39 @@ async function detectNfceQrCodes(canvases) {
   } catch (_) {}
 
   const results = [];
-  for (const canvas of canvases) {
+  for (let index = 0; index < canvases.length; index++) {
     let found = empty();
-    if (decodeQR) {
-      try {
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
-        if (decoded?.data) found = parseNfceQrPayload(decoded.data);
-      } catch (_) {}
-    }
-    if (!found.accessKey && !found.consultaUrl) {
-      try {
-        const decoded = await decodeNfceQrWithZXing(canvas);
-        if (decoded) found = parseNfceQrPayload(decoded);
-      } catch (_) {}
-    }
-    if (!found.accessKey && !found.consultaUrl && detector) {
-      try {
-        const detections = await detector.detect(canvas);
-        for (const detection of detections || []) {
-          const candidate = parseNfceQrPayload(detection.rawValue);
-          if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
-        }
-      } catch (_) {}
+    const candidates = [canvases[index], rawCanvases[index]].filter(Boolean);
+    for (const canvas of candidates) {
+      if (decodeQR) {
+        try {
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+          if (decoded?.data) found = parseNfceQrPayload(decoded.data);
+        } catch (_) {}
+      }
+      if (!found.accessKey && !found.consultaUrl) {
+        try {
+          const decoded = await decodeNfceQrWithZXing(canvas);
+          if (decoded) found = parseNfceQrPayload(decoded);
+        } catch (_) {}
+      }
+      if (!found.accessKey && !found.consultaUrl && detector) {
+        try {
+          const detections = await detector.detect(canvas);
+          for (const detection of detections || []) {
+            const candidate = parseNfceQrPayload(detection.rawValue);
+            if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
+          }
+        } catch (_) {}
+      }
+      if (found.accessKey || found.consultaUrl) break;
     }
     results.push(found);
   }
   return results;
 }
-
 
 function detectReceiptSupplier(text) {
   const skip = /(CNPJ|CPF|RUA\b|AVENIDA|AV\.|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CONSUMIDOR|CHAVE DE ACESSO|PROTOCOLO|CUPOM FISCAL|NFC-?E|N[ÚU]MERO|S[ÉE]RIE|TERMINAL|CAIXA|CONSULTE|TRIBUTOS|INSCRI[CÇ][AÃ]O ESTADUAL|EMISS[AÃ]O|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
