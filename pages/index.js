@@ -983,6 +983,7 @@ export default function Home() {
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
+  const skipNextSyncRef = useRef(false);
   // Off by default: an external fallback uploads a QR-only crop to a third party.
   const [enableExternalQr, setEnableExternalQr] = useState(false);
   const uploadRef = useRef(null);
@@ -1001,6 +1002,9 @@ export default function Home() {
     }
     const state = data || { products: [], movements: [], documents: [] };
     revisionRef.current = Number(state.revision || 0);
+    // Hydration is not a user edit: do not rewrite the database just by signing in
+    // or after the server has atomically deleted an invoice.
+    skipNextSyncRef.current = true;
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
@@ -1079,6 +1083,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!supabase || !accessGranted || !dataReady || !accessCode) return;
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
     setSaveStatus('Salvando…');
     const timer = setTimeout(() => {
       // Serialize snapshots: each save uses the revision acknowledged by Supabase.
