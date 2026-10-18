@@ -999,6 +999,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
+  const [uploadBatchProgress, setUploadBatchProgress] = useState(null);
   const [deletingDocId, setDeletingDocId] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
@@ -1282,37 +1283,15 @@ export default function Home() {
     setModal('');
     setToast('Estoque atualizado.');
   }
-  function uploadFile(file) {
-    if (!file) return;
-    setDraftQueue([]);
-    setDraftBatch(null);
-    if (uploadRef.current) uploadRef.current.value = '';
-    setError('');
-    setView('documents');
+  async function parseUploadedFile(file) {
     const xml = /\.xml$/i.test(file.name) || file.type === 'text/xml' || file.type === 'application/xml';
     if (xml) {
-      setProcessingType('xml');
-      setBusy(true);
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const parsed = parseNfeXml(String(reader.result || ''));
-          setDraft({ ...parsed, checkedBy: '', fileName: file.name, status: 'Aguardando conferência' });
-          setView('documents');
-          setToast('XML lido. Confira os produtos antes de confirmar.');
-        } catch (e) { setError(e.message || 'Não foi possível ler o documento.'); }
-        finally { setBusy(false); }
-      };
-      reader.onerror = () => { setError('Não foi possível abrir o arquivo.'); setBusy(false); };
-      reader.readAsText(file);
-      return;
+      const content = await file.text();
+      const parsed = parseNfeXml(content);
+      return [{ ...parsed, checkedBy: '', fileName: file.name, status: 'Aguardando conferência' }];
     }
     if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
-      setProcessingType('ocr');
-      setBusy(true);
-      setOcrProgress(0);
-      setView('documents');
-      (async () => {
+      {
         let worker;
         try {
           const prepared = await prepareReceiptCanvases(file);
@@ -1431,42 +1410,69 @@ export default function Home() {
           }
 
           window.__ocrReceiptIndex = 0;
-          setDraft(uniqueReceipts[0] || receipts[0]);
-          setDraftQueue(uniqueReceipts.slice(1));
-          setDraftBatch(uniqueReceipts.length > 1 ? { total: uniqueReceipts.length, current: 1 } : null);
-          const identifiedItems = uniqueReceipts.reduce((sum, receipt) => sum + receipt.items.filter((item) => item.name.trim()).length, 0);
-          setError('');
-          if (uniqueReceipts.length > 1) {
-            setToast('Encontrei ' + uniqueReceipts.length + ' cupons distintos. Confira e confirme cada um separadamente.');
-          } else if (duplicateReadsRemoved > 0 && identifiedItems) {
-            setToast('Removi ' + duplicateReadsRemoved + ' leitura(s) repetida(s) da mesma nota e combinei os itens. Confira com o cupom original.');
-          } else if (identifiedItems) {
-            setToast('OCR sugeriu ' + identifiedItems + ' itens. Confira nomes, quantidades e preços com o cupom original.');
-          } else {
-            setError('A foto foi processada, mas os produtos não puderam ser separados com confiança. O texto reconhecido ficará disponível; preencha ou corrija os itens manualmente.');
-          }
+          const parsedReceipts = uniqueReceipts.length ? uniqueReceipts : receipts;
+          return parsedReceipts;
         } catch (e) {
-          setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'Foto (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
-          setDraftQueue([]);
-          setDraftBatch(null);
-          const detail = e && e.message ? String(e.message).slice(0, 180) : 'erro não identificado';
-          setError('A leitura automática falhou nesta imagem (' + detail + '). A imagem foi aberta para preenchimento manual; tente novamente depois de atualizar o sistema.');
+          throw new Error('Leitura OCR de ' + file.name + ': ' + (e?.message || 'erro desconhecido'));
         } finally {
           if (worker) await worker.terminate().catch(() => {});
           delete window.__ocrReceiptIndex;
-          setBusy(false);
-          setOcrProgress(0);
+
         }
-      })();
-      return;
+      }
     }
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-      setDraft({ supplier: '', invoiceNumber: '', date: '', source: 'PDF (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] });
-      setView('documents');
-      setToast('PDF selecionado. Preencha os itens manualmente; a extração automática de PDF ainda não está disponível.');
+      return [{ supplier: '', invoiceNumber: '', date: '', source: 'PDF (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] }];
+    }
+    throw new Error('Formato não reconhecido: ' + file.name + '. Use XML, PDF ou JPG/PNG/WEBP.');
+  }
+
+  async function uploadFiles(selectedFiles) {
+    const files = Array.from(selectedFiles || []);
+    if (!files.length || busy) return;
+    if (files.length > 20) {
+      setError('Envie até 20 arquivos de cada vez para manter o processamento estável.');
       return;
     }
-    setError('Formato não reconhecido. Envie XML de NF-e, PDF ou imagem JPG/PNG/WEBP.');
+    setView('documents');
+    setBusy(true);
+    setError('');
+    setOcrProgress(0);
+    setUploadBatchProgress({current: 0, total: files.length, fileName: ''});
+    if (uploadRef.current) uploadRef.current.value = '';
+    const parsed = [];
+    const issues = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadBatchProgress({current: i + 1, total: files.length, fileName: file.name});
+        setProcessingType(/\.xml$/i.test(file.name) ? 'xml' : 'ocr');
+        setOcrProgress(0);
+        try {
+          const receipts = await parseUploadedFile(file);
+          parsed.push(...receipts);
+        } catch (e) {
+          issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
+          parsed.push({
+            supplier: '', invoiceNumber: '', date: '', source: 'Arquivo (conferência manual)',
+            checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento',
+            importWarning: e?.message || 'Não foi possível interpretar automaticamente.',
+            items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
+          });
+        }
+      }
+      if (parsed.length) {
+        setDraft(parsed[0]);
+        setDraftQueue(parsed.slice(1));
+        setDraftBatch(parsed.length > 1 ? {current: 1, total: parsed.length} : null);
+        setToast(parsed.length + (parsed.length === 1 ? ' cupom pronto' : ' cupons prontos') + ' para conferência. Nada foi lançado automaticamente.');
+      }
+      if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
+    } finally {
+      setBusy(false);
+      setOcrProgress(0);
+      setUploadBatchProgress(null);
+    }
   }
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
@@ -1628,11 +1634,6 @@ export default function Home() {
     }
     if (totalsRequireReview && !draft?.totalsReviewed) {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
-      return;
-    }
-    if ((totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft?.totalsWarning)) &&
-      String(draft?.divergenceReason || '').trim().length < 8) {
-      setError('Justifique a divergência dos totais (mínimo de 8 caracteres) antes de continuar.');
       return;
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
@@ -1799,12 +1800,12 @@ export default function Home() {
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
       </nav>
-      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p><button onClick={() => uploadRef.current?.click()}>Importar documento <Icon type="chevron" size={14}/></button></div><div className="user-row"><span className="user-avatar">{currentUser?.role === 'admin' ? 'GE' : currentUser ? 'EQ' : 'LG'}</span><span><b>{currentUser?.role === 'admin' && /^(administrador|admin|dono)$/i.test(currentUser?.display_name || '') ? 'Gestor' : (currentUser?.display_name || 'Equipe da cafeteria')}</b><small>{supabase ? (currentUser?.role === 'admin' ? 'Gestor' : 'Funcionário') + ' · ' + (saveStatus || 'Sessão ativa') : 'Protótipo local'}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco compartilhado da equipe.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
+      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p></div><div className="user-row"><span className="user-avatar">{currentUser?.role === 'admin' ? 'GE' : currentUser ? 'EQ' : 'LG'}</span><span><b>{currentUser?.role === 'admin' && /^(administrador|admin|dono)$/i.test(currentUser?.display_name || '') ? 'Gestor' : (currentUser?.display_name || 'Equipe da cafeteria')}</b><small>{supabase ? (currentUser?.role === 'admin' ? 'Gestor' : 'Funcionário') + ' · ' + (saveStatus || 'Sessão ativa') : 'Protótipo local'}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco compartilhado da equipe.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
     </aside>
-    <main className="main"><input ref={uploadRef} className="hidden-input" type="file" accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => uploadFile(e.target.files && e.target.files[0])}/>
+    <main className="main"><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
       <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><button className="user-avatar user-avatar-button" title={supabase ? "Encerrar sessão" : "Gestor"} onClick={supabase ? handleLock : () => setToast("Modo de demonstração local.")}>{supabase ? "Sair" : "LG"}</button></div></header>
       <div className="content">
-        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'documents' && <button className="btn primary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={18}/>Importar documento</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
+        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
@@ -1831,16 +1832,17 @@ export default function Home() {
         </section>}
 
         {view === 'documents' && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Envie o XML da NF-e ou uma foto. Nas fotos, o sistema tenta separar cupons, ler o QR Code/chave de acesso e sugerir itens em duas passagens de OCR; revise tudo antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Escolher arquivo</button></section>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" disabled={busy} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></section>
           <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
             <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
             <span><b>Usar API externa para tentar ler QR Codes difíceis</b> — somente se a leitura local falhar. Envia um recorte da parte inferior do cupom ao serviço de terceiros baseado em <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>; não envia o documento inteiro nem altera produtos sem conferência.</span>
           </label>
+          {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
-          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label><label><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do funcionário"/></label></div>
-            {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo cupom da mesma imagem.</div>}
+            {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.ocrText && <label className="field full"><span>Corrigir chave da NFC-e</span><input value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave de acesso"/></label>}
             {draft.qrReaderWarning && <div className="notice" role="status" style={{marginTop:12}}>Leitura QR complementar: {draft.qrReaderWarning} O OCR continua disponível para revisão manual.</div>}
             {draft.qrReader && <div style={{marginTop:6,fontSize:12,color:'var(--muted)'}}>QR obtido por: {draft.qrReader}.</div>}
@@ -1936,18 +1938,13 @@ export default function Home() {
                   onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked }))}/>
                 <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
               </label>
-              {(totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft.totalsWarning)) && <label style={{display:'block',marginTop:10}}>
-                Justificativa para a divergência *
-                <input className="inline-input" style={{display:'block',width:'100%',marginTop:5}}
-                  value={draft.divergenceReason || ''} onChange={(e) => changeDraft('divergenceReason',e.target.value)}
-                  placeholder="Explique o motivo da diferença antes de registrar"/>
-              </label>}
+              <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
-          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p><button className="btn secondary" onClick={() => uploadRef.current?.click()}><Icon type="upload" size={16}/>Importar primeiro documento</button></div>}</section>
+          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR é executado no navegador e o documento original não é salvo no histórico. Ao ativar a opção de QR externo, um recorte da imagem é enviado ao servidor do Estoque+ e ao serviço de leitura de terceiros. Sem essa opção, a leitura permanece local.</span></div>
         </>}
 
