@@ -99,3 +99,45 @@ test('auditora item candidato sem inserir ou fundir saldos', async () => {
   assert.equal(matches[0].confidence, 'alta');
   assert.equal(catalog.length, 1);
 });
+
+
+test('foto real do catalogo: encontra bobina e os dois sacos apesar do OCR corrompido', async () => {
+  const { findPotentialDuplicates } = await utils;
+  const samples = [
+    { ...prod('bobina-bom', 'Bobina 80mmx40mt Termica Silfer Unidade', '10987', 'un'), stock: 4 },
+    { ...prod('saco-bom-8', 'Saco Adesivado Transp 8x18+3 Aba Cromus', '397431', 'un'), stock: 1 },
+    { ...prod('saco-bom-7', 'SACO ADESIVADO TRANSP 7,5x13+3 ABA Cromus', '410160', 'in'), stock: 101 },
+    { ...prod('bobina-ocr', 'BOBINA 80I4MXAUMT TERMICA SIL FER UNIDADE 1 E e a o A e um um o a o o o as', '0010987', 'un'), stock: 0 },
+    { ...prod('saco-ocr-8', 'SACO ADESIVADO TRANSP BX18+3 ABA CROMUS', '0397431', 'un'), stock: 0 },
+    { ...prod('saco-ocr-7', 'SACO ADESIVADO TRANSP T 6X 1343 ABA CROMUS', '0410160', 'un'), stock: 0 }
+  ];
+  const pairs = findPotentialDuplicates(samples);
+  assert.equal(pairs.length, 3);
+  assert.deepEqual(pairs.map(pair => [
+    pair.left.id, pair.right.id
+  ]).sort(), [
+    ['bobina-bom','bobina-ocr'],
+    ['saco-bom-8','saco-ocr-8'],
+    ['saco-bom-7','saco-ocr-7']
+  ].sort());
+  assert.ok(pairs.every(pair => pair.matchedByCode && pair.sameUnit));
+  assert.equal(samples.length, 6, 'o analisador nunca altera cadastros');
+});
+
+test('alias da consolidacao permite reconhecer codigo secundario antigo', async () => {
+  const { findDuplicatesForCandidate } = await utils;
+  const survivor = { ...prod('original','Bobina termica','10987','un'), alternateSkus:['0010987'] };
+  const candidate = prod('new','BOBINA TERMICA','0010987','un');
+  assert.equal(findDuplicatesForCandidate(candidate,[survivor])[0].confidence,'alta');
+});
+
+test('um conflito de codigo com texto sem sentido aparece para revisao, nao para auto-fusao', async () => {
+  const { checkDuplicatePair } = await utils;
+  const match = checkDuplicatePair(
+    prod('a','SACO ADESIVADO 8X18','000123','un'),
+    prod('b','OCR ILEGIVEL XYZ','123','un')
+  );
+  assert.ok(match);
+  assert.equal(match.confidence,'revisar');
+  assert.ok(match.reasons.some(x => x.includes('OCR')));
+});
