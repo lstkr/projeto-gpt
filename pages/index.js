@@ -103,7 +103,9 @@ function parseReceiptOcr(text) {
 
     if (values.length >= 2) {
       const inlineName = hasItemName && !lineLooksLikeProduct ? rawName : '';
-      const name = inlineName || pendingName || (lineLooksLikeProduct ? rawName : '');
+      // A product's description often occupies the line above its quantity and prices.
+      // Prefer that pending description over OCR garbage picked up from the numeric row.
+      const name = lineLooksLikeProduct ? rawName : (pendingName || inlineName || '');
       if (!name || name.length < 3) {
         if (lineLooksLikeProduct) pendingName = rawName;
         return;
