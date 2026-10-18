@@ -1310,6 +1310,21 @@ export default function Home() {
     setCountBasis(revisionRef.current);
     setCountError('');
   }
+  async function saveCountSettings() {
+    if(currentUser?.role!=='admin'){setCountError('Apenas o Gestor pode alterar a periodicidade.');return;}
+    if(supabase&&saveStatus!=='Sincronizado'){setCountError('Aguarde a sincronização antes de salvar.');return;}
+    setCountBusy(true);setCountError('');
+    try{
+      await saveQueueRef.current;
+      if(supabase){
+        const {data,error:rpcError}=await supabase.rpc('inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
+        if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Erro ao salvar configuração.');
+        if(!(await loadSharedInventory(accessCode)))throw new Error('Configuração salva, mas não foi possível recarregar.');
+      }else setCountSettings({...settingsForm,configuredAt:countDay()});
+      setToast('Periodicidade da contagem atualizada.');
+    }catch(e){setCountError(e?.message||'Não foi possível configurar a contagem.');}
+    finally{setCountBusy(false);}
+  }
   function saveAdjustment(event) {
     event.preventDefault();
     const amount = Number(adjust.quantity);
