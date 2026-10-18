@@ -1198,6 +1198,13 @@ export default function Home() {
       (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
         normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
     if (!mappedProduct) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
+    const aliasProduct = products.find((p) => draft.supplierCnpj && it.code &&
+      (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
+        norm(alias.code) === norm(it.code)));
+    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
+      issues.push('Código fiscal cadastrado em outra unidade. Selecione o produto interno e informe a quantidade convertida.');
+    if (targetProduct && normalizeReceiptName(targetProduct.name) !== normalizeReceiptName(it.name))
+      issues.push('Produto da nota associado a cadastro de outro nome: confira o vínculo.');
     const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
     if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
     if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
@@ -1620,10 +1627,14 @@ export default function Home() {
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
     if (draft?.items?.some((it) => {
+      const mapped = products.find((p) => draft.supplierCnpj && it.code &&
+        (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
+          norm(alias.code) === norm(it.code)));
+      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
       const target = products.find((p) => p.id === it.productId);
       return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
         !(Number(it.stockQuantity) > 0));
-    })) { setError('Informe a quantidade convertida dos itens ligados a produtos com unidade diferente.'); return; }
+    })) { setError('Selecione o produto interno e informe sua quantidade quando a unidade fiscal for diferente.'); return; }
     if (!draft || !draft.items.length || draft.items.some((it) =>
       !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
       !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
@@ -1658,7 +1669,8 @@ export default function Home() {
       const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
       const index = nextProducts.findIndex((p) =>
         (it.productId && p.id === it.productId) ||
-        (issuer && fiscalCode && (p.supplierCodes || []).some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode)) ||
+        (issuer && fiscalCode && normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit) &&
+        (p.supplierCodes || []).some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode)) ||
         (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
           normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
       const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
