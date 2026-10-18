@@ -1177,6 +1177,7 @@ export default function Home() {
             const alternateText = alternateResult.data.text || '';
             const alternateItems = parseReceiptOcr(alternateText);
             const items = mergeReceiptCandidates(primaryItems, alternateItems);
+            const invoiceTotals = reconcileReceiptTotals(primaryText, alternateText, items);
             const combinedText = primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
@@ -1198,6 +1199,10 @@ export default function Home() {
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
               ocrText: combinedText,
+              subtotal: invoiceTotals.subtotal,
+              discount: invoiceTotals.discount,
+              total: invoiceTotals.total,
+              totalsSource: invoiceTotals.totalsSource,
               items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
             });
           }
@@ -1235,6 +1240,10 @@ export default function Home() {
             duplicate.consultaUrl = duplicate.consultaUrl || candidate.consultaUrl;
             duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
             duplicate.qrUrlPreserved = duplicate.qrUrlPreserved || candidate.qrUrlPreserved;
+            duplicate.subtotal = duplicate.subtotal ?? candidate.subtotal;
+            duplicate.discount = duplicate.discount ?? candidate.discount;
+            duplicate.total = duplicate.total ?? candidate.total;
+            duplicate.totalsSource = duplicate.totalsSource || candidate.totalsSource;
             duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
           }
 
@@ -1276,8 +1285,71 @@ export default function Home() {
     }
     setError('Formato não reconhecido. Envie XML de NF-e, PDF ou imagem JPG/PNG/WEBP.');
   }
-  function changeDraft(key, value) { setDraft((d) => ({ ...d, [key]: value })); }
-  function changeItem(index, key, value) { setDraft((d) => ({ ...d, items: d.items.map((it, i) => i === index ? { ...it, [key]: ['quantity', 'unitPrice'].includes(key) ? Number(value) : value } : it) })); }
+  function changeDraft(key, value) {
+    const numericFields = ['subtotal', 'discount', 'total', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
+    setDraft((d) => ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }));
+  }
+  function changeInvoiceAmount(key, value) {
+    const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
+    setDraft((d) => {
+      if (!d) return d;
+      const next = { ...d, [key]: number };
+      if (key === 'subtotal' || key === 'discount') {
+        const subtotal = key === 'subtotal' ? number : Number(d.subtotal ?? d.items.reduce((sum, item) => sum + receiptItemTotal(item), 0));
+        const discount = key === 'discount' ? number : Number(d.discount || 0);
+        next.total = Math.round((subtotal - discount) * 100) / 100;
+      }
+      return next;
+    });
+  }
+  function changeItem(index, key, value) {
+    setDraft((d) => ({
+      ...d,
+      items: d.items.map((it, i) => {
+        if (i !== index) return it;
+        const isNumeric = ['quantity', 'unitPrice', 'lineTotal'].includes(key);
+        const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
+        if (key === 'quantity' || key === 'unitPrice') {
+          next.lineTotal = Math.round(Number(next.quantity || 0) * Number(next.unitPrice || 0) * 100) / 100;
+        }
+        return next;
+      })
+    }));
+  }
+  function checkOfficialText() {
+    const raw = String(draft?.officialText || '').trim();
+    if (!raw) { setError('Cole o texto dos itens exibidos na consulta pública antes de comparar.'); return; }
+    const officialItems = parseOfficialConsultaItems(raw);
+    if (!officialItems.length) {
+      setError('Não consegui extrair os itens do texto colado. Copie a tabela de produtos com descrição, quantidade, unidade e valores; a consulta continua aberta no outro separador.');
+      return;
+    }
+    const totals = parseReceiptTotals(raw);
+    setDraft((d) => ({
+      ...d,
+      officialItems,
+      officialCompared: true,
+      officialSubtotal: totals.subtotal,
+      officialDiscount: totals.discount,
+      officialTotal: totals.total
+    }));
+    setError('');
+    setToast('Consulta pública interpretada: ' + officialItems.length + ' itens para comparar com o OCR.');
+  }
+  function applyOfficialItems() {
+    if (!draft?.officialItems?.length) return;
+    setDraft((d) => ({
+      ...d,
+      items: d.officialItems.map((item) => ({ ...item })),
+      subtotal: d.officialSubtotal ?? d.subtotal,
+      discount: d.officialDiscount ?? d.discount,
+      total: d.officialTotal ?? d.total,
+      officialVerified: true,
+      totalsSource: 'Consulta pública (conferida manualmente)'
+    }));
+    setError('');
+    setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
+  }
   function confirmDocument() {
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
     if (!draft || !draft.items.some((it) => it.name.trim() && Number(it.quantity) > 0)) { setError('Informe ao menos um produto com nome e quantidade válida.'); return; }
@@ -1296,7 +1368,7 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    const { ocrText, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: uid(), status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
