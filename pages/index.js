@@ -1392,7 +1392,8 @@ export default function Home() {
           };
           for (const candidate of receipts) {
             const duplicate = uniqueReceipts.find((existing) => {
-              if (candidate.accessKey && existing.accessKey && candidate.accessKey.length === 44 && candidate.accessKey === existing.accessKey) return true;
+              if (validateNfceAccessKey(candidate.accessKey) && validateNfceAccessKey(existing.accessKey))
+                return candidate.accessKey === existing.accessKey;
               if (candidate.invoiceNumber && existing.invoiceNumber && candidate.invoiceNumber === existing.invoiceNumber) {
                 return sameSupplier(candidate.supplier, existing.supplier);
               }
@@ -1645,7 +1646,8 @@ export default function Home() {
     // The unique fiscal access key is the primary deduplication key.
     const duplicate = documents.some((d) =>
       (validateNfceAccessKey(d.accessKey) && d.accessKey === draft.accessKey) ||
-      (d.invoiceNumber && draft.invoiceNumber && d.invoiceNumber === draft.invoiceNumber &&
+      (!(validateNfceAccessKey(d.accessKey) && validateNfceAccessKey(draft.accessKey)) &&
+        d.invoiceNumber && draft.invoiceNumber && d.invoiceNumber === draft.invoiceNumber &&
         normalizeReceiptName(d.supplier) === normalizeReceiptName(draft.supplier) &&
         (!d.date || !draft.date || d.date === draft.date)));
     if (duplicate) { setError('Esta nota já foi lançada no estoque. Para corrigir, peça ao Gestor o estorno da entrada anterior.'); return; }
