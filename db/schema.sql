@@ -142,6 +142,7 @@ declare
   user_row private.app_users%rowtype;
   existing_state jsonb;
   secured_products jsonb;
+  retained_products jsonb;
 begin
   select u.* into user_row from private.app_sessions s
     join private.app_users u on u.id = s.user_id
@@ -161,36 +162,41 @@ begin
   end if;
   select state into existing_state from public.shared_inventory where id = true;
   existing_state := coalesce(existing_state, '{"products":[],"movements":[],"documents":[]}'::jsonb);
-
   if user_row.role <> 'admin' then
-    -- Staff can edit stock counts/details, but never overwrite admin-owned cost/minimum fields.
+    -- Staff can edit quantities. Catalog fields, cost, and minimum remain owner-controlled.
     select coalesce(jsonb_agg(
       case
         when exists (
           select 1 from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
           where old_product->>'id' = incoming.product->>'id'
         ) then
-          (incoming.product - 'cost' - 'min') ||
+          (incoming.product - 'cost' - 'min' - 'name' - 'sku' - 'category' - 'unit') ||
           jsonb_build_object(
-            'cost', coalesce((
-              select old_product->'cost'
-              from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
-              where old_product->>'id' = incoming.product->>'id' limit 1
-            ), '0'::jsonb),
-            'min', coalesce((
-              select old_product->'min'
-              from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
-              where old_product->>'id' = incoming.product->>'id' limit 1
-            ), '0'::jsonb)
+            'name', (select old_product->'name' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
+            'sku', (select old_product->'sku' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
+            'category', (select old_product->'category' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
+            'unit', (select old_product->'unit' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
+            'cost', coalesce((select old_product->'cost' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '0'::jsonb),
+            'min', coalesce((select old_product->'min' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '0'::jsonb)
           )
         else (incoming.product - 'cost' - 'min') || jsonb_build_object('cost', 0, 'min', 0)
       end order by incoming.ord
     ), '[]'::jsonb)
     into secured_products
     from jsonb_array_elements(p_state->'products') with ordinality incoming(product, ord);
+
+    -- Never allow staff sessions to delete a product by omitting it from the snapshot.
+    select coalesce(jsonb_agg(old_product.product order by old_product.ord), '[]'::jsonb)
+      into retained_products
+      from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb))
+        with ordinality old_product(product, ord)
+     where not exists (
+       select 1 from jsonb_array_elements(p_state->'products') submitted(product)
+       where submitted.product->>'id' = old_product.product->>'id'
+     );
+    secured_products := secured_products || retained_products;
     p_state := jsonb_set(p_state, '{products}', secured_products, true);
   end if;
-
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;
   return jsonb_build_object('ok', true, 'updated_at', saved_at, 'role', user_row.role);
 end;
