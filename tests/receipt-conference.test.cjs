@@ -95,3 +95,70 @@ test('Conflicting OCR totals produce an alert instead of selecting the closest',
   assert.equal(result.total,49.48);
   assert.match(result.totalsWarning,/discordam/);
 });
+
+
+/*
+ * Public, independently published cafeteria NFC-e examples.
+ * These are manually transcribed receipt-row fixtures from official
+ * transparency publications, NOT OCR measurements on their original images.
+ * No purchaser identifiers, CPF, QR credentials or full fiscal keys are copied.
+ */
+test('Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 30,90', () => {
+  // https://www.camara.leg.br/cota-parlamentar/nota-fiscal-eletronica?ideDocumentoFiscal=6572977
+  const receipt = [
+    'CÓDIGO DESCRIÇÃO',
+    '40101 CROISSANT MISTO',
+    '1,0000 UN 18,0000 18,00',
+    '30306 LARANJA INTEGRAL',
+    '1,0000 UN 12,9000 12,90',
+    'QTD TOTAL DE ITENS 2',
+    'VALOR TOTAL R$ 30,90'
+  ].join('\\n');
+  const items = rules.parseReceiptOcr(receipt);
+  const totals = rules.reconcileReceiptTotals(receipt, receipt, items);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].code, '40101');
+  assert.equal(items[1].unit, 'un');
+  assert.equal(items.reduce((sum,item) => sum + item.lineTotal, 0), 30.9);
+  assert.equal(totals.total, 30.9);
+});
+
+test('Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50', () => {
+  // https://www6g.senado.leg.br/transparencia/sen/download/ceaps/documento/222524
+  const receipt = [
+    'CÓDIGO DESCRIÇÃO',
+    '130 PINGADO G',
+    '1,0000 UN 17,0000 17,00',
+    '171 EMPANADA INT FRANGO COM CENOURA',
+    '1,0000 UN 17,5000 17,50',
+    'QTD TOTAL DE ITENS 2',
+    'VALOR TOTAL R$ 34,50'
+  ].join('\\n');
+  const items = rules.parseReceiptOcr(receipt);
+  const totals = rules.reconcileReceiptTotals(receipt, receipt, items);
+  assert.equal(items.length, 2);
+  assert.equal(items[1].name, 'EMPANADA INT FRANGO COM CENOURA');
+  assert.equal(totals.total, 34.5);
+  assert.equal(items.reduce((sum,item) => sum + item.lineTotal, 0), 34.5);
+});
+
+test('Public café: Caramella (Câmara), preserves zero-cost entries and tip', () => {
+  // https://www.camara.leg.br/cota-parlamentar/nota-fiscal-eletronica?ideDocumentoFiscal=6505345
+  // The official record contains four fiscal lines. Free accompaniments
+  // are valid products, not blank OCR rows; gratuity should be reviewed
+  // for classification before posting to physical inventory.
+  const original = [
+    line('16511','BUFFET MANHA ADULTO SEG-SEX',1,'un',26,26),
+    line('16546','TAPIOCA QUEIJO E PRESUNTO BUFFET',1,'un',0,0),
+    line('16535','OVO MEXIDO BUFFET',1,'un',0,0),
+    line('0','GORJETA',1,'und',2.6,2.6)
+  ];
+  const second = original.map(x => ({ ...x, unit: x.unit === 'und' ? 'un' : x.unit }));
+  const result = rules.mergeReceiptCandidates(original,second);
+  assert.equal(result.length,4);
+  assert.equal(result.reduce((sum,item)=>sum + item.lineTotal,0),28.6);
+  assert.equal(result.filter(item=>item.lineTotal===0).length,2);
+  const comparison = rules.compareInvoiceItems(result, second);
+  assert.ok(comparison.every(row=>row.status==='Confere'),
+    'UND and UN are equivalent while zero-cost fiscal lines remain present');
+});
