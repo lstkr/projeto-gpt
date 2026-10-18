@@ -325,8 +325,10 @@ async function prepareReceiptCanvases(file) {
   const isPaper = (r, g, b) => Math.min(r, g, b) > 175 && Math.max(r, g, b) - Math.min(r, g, b) < 60;
 
   const xScores = new Float32Array(width);
+  // Detect side-by-side paper using the upper text area only; a centered QR at the bottom
+  // must not look like a gap that splits one receipt into two.
   const yTop = Math.floor(height * 0.12);
-  const yBottom = Math.floor(height * 0.90);
+  const yBottom = Math.floor(height * 0.68);
   for (let x = 0; x < width; x++) {
     let count = 0, samples = 0;
     for (let y = yTop; y < yBottom; y += 3) {
@@ -354,8 +356,8 @@ async function prepareReceiptCanvases(file) {
     const score = smooth(xScores, x, radius);
     if (score < valley) { valley = score; seam = x; }
   }
-  const twoReceipts = width > 500 && peakLeft > 0.28 && peakRight > 0.28 &&
-    valley < Math.min(peakLeft, peakRight) * 0.80;
+  const twoReceipts = width > 500 && peakLeft > 0.48 && peakRight > 0.48 &&
+    valley < Math.min(peakLeft, peakRight) * 0.65 && valley < 0.42;
   const segments = [];
   if (twoReceipts) segments.push([0, seam], [seam, width]);
   else segments.push([0, width]);
@@ -376,7 +378,8 @@ async function prepareReceiptCanvases(file) {
     const [sx, ex] = trimX(segment[0], segment[1]);
     const sw = Math.max(1, ex - sx);
     const rowScores = new Float32Array(height);
-    const scanFrom = Math.floor(height * 0.10), scanTo = Math.floor(height * 0.92);
+    // Retain the whole footer and QR Code; 92% clipped the lower QR modules on tall photos.
+    const scanFrom = Math.floor(height * 0.04), scanTo = Math.floor(height * 0.995);
     for (let y = scanFrom; y < scanTo; y += 1) {
       let count = 0, samples = 0;
       for (let x = sx; x < ex; x += 2) {
