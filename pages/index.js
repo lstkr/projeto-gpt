@@ -100,7 +100,7 @@ function parseReceiptOcr(text) {
   const lines = source.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   const amountPattern = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2,4}|\d+\.\d{2,4}/g;
-  const codePattern = /^([A-Z]?\d{3,12})(?:\s+(.+))?$/i;
+  const codePattern = /^((?:[A-Z]\d{2,12}|\d{3,12}))(?:\s+(.+))?$/i;
   const unitPattern = /\b(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD)\b/i;
   const cents = (number) => Math.round(number * 100) / 100;
   const header = lines.findIndex((line) => {
@@ -154,7 +154,7 @@ function parseReceiptOcr(text) {
     if (isProductCode) {
       seenProductCode = true;
       flush();
-      row = { code: codeMatch[1], names: [], amounts: [], unit: '' };
+      row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '' };
       if (suffix) {
         const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
         if (nameOnly) row.names.push(nameOnly);
