@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 
 const initialProducts = [
   { id: '1', name: 'Café em grãos', sku: 'CAF-001', category: 'Cafés', unit: 'kg', stock: 8.5, min: 3, cost: 42.9 },
@@ -330,6 +331,29 @@ function normalizeReceiptName(value) {
     .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Fiscal item codes belong to their issuer. Within one issuer, padding such as
+// 00123/123 is equivalent, but a second signal (description) is still checked.
+function findSupplierAliasProduct(item, catalog, supplierCnpj) {
+  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
+  const code = normalizeProductCode(item?.code);
+  if (!issuer || !code) return null;
+  return catalog.find((product) => (product.supplierCodes || []).some((alias) =>
+    String(alias.cnpj || '').replace(/\D/g, '') === issuer &&
+    normalizeProductCode(alias.code) === code)) || null;
+}
+function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
+  const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
+  if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
+    return bySupplier;
+  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
+  const candidate = { id: '__novo_item_fiscal__', name: item.name, sku: item.code,
+    supplierCodes: issuer && item.code ? [{ cnpj: issuer, code: item.code }] : [],
+    unit: item.unit };
+  return catalog.find((product) => checkDuplicatePair(product, candidate)?.confidence === 'alta') ||
+    catalog.find((product) => normalizeReceiptName(product.name) === normalizeReceiptName(item.name) &&
+      normalizeReceiptUnit(product.unit) === normalizeReceiptUnit(item.unit)) || null;
+}
+
 function mergeReceiptCandidates(primary, alternate) {
   // Align the two passes one-to-one. Never merge *all* occurrences of a
   // product code: a fiscal receipt can legitimately contain repeated lines.
@@ -341,7 +365,7 @@ function mergeReceiptCandidates(primary, alternate) {
     if (!otherName) continue;
     const candidates = merged.map((item, index) => {
       if (matched.has(index)) return null;
-      const sameCode = item.code && other.code && norm(item.code) === norm(other.code);
+      const sameCode = item.code && other.code && normalizeProductCode(item.code) === normalizeProductCode(other.code);
       if (item.code && other.code && !sameCode) return null;
       const name = normalizeReceiptName(item.name);
       const sameName = name === otherName || (Math.min(name.length, otherName.length) >= 7 &&
@@ -811,11 +835,11 @@ function parseOfficialConsultaItems(text) {
 function compareInvoiceItems(ocrItems, officialItems) {
   const used = new Set();
   const rows = (ocrItems || []).map((ocr, ocrIndex) => {
-    const code = norm(ocr.code);
+    const code = normalizeProductCode(ocr.code);
     const name = normalizeReceiptName(ocr.name);
     const matches = (officialItems || []).map((official, index) => {
       if (used.has(index)) return null;
-      const officialCode = norm(official.code);
+      const officialCode = normalizeProductCode(official.code);
       const officialName = normalizeReceiptName(official.name);
       if (code && officialCode && code !== officialCode) return null;
       const sameCode = Boolean(code && code === officialCode);
@@ -1202,6 +1226,11 @@ export default function Home() {
   const value = products.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.cost || 0), 0);
   const units = products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
   const categories = ['Todas', ...new Set(products.map((p) => p.category).filter(Boolean))];
+  // Re-run automatically whenever the shared catalog changes, without mutating it.
+  const duplicatePairs = useMemo(() => findPotentialDuplicates(products), [products]);
+  const registrationDuplicateHints = useMemo(() => editing || !productForm.name?.trim() ? [] :
+    findDuplicatesForCandidate({ ...productForm, id: '__novo_produto__' }, products).slice(0, 3),
+    [editing, productForm, products]);
   const shownProducts = useMemo(() => products.filter((p) => {
     const matches = [p.name, p.sku, p.category].some((v) => norm(v).includes(norm(query)));
     const matchesCategory = category === 'Todas' || p.category === category;
@@ -1214,7 +1243,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1237,15 +1266,21 @@ export default function Home() {
     const issues = [];
     if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
     const targetProduct = products.find((p) => p.id === it.productId);
-    const mappedProduct = targetProduct || products.find((p) =>
-      (draft.supplierCnpj && it.code && (p.supplierCodes || []).some((alias) =>
-        alias.cnpj === draft.supplierCnpj && norm(alias.code) === norm(it.code))) ||
-      (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
-        normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
+    const mappedProduct = targetProduct || findReceiptCatalogProduct(it, products, draft.supplierCnpj);
     if (!mappedProduct && shouldPostReceiptItem(it)) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
-    const aliasProduct = products.find((p) => draft.supplierCnpj && it.code &&
-      (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
-        norm(alias.code) === norm(it.code)));
+    const aliasProduct = findSupplierAliasProduct(it, products, draft.supplierCnpj);
+    const candidateDuplicates = !targetProduct && shouldPostReceiptItem(it) ?
+      findDuplicatesForCandidate({
+        id: '__item_fiscal_' + index, name: it.name, sku: it.code, unit: it.unit,
+        supplierCodes: draft.supplierCnpj && it.code ? [{ cnpj: draft.supplierCnpj, code: it.code }] : []
+      }, products) : [];
+    if (!mappedProduct && candidateDuplicates.length) issues.push(
+      'Possível duplicidade com "' + candidateDuplicates[0].left.name +
+      '". Confira e selecione o produto existente antes de criar outro.');
+    if (aliasProduct && !targetProduct &&
+        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.name))
+      issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
+        '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
     if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
       issues.push('Código fiscal cadastrado em outra unidade. Selecione o produto interno e informe a quantidade convertida.');
     if (targetProduct && normalizeReceiptName(targetProduct.name) !== normalizeReceiptName(it.name))
@@ -1301,6 +1336,10 @@ export default function Home() {
       setProducts((old) => old.map((p) => p.id === editing.id ? { ...p, ...productForm, stock: Number(productForm.stock), min: Number(productForm.min), cost: Number(productForm.cost) } : p));
       setToast('Produto atualizado.');
     } else {
+      const hints = findDuplicatesForCandidate({ ...productForm, id: '__novo_produto__', name }, products);
+      if (hints.length && !window.confirm(
+        'Possível cadastro duplicado: "' + hints[0].left.name + '" (' + hints[0].left.sku +
+        '). Confira antes de prosseguir. Deseja cadastrar mesmo assim?')) return;
       const item = { ...productForm, id: uid(), name, sku: productForm.sku || ('PRD-' + Date.now().toString().slice(-5)), stock: Number(productForm.stock) || 0, min: Number(productForm.min) || 0, cost: Number(productForm.cost) || 0, updated: dateNow() };
       setProducts((old) => [item, ...old]);
       setMovements((old) => [{ id: uid(), product: name, type: 'Cadastro', quantity: item.stock, reason: 'Cadastro inicial', date: dateNow() }, ...old]);
@@ -1693,7 +1732,7 @@ export default function Home() {
       ...d,
       items: d.officialItems.map((item, index) => {
         const match = compareInvoiceItems(d.items, d.officialItems).find((r) =>
-          r.official === item && r.ocr && norm(r.ocr.code) === norm(item.code) &&
+          r.official === item && r.ocr && normalizeProductCode(r.ocr.code) === normalizeProductCode(item.code) &&
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
         return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
       }),
@@ -1725,9 +1764,7 @@ export default function Home() {
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
     if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
-      const mapped = products.find((p) => draft.supplierCnpj && it.code &&
-        (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
-          norm(alias.code) === norm(it.code)));
+      const mapped = findSupplierAliasProduct(it, products, draft.supplierCnpj);
       if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
       const target = products.find((p) => p.id === it.productId);
       return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
@@ -1774,14 +1811,11 @@ export default function Home() {
       const netLine = Math.max(0, base - remainingDiscount * ratio +
         draftExtras * serviceRatio + expenseTotal * serviceRatio -
         (discountBase > 0 ? expenseTotal * remainingDiscount / discountBase * serviceRatio : 0));
-      const fiscalCode = norm(it.code);
+      const fiscalCode = normalizeProductCode(it.code);
       const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
-      const index = nextProducts.findIndex((p) =>
-        (it.productId && p.id === it.productId) ||
-        (issuer && fiscalCode && normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit) &&
-        (p.supplierCodes || []).some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode)) ||
-        (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
-          normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
+      const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
+      const index = nextProducts.findIndex((p) => it.productId
+        ? p.id === it.productId : p.id === automaticProduct?.id);
       const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
         ? Number(it.stockQuantity) : Number(it.quantity);
       const netUnitCost = Math.round(netLine / stockQuantity * 10000) / 10000;
@@ -1790,7 +1824,7 @@ export default function Home() {
         const old = nextProducts[index];
         productId = old.id;
         const supplierCodes = [...(old.supplierCodes || [])];
-        if (issuer && fiscalCode && !supplierCodes.some((alias) => alias.cnpj === issuer && norm(alias.code) === fiscalCode))
+        if (issuer && fiscalCode && !supplierCodes.some((alias) => alias.cnpj === issuer && normalizeProductCode(alias.code) === fiscalCode))
           supplierCodes.push({ cnpj: issuer, code: it.code });
         nextProducts[index] = { ...old, supplierCodes,
           stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
@@ -1894,6 +1928,7 @@ export default function Home() {
       <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation">
         <button className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
         <button className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
+        {currentUser?.role === 'admin' && <button className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
@@ -1929,6 +1964,19 @@ export default function Home() {
           {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
           {/* COUNT HISTORY */}
         </section>}
+        {view === 'duplicates' && currentUser?.role === 'admin' && <section className="panel duplicates-panel">
+          <div className="panel-head"><div><h2>Auditoria automática do catálogo</h2><p>Executada sempre que o estoque é atualizado. O código é comparado sem zeros iniciais e a descrição é verificada separadamente.</p></div><span className="history-count">{duplicatePairs.length} par(es)</span></div>
+          <p className="duplicate-guidance">⚠ Conferência do gestor necessária. Não unificamos produtos ou saldos automaticamente: notas, movimentações e contagens antigas podem estar vinculadas aos IDs originais. Confira também unidade, embalagem e fornecedor antes de corrigir cadastros.</p>
+          {duplicatePairs.length ? <div className="duplicate-results">{duplicatePairs.map((match) => <div key={String(match.left.id) + ':' + String(match.right.id)} className="duplicate-pair">
+            <div className="duplicate-pair-heading"><b className={match.confidence === 'alta' ? 'duplicate-high' : 'duplicate-review'}>{match.confidence === 'alta' ? 'Alta probabilidade' : 'Conferir manualmente'}</b><small>Descrição: {match.similarity}% semelhante</small></div>
+            <div className="duplicate-comparison">
+              {[match.left, match.right].map((p, i) => <div className="duplicate-product" key={p.id}><strong>{p.name}</strong><small>Código: {p.sku || 'Sem código'} · {qty(p.stock)} {p.unit}</small><small>Fornecedor(es): {(p.supplierCodes || []).map((alias) => alias.code + ' (' + alias.cnpj + ')').join(', ') || 'Não informado'}</small><button type="button" className="text-btn" onClick={() => openProduct(p)}>Editar {i === 0 ? 'primeiro' : 'segundo'} cadastro <Icon type="edit" size={14}/></button></div>)}
+            </div>
+            <p className="duplicate-reasons">{match.reasons.join(' · ')}</p>
+          </div>)}</div>
+          : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma possível duplicata encontrada</b><p>A rotina seguirá conferindo o catálogo ao entrar ou lançar notas fiscais.</p></div>}
+        </section>}
+        {view === 'stock' && currentUser?.role === 'admin' && duplicatePairs.length > 0 && <section className="alert-strip" role="status"><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>{duplicatePairs.length} possível(is) duplicata(s) no catálogo</b><p>Compare códigos e descrições; confira antes de corrigir os cadastros.</p></div><button onClick={() => setView('duplicates')}>Revisar <Icon type="chevron" size={15}/></button></section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
             <article className="stat"><div className="stat-top"><span>Produtos cadastrados</span><i className="stat-symbol green"><Icon type="box" size={19}/></i></div><strong className="stat-value">{products.length}</strong><div className="stat-foot"><span className="green-dot"/>Itens no catálogo</div></article>
@@ -2085,7 +2133,7 @@ export default function Home() {
       </div>
     </main>
 
-    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label></>}</div><div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
+    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
     {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2>Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
     {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetailDoc(null); }}><section className="modal detail-modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2>{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" onClick={() => setDetailDoc(null)}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
