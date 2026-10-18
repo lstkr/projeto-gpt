@@ -1904,7 +1904,8 @@ export default function Home() {
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
           </div>}{!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
           {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
-          {countDraft && <button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>Concluir contagem</button>}{/* COUNT HISTORY */}
+          {countDraft && <button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>Concluir contagem</button>}<h3 style={{marginTop:22}}>Histórico de contagens</h3>
+          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
           {/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
