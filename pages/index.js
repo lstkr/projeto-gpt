@@ -1072,7 +1072,14 @@ export default function Home() {
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
   const page = view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
-  const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(norm(b.name), 'pt-BR'));
+  const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
+  const draftSubtotal = draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
+  const draftDiscount = draft ? Number(draft.discount || 0) : 0;
+  const draftTotal = draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
+  const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
+  const totalsFinalMismatch = Boolean(draft && Math.abs(draftTotal - (draftSubtotal - draftDiscount)) > 0.05);
+  const officialComparison = draft?.officialItems?.length ? compareInvoiceItems(draft.items, draft.officialItems) : [];
+  const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(b.name, 'pt-BR'));
 
   function downloadPurchaseList() {
     if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
