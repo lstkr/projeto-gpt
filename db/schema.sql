@@ -274,6 +274,7 @@ begin
 
   p_state := p_state || jsonb_build_object(
     'deletedDocumentIds', deleted_ids,
+    'catalogMerges', coalesce(existing_state->'catalogMerges','[]'::jsonb),
     'stockCounts', coalesce(existing_state->'stockCounts','[]'::jsonb),
     'countSettings', coalesce(existing_state->'countSettings','{"enabled":false,"mode":"interval","intervalDays":7,"weekday":1,"monthDay":1}'::jsonb),
     'revision', current_revision + 1
@@ -531,3 +532,181 @@ revoke all on function public.inventory_count_settings(text,jsonb,bigint) from p
 grant execute on function public.inventory_count_settings(text,jsonb,bigint) to anon, authenticated;
 revoke all on function public.inventory_count_complete(text,jsonb,bigint) from public;
 grant execute on function public.inventory_count_complete(text,jsonb,bigint) to anon, authenticated;
+
+
+-- Explicit, reversible-in-audit consolidation: only the Gestor can choose
+-- a canonical catalog record. All existing fiscal links are atomically repointed,
+-- so document deletion continues to reverse the correct stock.
+CREATE OR REPLACE FUNCTION public.inventory_merge_products(
+  p_token text, p_keep_id text, p_remove_id text, p_rev bigint
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO ''
+AS $function$
+declare
+  actor_role text;
+  actor_name text;
+  s jsonb;
+  keep_item jsonb;
+  discard_item jsonb;
+  p jsonb;
+  d jsonb;
+  m jsonb;
+  e jsonb;
+  new_products jsonb := '[]'::jsonb;
+  new_documents jsonb := '[]'::jsonb;
+  new_movements jsonb := '[]'::jsonb;
+  new_links jsonb;
+  new_items jsonb;
+  codes jsonb;
+  alternate_codes jsonb;
+  keep_count integer := 0;
+  discard_count integer := 0;
+  rev bigint;
+  amount_keep numeric;
+  amount_discard numeric;
+  stock_total numeric;
+  weighted_cost numeric;
+  keep_unit text;
+  discard_unit text;
+begin
+  select u.role, u.display_name into actor_role, actor_name
+    from private.app_sessions sess join private.app_users u on sess.user_id = u.id
+   where sess.token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex')
+     and sess.expires_at > now() and sess.revoked_at is null and u.active = true;
+  if actor_role is distinct from 'admin' then
+    raise exception 'Apenas o Gestor pode consolidar cadastros.' using errcode = '42501';
+  end if;
+  if coalesce(length(p_keep_id),0) < 1 or coalesce(length(p_remove_id),0) < 1
+    or length(p_keep_id)>128 or length(p_remove_id)>128 or p_keep_id=p_remove_id then
+    raise exception 'Selecione dois produtos diferentes.' using errcode = '22023';
+  end if;
+
+  select state into s from public.shared_inventory where id=true for update;
+  rev := coalesce((s->>'revision')::bigint,0);
+  if p_rev is distinct from rev then
+    raise exception 'O estoque mudou em outra sessão. Atualize antes de consolidar.' using errcode='40001';
+  end if;
+  for p in select value from jsonb_array_elements(coalesce(s->'products','[]'::jsonb)) loop
+    if p->>'id'=p_keep_id then keep_item:=p; keep_count:=keep_count+1; end if;
+    if p->>'id'=p_remove_id then discard_item:=p; discard_count:=discard_count+1; end if;
+  end loop;
+  if keep_count<>1 or discard_count<>1 then
+    raise exception 'Produto não encontrado ou cadastro repetido no banco.' using errcode='22023';
+  end if;
+  keep_unit := lower(trim(coalesce(keep_item->>'unit','un')));
+  discard_unit := lower(trim(coalesce(discard_item->>'unit','un')));
+  keep_unit := case keep_unit when 'in' then 'un' when 'und' then 'un'
+    when 'unidade' then 'un' when 'lt' then 'l' when 'litro' then 'l'
+    when 'kgs' then 'kg' when 'gr' then 'g' else keep_unit end;
+  discard_unit := case discard_unit when 'in' then 'un' when 'und' then 'un'
+    when 'unidade' then 'un' when 'lt' then 'l' when 'litro' then 'l'
+    when 'kgs' then 'kg' when 'gr' then 'g' else discard_unit end;
+  if keep_unit<>discard_unit then
+    raise exception 'Unidades diferentes. Confira e converta a quantidade antes de consolidar.' using errcode='22023';
+  end if;
+
+  amount_keep := (keep_item->>'stock')::numeric;
+  amount_discard := (discard_item->>'stock')::numeric;
+  if amount_keep is null or amount_discard is null or
+    amount_keep<0 or amount_discard<0 or amount_keep>99999999 or amount_discard>99999999
+    or amount_keep<>round(amount_keep,3) or amount_discard<>round(amount_discard,3) then
+    raise exception 'Quantidades inconsistentes. Faça a contagem física primeiro.' using errcode='22023';
+  end if;
+  stock_total := amount_keep + amount_discard;
+  if stock_total>99999999 then
+    raise exception 'Quantidade final excede o limite.' using errcode='22023';
+  end if;
+  weighted_cost := case when stock_total>0 then
+    round((amount_keep*coalesce((keep_item->>'cost')::numeric,0) +
+      amount_discard*coalesce((discard_item->>'cost')::numeric,0))/stock_total,4)
+    else coalesce((keep_item->>'cost')::numeric,0) end;
+
+  select coalesce(jsonb_agg(alias), '[]'::jsonb) into codes from (
+    select distinct value as alias from jsonb_array_elements(
+      coalesce(keep_item->'supplierCodes','[]'::jsonb) ||
+      coalesce(discard_item->'supplierCodes','[]'::jsonb)
+    ) a(value)
+  ) distinct_aliases;
+  select coalesce(jsonb_agg(to_jsonb(sku)), '[]'::jsonb) into alternate_codes from (
+    select distinct sku from (
+      select value as sku from jsonb_array_elements_text(coalesce(keep_item->'alternateSkus','[]'::jsonb))
+      union all
+      select value as sku from jsonb_array_elements_text(coalesce(discard_item->'alternateSkus','[]'::jsonb))
+      union all
+      select coalesce(discard_item->>'sku','') as sku
+    ) all_skus where btrim(sku) <> '' and sku <> coalesce(keep_item->>'sku','')
+  ) distinct_skus;
+
+  for p in select value from jsonb_array_elements(s->'products') loop
+    if p->>'id' = p_remove_id then continue; end if;
+    if p->>'id' = p_keep_id then
+      p := p || jsonb_build_object(
+        'stock', round(stock_total,3),
+        'unit', case when keep_unit='un' then 'un' else keep_item->>'unit' end,
+        'cost', weighted_cost,
+        'min', greatest(coalesce((keep_item->>'min')::numeric,0), coalesce((discard_item->>'min')::numeric,0)),
+        'supplierCodes', codes,
+        'alternateSkus', alternate_codes
+      );
+    end if;
+    new_products := new_products || jsonb_build_array(p);
+  end loop;
+
+  -- Preserve original fiscal line name/code, financial amounts and entry IDs.
+  -- Only point stock-backed references to the survivor.
+  for d in select value from jsonb_array_elements(coalesce(s->'documents','[]'::jsonb)) loop
+    if jsonb_typeof(d->'stockEntries')='array' then
+      new_links := '[]'::jsonb;
+      for e in select value from jsonb_array_elements(d->'stockEntries') loop
+        if e->>'productId' = p_remove_id then
+          e := jsonb_set(e,'{productId}', to_jsonb(p_keep_id),true);
+        end if;
+        new_links := new_links || jsonb_build_array(e);
+      end loop;
+      d := jsonb_set(d,'{stockEntries}',new_links,true);
+    end if;
+    if jsonb_typeof(d->'items')='array' then
+      new_items := '[]'::jsonb;
+      for e in select value from jsonb_array_elements(d->'items') loop
+        if e->>'productId' = p_remove_id then
+          e := jsonb_set(e,'{productId}',to_jsonb(p_keep_id),true);
+        end if;
+        new_items := new_items || jsonb_build_array(e);
+      end loop;
+      d := jsonb_set(d,'{items}',new_items,true);
+    end if;
+    new_documents := new_documents || jsonb_build_array(d);
+  end loop;
+
+  for m in select value from jsonb_array_elements(coalesce(s->'movements','[]'::jsonb)) loop
+    if m->>'productId' = p_remove_id then
+      m := jsonb_set(m,'{productId}',to_jsonb(p_keep_id),true);
+    end if;
+    new_movements := new_movements || jsonb_build_array(m);
+  end loop;
+
+  update public.shared_inventory set
+    state = s || jsonb_build_object(
+      'products', new_products,
+      'documents', new_documents,
+      'movements', new_movements,
+      'catalogMerges', jsonb_build_array(jsonb_build_object(
+        'keepId',p_keep_id,
+        'removedId',p_remove_id,
+        'keptName',keep_item->>'name',
+        'removedName',discard_item->>'name',
+        'keepPreviousStock',amount_keep,
+        'removedPreviousStock',amount_discard,
+        'newStock',stock_total,
+        'unit',keep_item->>'unit',
+        'at',now(),
+        'by',actor_name
+      )) || coalesce(s->'catalogMerges','[]'::jsonb),
+      'revision',rev+1
+    ), updated_at=now()
+  where id=true;
+  return jsonb_build_object('ok',true,'revision',rev+1,'kept_id',p_keep_id,
+    'removed_id',p_remove_id,'stock',stock_total);
+end;
+$function$;
+revoke all on function public.inventory_merge_products(text,text,text,bigint) from public;
+grant execute on function public.inventory_merge_products(text,text,text,bigint) to anon, authenticated;

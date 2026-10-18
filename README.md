@@ -97,3 +97,15 @@ O catálogo é auditado sempre que é carregado ou alterado. Apenas o **Gestor**
 - **Nunca unir saldos manualmente sem revisar movimentos, notas e contagens**: IDs antigos são usados no estorno de documentos. Não existe operação de fusão automática nesta versão.
 
 Cobertura automatizada: `npm test` (arquivo `tests/duplicate-products.test.cjs`).
+
+## Consolidação de cadastros duplicados (Gestor)
+
+A opção **Possíveis duplicatas** detecta também códigos numéricos equivalentes mesmo quando a descrição está corrompida pelo OCR. Ex.: `10987`/`0010987`, `397431`/`0397431` e `410160`/`0410160`. Códigos idênticos com nomes muito diferentes aparecem como **revisar**, nunca como equivalência confirmada.
+
+A partir da tela de auditoria, o Gestor pode escolher **Consolidar cadastros**. É necessário selecionar qual produto permanecerá e confirmar que os dois registros representam fisicamente a mesma mercadoria. A função `inventory_merge_products` valida a sessão do Gestor, revisão do estoque, IDs e unidades em uma transação no Supabase. Ela preserva o cadastro escolhido, soma as quantidades, pondera o custo pela quantidade, conserva os códigos antigos e os códigos de fornecedor, seleciona o maior estoque mínimo e atualiza as referências de movimentações, itens e `stockEntries` das notas.
+
+A operação mantém o histórico original de contagens físicas (fotografia do momento), grava a consolidação em `catalogMerges`, preserva os documentos e continua permitindo excluir/estornar notas utilizando os vínculos atualizados. **Ela não deduz se os estoques foram contados duas vezes**: confira o estoque real antes de confirmar. Produtos com unidades incompatíveis exigem conversão e correção prévia. Não há fusão automática nem exclusão direta de contas e senhas.
+
+Na conferência fiscal, se um código já existe mas a descrição está muito diferente, o sistema exige vincular um produto existente ou marcar explicitamente que o cadastro é distinto; não cria mais outro registro silenciosamente por essa divergência.
+
+**Implantação:** aplicar a nova definição SQL do arquivo `db/schema.sql` ao banco já existente (especificamente a atualização de `private.inventory_save_impl` e a criação de `public.inventory_merge_products`) antes de usar o botão de consolidação. Nunca execute um reset do banco, que apagaria o estoque e pode comprometer os vínculos.
