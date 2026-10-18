@@ -1903,7 +1903,8 @@ export default function Home() {
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
           </div>}{!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
-          {/* COUNT TABLE */}{/* COUNT HISTORY */}
+          {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{/* COUNT ROWS */}</tbody></table></div>}
+          {/* COUNT ACTIONS */}{/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
