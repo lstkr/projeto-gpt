@@ -1181,6 +1181,9 @@ export default function Home() {
   const draftTotal = draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
   const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
   const draftExtras = draft ? Number(draft.additionalCharges || 0) : 0;
+  const draftIdentifiedItemDiscounts = (draft?.items || []).reduce((sum,it) => sum + Number(it.itemDiscount || 0), 0);
+  const discountUnattributed = Boolean(draft && draft.items.length > 1 &&
+    draftDiscount - draftIdentifiedItemDiscounts > 0.02);
   const totalsFinalMismatch = Boolean(draft && Math.abs(draftTotal - (draftSubtotal - draftDiscount + draftExtras)) > 0.05);
   const officialComparison = draft?.officialItems?.length ? compareInvoiceItems(draft.items, draft.officialItems) : [];
   const officialMissing = officialComparison.filter((r) => !r.ocr).length;
@@ -1228,7 +1231,7 @@ export default function Home() {
       done: issues.length === 0 || draft.reviewedItems?.[index] === true };
   });
   const totalsRequireReview = Boolean(draft && (
-    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || Boolean(draft.totalsWarning) ||
+    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
@@ -1595,7 +1598,12 @@ export default function Home() {
     if (!draft?.officialItems?.length) return;
     setDraft((d) => ({
       ...d,
-      items: d.officialItems.map((item) => ({ ...item })),
+      items: d.officialItems.map((item, index) => {
+        const match = compareInvoiceItems(d.items, d.officialItems).find((r) =>
+          r.official === item && r.ocr && norm(r.ocr.code) === norm(item.code) &&
+          Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
+        return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
+      }),
       reviewedItems: {}, totalsReviewed: false,
       officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
@@ -1914,6 +1922,10 @@ export default function Home() {
               <label><span>Total final (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftTotal} onChange={(e) => changeInvoiceAmount('total', e.target.value)}/></label>
             </div>
             {draft.totalsWarning && <div className="notice" style={{marginTop:10}}>{draft.totalsWarning}</div>}
+            {discountUnattributed && <div className="notice" style={{marginTop:10}}>
+              Há {money(Math.max(0,draftDiscount - draftIdentifiedItemDiscounts))} de desconto sem identificação de item.
+              Esse valor será distribuído proporcionalmente no custo de estoque; confirme o rateio com o encarregado.
+            </div>}
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
             {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>Total final ({money(draftTotal)}) diferente de subtotal − desconto + acréscimos ({money(draftSubtotal - draftDiscount + draftExtras)}).</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
