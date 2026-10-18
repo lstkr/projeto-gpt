@@ -1905,6 +1905,7 @@ export default function Home() {
           </div>}{!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
           {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
           {countDraft && <button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>Concluir contagem</button>}{/* COUNT HISTORY */}
+          {/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
