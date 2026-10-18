@@ -1038,7 +1038,7 @@ export default function Home() {
   function handleLock() {
     const token = accessCode;
     if (supabase && token) {
-      supabase.rpc('inventory_logout', { p_session_token: token }).catch(() => {});
+      void supabase.rpc('inventory_logout', { p_session_token: token });
     }
     try {
       sessionStorage.removeItem('projeto-gpt-session');
@@ -1051,6 +1051,13 @@ export default function Home() {
     setDataReady(false);
     setAccessMessage('Você saiu da sua conta. Entre novamente para acessar o estoque.');
     setSaveStatus('');
+    setDraft(null);
+    setDraftQueue([]);
+    setDraftBatch(null);
+    setError('');
+    // Reload clears in-flight state and prevents a stale save effect from
+    // persisting old inventory data after logout.
+    window.location.replace(window.location.pathname + window.location.search);
   }
 
   useEffect(() => {
@@ -1324,6 +1331,44 @@ export default function Home() {
       })
     }));
   }
+  async function consultOfficialAutomatically(url, expectedKey = '') {
+    if (!url || !/\/Dfe\/QrCodeNFce\?p=/i.test(url)) {
+      setDraft((d) => d ? ({ ...d, officialStatus: 'QR Code completo não encontrado. Confira os dados manualmente.' }) : d);
+      return;
+    }
+    setDraft((d) => d ? ({ ...d, officialStatus: 'Consultando automaticamente a NFC-e na SVRS…' }) : d);
+    try {
+      const response = await fetch('/api/consulta-nfce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
+      const officialItems = parseOfficialConsultaItems(data.text);
+      if (!officialItems.length) throw new Error('A página oficial foi aberta, mas os itens não puderam ser extraídos com segurança.');
+      const totals = parseReceiptTotals(data.text);
+      setDraft((d) => {
+        if (!d || d.consultaUrl !== url || (expectedKey && d.accessKey && expectedKey !== d.accessKey)) return d;
+        return {
+          ...d, officialItems, officialCompared: true,
+          officialSubtotal: totals.subtotal,
+          officialDiscount: totals.discount,
+          officialTotal: totals.total,
+          officialStatus: 'Consulta oficial lida automaticamente: ' + officialItems.length + ' itens. Confira as divergências abaixo.'
+        };
+      });
+      setError('');
+    } catch (err) {
+      setDraft((d) => d && d.consultaUrl === url ? ({ ...d, officialStatus: err.message || 'Não foi possível consultar a NFC-e automaticamente.' }) : d);
+    }
+  }
+
+  useEffect(() => {
+    if (!draft?.consultaUrl || !draft?.qrUrlPreserved || draft.officialCompared || draft.officialStatus) return;
+    void consultOfficialAutomatically(draft.consultaUrl, draft.accessKey);
+  }, [draft?.consultaUrl, draft?.qrUrlPreserved, draft?.officialCompared, draft?.officialStatus]);
+
   function checkOfficialText() {
     const raw = String(draft?.officialText || '').trim();
     if (!raw) { setError('Cole o texto dos itens exibidos na consulta pública antes de comparar.'); return; }
@@ -1461,16 +1506,15 @@ export default function Home() {
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo cupom da mesma imagem.</div>}
             {(draft.accessKey || draft.consultaUrl) && <div className="notice" style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><span><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave de acesso identificada pelo OCR'}</b>{draft.accessKey ? <span style={{display:'block',marginTop:5,overflowWrap:'anywhere',fontFamily:'monospace'}}>{draft.accessKey}</span> : 'O QR Code contém um endereço de consulta.'}</span>{draft.consultaUrl && <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}<a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a></div>}</div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
-              <div className="panel-head"><div><h2>Conferência com a consulta pública</h2><p>Abra a consulta oficial, copie o texto da lista de produtos e cole abaixo. Como o resultado abre em um portal externo e ainda não temos uma integração oficial validada para importar essa página diretamente, copie o texto da lista de produtos e cole abaixo. Assim o sistema compara os valores sem adivinhar.</p></div></div>
-              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os dados não são substituídos sem sua revisão.</p></div></div>
+              <div className="notice" role="status" style={{marginTop:10}}>{draft.officialStatus || 'Aguardando consulta automática…'}</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+                <button type="button" className="btn primary" onClick={() => void consultOfficialAutomatically(draft.consultaUrl, draft.accessKey)}>Consultar e comparar novamente</button>
                 <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>Abrir consulta oficial ↗</a>
-                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => {try {await navigator.clipboard.writeText(draft.accessKey);setToast('Chave de acesso copiada.');}catch(_){setToast('Copie a chave que aparece acima.');}}}>Copiar chave de acesso</button>}
+                {draft.officialItems?.length > 0 && <button type="button" className="btn secondary" onClick={applyOfficialItems}>Usar itens da consulta pública</button>}
               </div>
-              <label className="field full"><span>Texto copiado da consulta pública</span><textarea rows={5} value={draft.officialText || ''} onChange={(e) => changeDraft('officialText', e.target.value)} placeholder="Depois de abrir a consulta oficial, copie a tabela de itens (código, descrição, quantidade, unidade, preço unitário e total) e cole aqui." style={{width:'100%',resize:'vertical',padding:12,border:'1px solid var(--line)',borderRadius:8,font:'inherit'}}/></label>
-              <div className="modal-actions" style={{justifyContent:'flex-start',marginTop:10}}><button type="button" className="btn primary" onClick={checkOfficialText}>Comparar com OCR</button>{draft.officialItems?.length > 0 && <button type="button" className="btn secondary" onClick={applyOfficialItems}>Usar itens da consulta pública</button>}</div>
-              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Foram identificados {draft.officialItems.length} itens na consulta copiada. Compare cada linha antes de substituir os dados do OCR.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div><p style={{fontSize:12,color:'var(--muted)',marginTop:8}}>Os dados copiados só serão usados para esta conferência; o texto integral colado não será salvo no histórico.</p></>}
+              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Revise as diferenças antes de usar os dados oficiais.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
-
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <div className="table-wrap review-table"><table><thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th></th></tr></thead><tbody>{draft.items.map((it, i) => <tr key={i}><td><input className="inline-input name-field" value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/></td><td><input className="inline-input small-field" type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td><td><input className="inline-input unit-field" value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td><td><input className="inline-input small-field" type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td><td><input className="inline-input small-field" type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/></td><td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }))}><Icon type="close" size={15}/></button></td></tr>)}</tbody></table></div>
             <div className="meta-fields" style={{marginTop:16}}>
