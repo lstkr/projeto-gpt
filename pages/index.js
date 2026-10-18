@@ -316,6 +316,15 @@ function normalizeReceiptUnit(value) {
     cx:'cx', caixa:'cx', pct:'pct', pacote:'pct', fd:'fd', fardo:'fd' })[unit] || unit;
 }
 
+function isNonStockExpense(item) {
+  const name = normalizeReceiptName(item?.name);
+  return /(?:^| )(?:taxa de entrega|taxa entrega|frete|servico entrega|gorjeta|servico de entrega)(?: |$)/.test(name);
+}
+function shouldPostReceiptItem(item) {
+  return item.stockDisposition === 'stock' ||
+    (item.stockDisposition !== 'expense' && !isNonStockExpense(item));
+}
+
 function normalizeReceiptName(value) {
   return norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1226,13 +1235,14 @@ export default function Home() {
   ));
   const receiptReviewRows = (draft?.items || []).map((it, index) => {
     const issues = [];
+    if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
     const targetProduct = products.find((p) => p.id === it.productId);
     const mappedProduct = targetProduct || products.find((p) =>
       (draft.supplierCnpj && it.code && (p.supplierCodes || []).some((alias) =>
         alias.cnpj === draft.supplierCnpj && norm(alias.code) === norm(it.code))) ||
       (normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
         normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit)));
-    if (!mappedProduct) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
+    if (!mappedProduct && shouldPostReceiptItem(it)) issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
     const aliasProduct = products.find((p) => draft.supplierCnpj && it.code &&
       (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
         norm(alias.code) === norm(it.code)));
@@ -1714,7 +1724,7 @@ export default function Home() {
       return;
     }
     if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
-    if (draft?.items?.some((it) => {
+    if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
       const mapped = products.find((p) => draft.supplierCnpj && it.code &&
         (p.supplierCodes || []).some((alias) => alias.cnpj === draft.supplierCnpj &&
           norm(alias.code) === norm(it.code)));
@@ -1746,14 +1756,24 @@ export default function Home() {
     // Apply line-specific discounts first; prorate only the remaining discount
     // and charges, so a targeted discount is not spread over unrelated products.
     const gross = items.reduce((sum, item) => sum + receiptItemTotal(item), 0);
+    const expenseTotal = items.filter((it) => !shouldPostReceiptItem(it))
+      .reduce((sum, it) => sum + receiptItemTotal(it) - Number(it.itemDiscount || 0), 0);
+    const postedBase = items.filter(shouldPostReceiptItem)
+      .reduce((sum, it) => sum + receiptItemTotal(it) - Number(it.itemDiscount || 0), 0);
     const lineDiscounts = items.reduce((sum, item) => sum + Math.max(0, Number(item.itemDiscount || 0)), 0);
     const remainingDiscount = Math.max(0, Number(draftDiscount) - lineDiscounts);
     const discountBase = Math.max(0, gross - lineDiscounts);
     items.forEach((it) => {
+      if (!shouldPostReceiptItem(it)) return; // Retain in fiscal history; do not mutate stock.
       const itemGross = receiptItemTotal(it);
       const base = Math.max(0, itemGross - Math.max(0, Number(it.itemDiscount || 0)));
       const ratio = discountBase > 0 ? base / discountBase : 0;
-      const netLine = Math.max(0, base - remainingDiscount * ratio + draftExtras * ratio);
+      // Fees already listed as fiscal rows are not extra to the invoice total.
+      // Allocate their net cost to physical items instead of creating fake products.
+      const serviceRatio = postedBase > 0 ? base / postedBase : 0;
+      const netLine = Math.max(0, base - remainingDiscount * ratio +
+        draftExtras * serviceRatio + expenseTotal * serviceRatio -
+        (discountBase > 0 ? expenseTotal * remainingDiscount / discountBase * serviceRatio : 0));
       const fiscalCode = norm(it.code);
       const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
       const index = nextProducts.findIndex((p) =>
@@ -1984,6 +2004,15 @@ export default function Home() {
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:225}}>
+                      <label style={{display:'block',fontSize:11,marginBottom:6}}>
+                        Classificação fiscal
+                        <select className="inline-input" style={{width:'100%',marginTop:3}}
+                          value={it.stockDisposition || (isNonStockExpense(it) ? 'expense' : 'stock')}
+                          onChange={(e) => changeItem(i,'stockDisposition',e.target.value)}>
+                          <option value="stock">Mercadoria — movimentar estoque</option>
+                          <option value="expense">Despesa/serviço — não movimentar</option>
+                        </select>
+                      </label>
                       <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
                         aria-label={'Associar ' + it.name + ' ao estoque'}
                         value={it.productId || ''}
