@@ -1336,6 +1336,22 @@ export default function Home() {
     const numericFields = ['subtotal', 'discount', 'total', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
     setDraft((d) => ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }));
   }
+  function changeNfceAccessKey(value) {
+    const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
+    setDraft((previous) => {
+      if (!previous) return previous;
+      const valid = validateNfceAccessKey(key);
+      return {
+        ...previous,
+        accessKey: valid ? key : '',
+        accessKeyInput: key,
+        consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
+        qrUrlPreserved: false,
+        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 65 e dígito verificador correto.'
+      };
+    });
+  }
+
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
     setDraft((d) => {
