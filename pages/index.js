@@ -1056,6 +1056,11 @@ export default function Home() {
   const [ocrProgress, setOcrProgress] = useState(0);
   const [uploadBatchProgress, setUploadBatchProgress] = useState(null);
   const [deletingDocId, setDeletingDocId] = useState('');
+  const [mergePair, setMergePair] = useState(null);
+  const [mergeKeepId, setMergeKeepId] = useState('');
+  const [mergeAcknowledged, setMergeAcknowledged] = useState(false);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
@@ -1852,6 +1857,55 @@ export default function Home() {
     setView('documents');
   }
 
+  function openMergePair(pair) {
+    if (currentUser?.role !== 'admin' || !supabase) {
+      setToast('A consolidação exige uma sessão do Gestor no banco compartilhado.');
+      return;
+    }
+    setMergePair(pair);
+    // Prefer keeping a named item with positive stock; never guess whether
+    // physical quantities describe the same contents.
+    setMergeKeepId(Number(pair.left.stock) >= Number(pair.right.stock) ?
+      pair.left.id : pair.right.id);
+    setMergeAcknowledged(false);
+    setMergeError('');
+  }
+
+  async function confirmProductMerge() {
+    if (!mergePair || currentUser?.role !== 'admin' || !supabase || !accessCode)
+      return;
+    if (!mergePair.sameUnit) {
+      setMergeError('As unidades são diferentes. Corrija o cadastro e converta as quantidades antes de consolidar.');
+      return;
+    }
+    if (!mergeAcknowledged || ![mergePair.left.id, mergePair.right.id].includes(mergeKeepId)) return;
+    if (countDraft) {
+      setMergeError('Há uma contagem de estoque em andamento. Conclua ou cancele antes de consolidar.');
+      return;
+    }
+    if (saveStatus !== 'Sincronizado') {
+      setMergeError('Aguarde a sincronização do estoque antes de continuar.');
+      return;
+    }
+    setMergeBusy(true);
+    setMergeError('');
+    try {
+      await saveQueueRef.current;
+      const removeId = mergePair.left.id === mergeKeepId ? mergePair.right.id : mergePair.left.id;
+      const { data, error: rpcError } = await supabase.rpc('inventory_merge_products', {
+        p_token: accessCode, p_keep_id: mergeKeepId, p_remove_id: removeId, p_rev: revisionRef.current
+      });
+      if (rpcError || !data?.ok) throw new Error(rpcError?.message || 'Não foi possível consolidar os produtos.');
+      if (!(await loadSharedInventory(accessCode)))
+        throw new Error('Consolidação concluída, mas não foi possível recarregar o estoque.');
+      setMergePair(null);
+      setMergeAcknowledged(false);
+      setToast('Cadastros consolidados. Saldos e vínculos das notas foram preservados.');
+    } catch (e) {
+      setMergeError(e?.message || 'Falha ao consolidar. Atualize o estoque e tente novamente.');
+    } finally { setMergeBusy(false); }
+  }
+
   async function deleteDocument(document) {
     if (!document?.id || currentUser?.role !== 'admin') {
       setDeleteError('Somente o Gestor pode excluir uma nota fiscal lançada.');
@@ -1966,13 +2020,18 @@ export default function Home() {
         </section>}
         {view === 'duplicates' && currentUser?.role === 'admin' && <section className="panel duplicates-panel">
           <div className="panel-head"><div><h2>Auditoria automática do catálogo</h2><p>Executada sempre que o estoque é atualizado. O código é comparado sem zeros iniciais e a descrição é verificada separadamente.</p></div><span className="history-count">{duplicatePairs.length} par(es)</span></div>
-          <p className="duplicate-guidance">⚠ Conferência do gestor necessária. Não unificamos produtos ou saldos automaticamente: notas, movimentações e contagens antigas podem estar vinculadas aos IDs originais. Confira também unidade, embalagem e fornecedor antes de corrigir cadastros.</p>
+          <p className="duplicate-guidance">⚠ Revise estes pares com o documento original. Quando forem o mesmo produto, escolha qual cadastro manter e clique em Consolidar. A operação soma os saldos, preserva os códigos e atualiza os vínculos das notas para manter possíveis estornos. Unidades diferentes exigem correção prévia.</p>
           {duplicatePairs.length ? <div className="duplicate-results">{duplicatePairs.map((match) => <div key={String(match.left.id) + ':' + String(match.right.id)} className="duplicate-pair">
             <div className="duplicate-pair-heading"><b className={match.confidence === 'alta' ? 'duplicate-high' : 'duplicate-review'}>{match.confidence === 'alta' ? 'Alta probabilidade' : 'Conferir manualmente'}</b><small>Descrição: {match.similarity}% semelhante</small></div>
             <div className="duplicate-comparison">
               {[match.left, match.right].map((p, i) => <div className="duplicate-product" key={p.id}><strong>{p.name}</strong><small>Código: {p.sku || 'Sem código'} · {qty(p.stock)} {p.unit}</small><small>Fornecedor(es): {(p.supplierCodes || []).map((alias) => alias.code + ' (' + alias.cnpj + ')').join(', ') || 'Não informado'}</small><button type="button" className="text-btn" onClick={() => openProduct(p)}>Editar {i === 0 ? 'primeiro' : 'segundo'} cadastro <Icon type="edit" size={14}/></button></div>)}
             </div>
             <p className="duplicate-reasons">{match.reasons.join(' · ')}</p>
+            <div className="duplicate-merge-actions">
+              <small>Se for o mesmo produto: saldo combinado {qty(Number(match.left.stock) + Number(match.right.stock))} {match.left.unit}.</small>
+              <button className="btn primary" type="button" disabled={!match.sameUnit || !supabase || saveStatus !== 'Sincronizado'} onClick={() => openMergePair(match)}><Icon type="check" size={15}/>Consolidar cadastros</button>
+            </div>
+            {!match.sameUnit && <small className="duplicate-unit-warning">⚠ As unidades são diferentes. Edite e converta antes de consolidar.</small>}
           </div>)}</div>
           : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma possível duplicata encontrada</b><p>A rotina seguirá conferindo o catálogo ao entrar ou lançar notas fiscais.</p></div>}
         </section>}
@@ -2134,6 +2193,19 @@ export default function Home() {
     </main>
 
     {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
+    {mergePair && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !mergeBusy) setMergePair(null); }}>
+      <section className="modal duplicate-merge-modal" role="dialog" aria-modal="true" aria-label="Consolidar cadastros duplicados">
+        <div className="modal-heading"><div><div className="eyebrow">AÇÃO EXCLUSIVA DO GESTOR</div><h2>Consolidar produtos</h2><p>Escolha o cadastro principal e confira as quantidades.</p></div><button className="close-btn" disabled={mergeBusy} onClick={() => setMergePair(null)}><Icon type="close"/></button></div>
+        <div className="duplicate-merge-body">
+          <div className="duplicate-guidance">⚠ Esta operação remove o cadastro secundário e atualiza os vínculos de movimentações e notas para o produto principal. O histórico das contagens antigas é mantido como registro original.</div>
+          {[mergePair.left, mergePair.right].map((p) => <label key={p.id} className="duplicate-keep-choice"><input type="radio" name="mergeKeep" value={p.id} checked={mergeKeepId === p.id} onChange={() => setMergeKeepId(p.id)} disabled={mergeBusy}/><span><b>{p.name}</b><small>Código {p.sku} · {qty(p.stock)} {p.unit} · custo {money(p.cost)}</small><small>{mergeKeepId === p.id ? 'Cadastro que permanecerá visível no estoque' : 'Cadastro que será removido após a consolidação'}</small></span></label>)}
+          <div className="duplicate-merge-total"><b>Saldo após a consolidação</b><strong>{qty(Number(mergePair.left.stock) + Number(mergePair.right.stock))} {mergePair.left.unit}</strong><small>Os custos serão ponderados pelas quantidades; o mínimo será o maior dos dois. Confira se as quantidades não representam dupla contagem física.</small></div>
+          <label className="duplicate-confirm"><input type="checkbox" checked={mergeAcknowledged} onChange={(e)=>setMergeAcknowledged(e.target.checked)} disabled={mergeBusy}/><span>Conferi os produtos e as quantidades físicas. Confirmo que representam o mesmo item e autorizo a consolidação.</span></label>
+          {mergeError && <div className="error" role="alert">{mergeError}</div>}
+        </div>
+        <div className="modal-actions"><button className="btn secondary" type="button" disabled={mergeBusy} onClick={() => setMergePair(null)}>Cancelar</button><button className="btn primary" type="button" disabled={!mergeAcknowledged || mergeBusy || !mergePair.sameUnit} onClick={() => void confirmProductMerge()}>{mergeBusy ? 'Consolidando…' : 'Confirmar consolidação'}</button></div>
+      </section>
+    </div>}
     {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2>Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
     {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetailDoc(null); }}><section className="modal detail-modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2>{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" onClick={() => setDetailDoc(null)}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
