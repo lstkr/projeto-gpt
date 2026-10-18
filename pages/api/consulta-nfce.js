@@ -94,7 +94,7 @@ function parseFiscalTotals(text) {
   return result;
 }
 
-async function fetchOfficial(url) {
+async function fetchOfficial(url, signal) {
   let target = new URL(url);
   for (let redirect = 0; redirect < 4; redirect++) {
     if (target.protocol !== 'https:' || !ALLOWED_INPUTS.has(target.hostname) ||
@@ -103,7 +103,7 @@ async function fetchOfficial(url) {
     }
     const response = await fetch(target.toString(), {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EstoquePlus/1.0)', 'Accept': 'text/html,application/xhtml+xml' },
-      redirect: 'manual', signal: AbortSignal.timeout(14000), cache: 'no-store'
+      redirect: 'manual', signal, cache: 'no-store'
     });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -147,12 +147,17 @@ export default async function handler(req, res) {
       error: 'Chave fiscal rejeitada: modelo diferente de 65 ou dígito verificador incorreto. O OCR pode ter trocado ou acrescentado números.'
     });
   }
+  // One deadline covers redirects, reading the HTML body and parsing the page.
+  // Clearing the timer + aborting the fetch releases resources on timeout or error.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9800);
   try {
     // Both official QR encodings from RS are accepted. Query the SVRS portal
     // canonical endpoint after validating the NFC-e key and full QR payload.
     const canonical = new URL('https://' + OFFICIAL_HOST + '/Dfe/QrCodeNFce');
     canonical.searchParams.set('p', payload);
-    const { html, sourceUrl } = await fetchOfficial(canonical);
+    const { html, sourceUrl } = await fetchOfficial(canonical, controller.signal);
+    if (controller.signal.aborted) throw new Error('Tempo limite de consulta atingido.');
     const text = htmlToText(html);
     if (text.length < 80) throw new Error('Página oficial sem dados legíveis.');
     if (/captcha|recaptcha|verifique que voc[eê] n[aã]o [eé] um rob[oô]/i.test(text)) {
@@ -162,11 +167,18 @@ export default async function handler(req, res) {
       throw new Error('O portal recusou a consulta. Confira a chave e o QR Code original.');
     }
     const items = parseOfficialItems(html);
+    if (controller.signal.aborted) throw new Error('Tempo limite de consulta atingido.');
     if (!items.length) {
       return res.status(502).json({ error: 'A SEFAZ abriu a página, mas a lista de produtos não veio em um formato estruturado reconhecido. Confira manualmente.' });
     }
-    return res.status(200).json({ items, totals: parseFiscalTotals(text), source: 'SVRS', url: sourceUrl });
+    return res.status(200).json({ items, totals: parseFiscalTotals(text), source: 'SVRS', accessKey: key, url: sourceUrl });
   } catch (e) {
+    if (controller.signal.aborted || e.name === 'AbortError' || e.name === 'TimeoutError') {
+      return res.status(504).json({ error: 'A consulta à SEFAZ demorou mais de 10 segundos. Confira a nota manualmente.' });
+    }
     return res.status(502).json({ error: e.message || 'Não foi possível acessar o portal da SVRS neste momento.' });
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
   }
 }
