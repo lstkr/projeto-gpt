@@ -78,3 +78,9 @@ As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem
 - Verifique cada OCR antes de confirmar; OCR pode confundir números ou deixar itens de fora.
 - Configure backups regulares do Supabase.
 - Troque as credenciais iniciais por senhas fortes e exclusivas antes do uso diário.
+
+## Contagem física de estoque
+
+No menu **Contagem de estoque**, Gestor e funcionários contam todos os produtos (inclusive zeros), conferem diferenças com o saldo atual e concluem a reconciliação. O sistema grava os ajustes e o histórico com data e responsável. O banco rejeita contagens com saldos obsoletos.
+
+Somente o **Gestor** define a contagem obrigatória por intervalo de dias, dia da semana ou dia fixo do mês. O calendário só passa a valer depois de ser habilitado; as contas e senhas não são alteradas por esta funcionalidade.
