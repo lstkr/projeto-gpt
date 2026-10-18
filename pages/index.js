@@ -1615,20 +1615,31 @@ export default function Home() {
     const nextMovements = [...movements];
     const documentId = uid();
     const stockEntries = [];
+    // Apply line-specific discounts first; prorate only the remaining discount
+    // and charges, so a targeted discount is not spread over unrelated products.
+    const gross = items.reduce((sum, item) => sum + receiptItemTotal(item), 0);
+    const lineDiscounts = items.reduce((sum, item) => sum + Math.max(0, Number(item.itemDiscount || 0)), 0);
+    const remainingDiscount = Math.max(0, Number(draftDiscount) - lineDiscounts);
+    const discountBase = Math.max(0, gross - lineDiscounts);
     items.forEach((it) => {
+      const itemGross = receiptItemTotal(it);
+      const base = Math.max(0, itemGross - Math.max(0, Number(it.itemDiscount || 0)));
+      const ratio = discountBase > 0 ? base / discountBase : 0;
+      const netLine = Math.max(0, base - remainingDiscount * ratio + draftExtras * ratio);
+      const netUnitCost = Math.round(netLine / Number(it.quantity) * 10000) / 10000;
       const index = nextProducts.findIndex((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name) &&
         normalizeReceiptUnit(p.unit) === normalizeReceiptUnit(it.unit));
       let productId;
       if (index >= 0) {
         const old = nextProducts[index];
         productId = old.id;
-        nextProducts[index] = { ...old, stock: Math.round((Number(old.stock) + Number(it.quantity)) * 1000) / 1000, cost: Number(it.unitPrice) > 0 ? Number(it.unitPrice) : old.cost, unit: it.unit || old.unit, updated: dateNow() };
+        nextProducts[index] = { ...old, stock: Math.round((Number(old.stock) + Number(it.quantity)) * 1000) / 1000, cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost, unit: it.unit || old.unit, updated: dateNow() };
       } else {
         productId = uid();
-        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number(it.unitPrice) || 0, updated: dateNow() });
+        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number.isFinite(netUnitCost) ? netUnitCost : 0, updated: dateNow() });
       }
       const movementId = uid();
-      stockEntries.push({ productId, movementId, quantity: Number(it.quantity) });
+      stockEntries.push({ productId, movementId, quantity: Number(it.quantity), netUnitCost });
       nextMovements.unshift({ id: movementId, documentId, productId, product: it.name.trim(), type: 'Entrada', quantity: Number(it.quantity), reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
     });
     setProducts(nextProducts);
