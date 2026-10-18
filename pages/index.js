@@ -1303,6 +1303,13 @@ export default function Home() {
     setAdjust({ type, quantity: '1', reason: type === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' });
     setModal('adjust');
   }
+  function beginCount() {
+    if(!products.length){setCountError('Cadastre produtos antes de fazer a contagem.');return;}
+    if(supabase&&saveStatus!=='Sincronizado'){setCountError('Aguarde o estoque sincronizar antes de iniciar.');return;}
+    setCountDraft(Object.fromEntries(products.map((p)=>[p.id,''])));
+    setCountBasis(revisionRef.current);
+    setCountError('');
+  }
   function saveAdjustment(event) {
     event.preventDefault();
     const amount = Number(adjust.quantity);
