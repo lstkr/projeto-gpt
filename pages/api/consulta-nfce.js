@@ -108,6 +108,7 @@ async function fetchOfficial(url, signal) {
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) throw new Error('O portal redirecionou sem informar o destino.');
+      await response.body?.cancel().catch(() => {});
       target = new URL(location, target);
       continue;
     }
@@ -120,7 +121,10 @@ async function fetchOfficial(url, signal) {
     if (declared > cap) throw new Error('A resposta fiscal excedeu o limite de segurança.');
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Resposta da SEFAZ sem corpo legível.');
-    const decoder = new TextDecoder('utf-8');
+    const charset = type.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1] || 'utf-8';
+    let decoder;
+    try { decoder = new TextDecoder(charset); }
+    catch (_) { decoder = new TextDecoder('utf-8'); }
     const chunks = [];
     let size = 0;
     try {
