@@ -458,6 +458,7 @@ async function prepareReceiptCanvases(file) {
   };
 
   const crops = [];
+  const qrCrops = [];
   for (const segment of segments) {
     const [sx, ex] = trimX(segment[0], segment[1]);
     const sw = Math.max(1, ex - sx);
@@ -488,6 +489,13 @@ async function prepareReceiptCanvases(file) {
 
     const scaledWidth = Math.max(1200, Math.min(1800, Math.round(sw * 2.8)));
     const scaledHeight = Math.round(sh * scaledWidth / sw);
+    // Keep an unmodified version for QR decoding; thresholding can erase small modules.
+    const qrCanvas = document.createElement('canvas');
+    qrCanvas.width = scaledWidth;
+    qrCanvas.height = scaledHeight;
+    qrCanvas.getContext('2d').drawImage(image, sx, y0, sw, sh, 0, 0, scaledWidth, scaledHeight);
+    qrCrops.push(qrCanvas);
+
     const canvas = document.createElement('canvas');
     canvas.width = scaledWidth;
     canvas.height = scaledHeight;
@@ -504,7 +512,7 @@ async function prepareReceiptCanvases(file) {
     ctx.putImageData(data, 0, 0);
     crops.push(canvas);
   }
-  return { canvases: crops, split: twoReceipts };
+  return { canvases: crops, qrCanvases: qrCrops, split: twoReceipts };
 }
 
 
@@ -770,7 +778,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResults = await detectNfceQrCodes(canvases);
+          const qrResults = await detectNfceQrCodes(canvases, prepared.qrCanvases);
           const { createWorker } = await import('tesseract.js');
           worker = await createWorker('por', 1, {
             logger: (message) => {
