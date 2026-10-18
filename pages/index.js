@@ -1889,7 +1889,10 @@ export default function Home() {
           <h2>Contagem física do estoque</h2>
           <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
           <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
-          {/* COUNT CONTENT */}
+          {countSettings.enabled && <p style={{color:countDue?'#a33':'#356b54'}}>{countDue ? 'Prazo vencido: conferência obrigatória pendente.' : 'A contagem está em dia.'}</p>}
+          {stockCounts[0]&&<p>Última conferência: {new Date(stockCounts[0].completedAt).toLocaleString('pt-BR')} · {stockCounts[0].by}</p>}
+          {countError&&<div className="error" role="alert">{countError}</div>}
+          {/* COUNT CONFIG */}{/* COUNT TABLE */}{/* COUNT HISTORY */}
         </section>}
         {view === 'stock' && <>
           <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
