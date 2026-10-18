@@ -1332,6 +1332,16 @@ export default function Home() {
     if(lines.some((v)=>!Number.isFinite(v.counted)||v.counted<0||Math.round(v.counted*1000)/1000!==v.counted)){setCountError('Informe quantidades não negativas, com até 3 casas decimais.');return;}
     const diffs=lines.filter((x)=>x.counted!==Number(products.find((p)=>p.id===x.productId)?.stock||0)).length;
     if(!window.confirm('Concluir a contagem? '+diffs+' diferenças serão ajustadas no estoque.'))return;
+    setCountBusy(true);setCountError('');
+    try{
+      await saveQueueRef.current;
+      const {data,error:rpcError}=await supabase.rpc('inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
+      if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Falha ao registrar.');
+      if(!(await loadSharedInventory(accessCode)))throw new Error('Registro concluído, mas falhou a atualização da tela.');
+      setCountDraft(null);setCountBasis(null);
+      setToast('Contagem concluída com sucesso. Ajustes registrados no histórico.');
+    }catch(e){setCountError(e?.message||'Não foi possível concluir a contagem.');}
+    finally{setCountBusy(false);}
 
   }
   function saveAdjustment(event) {
