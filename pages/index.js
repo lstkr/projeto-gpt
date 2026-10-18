@@ -549,13 +549,41 @@ async function detectNfceQrCodes(canvases, rawCanvases = []) {
 }
 
 function detectReceiptSupplier(text) {
+  const normalize = (line) => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const lines = String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 24);
   const skip = /(CNPJ|CPF|RUA\b|AVENIDA|AV\.|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CONSUMIDOR|CHAVE DE ACESSO|PROTOCOLO|CUPOM FISCAL|NFC-?E|N[ÚU]MERO|S[ÉE]RIE|TERMINAL|CAIXA|CONSULTE|TRIBUTOS|INSCRI[CÇ][AÃ]O ESTADUAL|EMISS[AÃ]O|DATA DE AUTORIZA[CÇ][AÃ]O)/i;
-  const lines = String(text || '').split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 22);
+  const clean = (line) => String(line || '')
+    .replace(/\s*-?\s*CNPJ\s*:?.*$/i, '')
+    .replace(/\s*-?\s*CPF\s*:?.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[^A-Za-zÀ-ÿ]+/, '')
+    .replace(/\s*[-–—]\s*$/, '')
+    .trim();
+  const preferredIndex = lines.findIndex((line) => {
+    const n = normalize(line);
+    const letters = (line.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+    return letters >= 8 && /(COMERCIAL|COMERCIO|MATERIAIS|HORTIFRUT|INFORMATICA|DISTRIBUIDORA|ALIMENTOS|SUPERMERCADO|ATACADO)/.test(n)
+      && !/(DOCUMENTO AUXILIAR|NOTA FISCAL|CHAVE DE ACESSO)/.test(n);
+  });
+  if (preferredIndex >= 0) {
+    const parts = [clean(lines[preferredIndex])].filter(Boolean);
+    for (let j = preferredIndex + 1; j < Math.min(lines.length, preferredIndex + 3); j++) {
+      const line = lines[j];
+      if (/(RUA\b|AVENIDA|FONE|TELEFONE|CEP\b|DOCUMENTO AUXILIAR|NOTA FISCAL|CHAVE DE ACESSO|PROTOCOLO|CONSUMIDOR|IE:)/i.test(line)) break;
+      const cleaned = clean(line);
+      const letters = (cleaned.match(/[A-Za-zÀ-ÿ]/g) || []).length;
+      if (letters >= 5 && !skip.test(line)) parts.push(cleaned);
+      else if (letters >= 5 && /HORTIFRUT|LTDA|EIRELI|MATERIAIS|INFORMATICA/i.test(cleaned)) parts.push(cleaned);
+      if (parts.join(' ').length > 115) break;
+    }
+    const joined = parts.join(' ').replace(/\s+/g, ' ').trim();
+    if (joined) return joined.slice(0, 110);
+  }
   const candidate = lines.find((line) => {
     const letters = (line.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-    return letters >= 7 && !skip.test(line) && !/^[\d\s.,:/-]+$/.test(line);
+    return letters >= 8 && !skip.test(line) && !/^[\d\s.,:/-]+$/.test(line);
   });
-  return candidate ? candidate.replace(/^\d+\s*/, '').slice(0, 110) : '';
+  return candidate ? clean(candidate).slice(0, 110) : '';
 }
 
 function detectReceiptMetadata(text) {
