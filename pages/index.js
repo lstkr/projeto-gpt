@@ -1116,6 +1116,8 @@ export default function Home() {
         if (Array.isArray(state.products)) setProducts(state.products);
         if (Array.isArray(state.movements)) setMovements(state.movements);
         if (Array.isArray(state.documents)) setDocuments(state.documents);
+        if (Array.isArray(state.stockCounts)) setStockCounts(state.stockCounts);
+        if (state.countSettings){setCountSettings(state.countSettings);setSettingsForm(state.countSettings);}
       }
     } catch (_) {}
     setLoaded(true);
@@ -1124,8 +1126,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded || supabase) return;
-    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents })); } catch (_) {}
-  }, [loaded, products, movements, documents, supabase]);
+    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, stockCounts, countSettings })); } catch (_) {}
+  }, [loaded, products, movements, documents, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
     if (!supabase || !accessGranted || !dataReady || !accessCode) return;
