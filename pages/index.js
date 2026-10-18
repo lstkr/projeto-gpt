@@ -770,7 +770,7 @@ export default function Home() {
     const nextProducts = [...products];
     const nextMovements = [...movements];
     items.forEach((it) => {
-      const index = nextProducts.findIndex((p) => norm(p.name) === norm(it.name));
+      const index = nextProducts.findIndex((p) => norm(p.name) === norm(it.name) && norm(p.unit || 'un') === norm(it.unit || 'un'));
       if (index >= 0) {
         const old = nextProducts[index];
         nextProducts[index] = { ...old, stock: Math.round((Number(old.stock) + Number(it.quantity)) * 1000) / 1000, cost: Number(it.unitPrice) > 0 ? Number(it.unitPrice) : old.cost, unit: it.unit || old.unit, updated: dateNow() };
