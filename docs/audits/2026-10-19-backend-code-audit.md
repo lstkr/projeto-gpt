@@ -28,7 +28,7 @@ Critério de manutenção: extrair responsabilidades aos poucos, proteger as reg
 ### P1 — Consentimento/documentação de QR externo
 
 - `pages/index.js`, em `detectNfceQrCodes`, solicita fallback externo automaticamente.
-- `pages/api/qr-externo.js` e `README.md` ainda descrevem envio condicionado a opt-in.
+- Na base auditada, `pages/api/qr-externo.js` e `README.md` descreviam incorretamente envio condicionado a opt-in. Os textos foram atualizados **nesta branch**; a política efetiva de terceiros ainda precisa ser revisada.
 - **Proposta:** alinhar documentação, avisos de privacidade e comportamento da interface; definir política de transmissão de fotos antes de lançar mudanças.
 
 ## Manutenibilidade e redundância
@@ -62,6 +62,7 @@ Critério de manutenção: extrair responsabilidades aos poucos, proteger as reg
 1. `lib/duplicate-products.mjs`: substituído comparador duplicado por helper local; regra de priorização permanece `alta` antes de `revisar`, depois maior semelhança.
 2. `tests/duplicate-products.test.cjs`: novo teste para garantir a mesma ordem nos dois métodos públicos de busca.
 3. `pages/api/cash-extract.js`: somente legibilidade, constantes nomeadas e comentário sobre validação de sessão anterior ao processamento de PDF. Limites, autenticação, códigos HTTP e mensagens preservados.
+4. `README.md` e `pages/api/qr-externo.js`: documentação e comentário corrigidos para refletir o fallback externo automático atual.
 
 ## Critérios de aceite das próximas etapas
 
