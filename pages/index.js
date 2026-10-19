@@ -1236,6 +1236,17 @@ export default function Home() {
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
+          // Mark processed only after the shared stock snapshot was committed.
+          for(const completed of documents.filter(d=>d.pendingReceiptId)){
+            if(pendingMarking.current.has(completed.pendingReceiptId))continue;
+            pendingMarking.current.add(completed.pendingReceiptId);
+            const {data:marked,error:markError}=await supabase.rpc('pending_receipt_mark_posted',{
+              p_token:accessCode,p_id:completed.pendingReceiptId
+            });
+            if(markError||!marked?.ok)setPendingSaveError(markError?.message||'Falha ao arquivar a conferência concluída.');
+            else setPendingReceipts(rows=>rows.filter(r=>r.id!==completed.pendingReceiptId));
+            pendingMarking.current.delete(completed.pendingReceiptId);
+          }
         }
       });
     }, 650);
@@ -1899,21 +1910,6 @@ export default function Home() {
     },1200);
     return ()=>clearTimeout(timer);
   },[draft,supabase,accessCode,dataReady]);
-
-  useEffect(()=>{
-    if(!supabase||!accessCode||saveStatus!=='Sincronizado')return;
-    for(const row of pendingReceipts){
-      if(!documents.some(d=>d.pendingReceiptId===row.id))continue;
-      if(pendingMarking.current.has(row.id))continue;
-      pendingMarking.current.add(row.id);
-      supabase.rpc('pending_receipt_mark_posted',{p_token:accessCode,p_id:row.id})
-        .then(({data,error:markError})=>{
-          if(markError||!data?.ok)throw new Error(markError?.message||'Falha ao finalizar nota pendente.');
-          setPendingReceipts(old=>old.filter(r=>r.id!==row.id));
-        }).catch(e=>setPendingSaveError(e.message))
-          .finally(()=>pendingMarking.current.delete(row.id));
-    }
-  },[saveStatus,documents,pendingReceipts,supabase,accessCode]);
 
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
