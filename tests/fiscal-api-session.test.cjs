@@ -75,9 +75,12 @@ test('both fiscal routes enforce session checks before making external requests'
   for (const path of ['pages/api/qr-externo.js', 'pages/api/consulta-nfce.js']) {
     const source = fs.readFileSync(path, 'utf8');
     const auth = source.indexOf('await requireInventorySession(req, res)');
-    const fetchCall = source.indexOf('await fetch(');
-    assert.ok(auth >= 0, path + ' must validate session');
-    assert.ok(fetchCall > auth, path + ' must validate session before external fetch');
+    const handler = source.indexOf('export default async function handler');
+    const externalCall = path.includes('consulta-nfce')
+      ? source.indexOf('await fetchOfficial(canonical', handler)
+      : source.indexOf('await fetch(', handler);
+    assert.ok(auth > handler, path + ' must validate session in its handler');
+    assert.ok(externalCall > auth, path + ' must validate session before external fetch');
   }
   const page = fs.readFileSync('pages/index.js', 'utf8');
   assert.match(page, /decodeQrViaExternalApi\(reference, sessionToken\)/);
