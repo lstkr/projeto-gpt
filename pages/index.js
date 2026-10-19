@@ -1043,6 +1043,14 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [pendingReceipts,setPendingReceipts]=useState([]);
+  const [pendingBusy,setPendingBusy]=useState(false);
+  const [pendingSaveError,setPendingSaveError]=useState('');
+  const pendingSaveSerial=useRef(Promise.resolve());
+  const pendingMarking=useRef(new Set());
+  const pendingFingerprints=useRef(new Map());
+  const pendingRevisions=useRef(new Map());
+
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
@@ -1122,6 +1130,9 @@ export default function Home() {
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
+    if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
+
     const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
     if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
@@ -1225,6 +1236,17 @@ export default function Home() {
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
+          // Mark processed only after the shared stock snapshot was committed.
+          for(const completed of documents.filter(d=>d.pendingReceiptId)){
+            if(pendingMarking.current.has(completed.pendingReceiptId))continue;
+            pendingMarking.current.add(completed.pendingReceiptId);
+            const {data:marked,error:markError}=await supabase.rpc('pending_receipt_mark_posted',{
+              p_token:accessCode,p_id:completed.pendingReceiptId
+            });
+            if(markError||!marked?.ok)setPendingSaveError(markError?.message||'Falha ao arquivar a conferência concluída.');
+            else setPendingReceipts(rows=>rows.filter(r=>r.id!==completed.pendingReceiptId));
+            pendingMarking.current.delete(completed.pendingReceiptId);
+          }
         }
       });
     }, 650);
@@ -1760,6 +1782,55 @@ export default function Home() {
     throw new Error('Formato não reconhecido: ' + file.name + '. Use XML, PDF ou JPG/PNG/WEBP.');
   }
 
+  const cleanPendingDraft=(value)=>{
+    if(!value) return {};
+    const {pendingId,pendingRevision, ...clean}=value;
+    return {...clean,ocrText:String(clean.ocrText||'').slice(0,100000),
+      officialText:String(clean.officialText||'').slice(0,30000)};
+  };
+  async function refreshPending(){
+    if(!supabase||!accessCode)return;
+    const {data,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:accessCode});
+    if(pendingError)throw new Error(pendingError.message);
+    setPendingReceipts(Array.isArray(data)?data:[]);
+  }
+  async function storePendingReceipt(file,receipt){
+    if(!supabase||!accessCode)throw new Error('Faça login para salvar notas pendentes no servidor.');
+    if(file.size>4000000)throw new Error('Limite de 4 MB por arquivo para arquivamento.');
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    let encoded='';
+    for(let i=0;i<bytes.length;i+=8192)encoded+=String.fromCharCode(...bytes.subarray(i,i+8192));
+    const base64=btoa(encoded);
+    const {data,error:uploadError}=await supabase.rpc('pending_receipt_create',{
+      p_token:accessCode,p_file_name:file.name,p_mime:file.type||'',
+      p_base64:base64,p_draft:cleanPendingDraft(receipt)
+    });
+    if(uploadError||!data?.ok)throw new Error(uploadError?.message||'Não foi possível arquivar a nota.');
+    pendingFingerprints.current.set(data.id,JSON.stringify(cleanPendingDraft(receipt)));
+    pendingRevisions.current.set(data.id,data.revision);
+    return {...receipt,pendingId:data.id,pendingRevision:data.revision};
+  }
+  async function openPendingReceipt(row){
+    if(draft && draft.pendingId!==row.id &&
+       !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
+    pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
+    pendingRevisions.current.set(row.id,row.revision);
+    setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
+    setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
+  }
+  async function viewPendingOriginal(row){
+    if(!supabase||!accessCode)return;
+    try{
+      const {data,error:fileError}=await supabase.rpc('pending_receipt_file',{p_token:accessCode,p_id:row.id});
+      if(fileError||!data?.base64)throw new Error(fileError?.message||'Arquivo original não disponível.');
+      const binary=atob(data.base64);
+      const dataBytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++)dataBytes[i]=binary.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([dataBytes],{type:data.mime||'application/octet-stream'}));
+      const anchor=document.createElement('a');anchor.href=url;anchor.download=data.fileName||'original';
+      anchor.click();setTimeout(()=>URL.revokeObjectURL(url),15000);
+    }catch(e){setError(e.message);}
+  }
   async function uploadFiles(selectedFiles) {
     const files = Array.from(selectedFiles || []);
     if (!files.length || busy) return;
@@ -1789,19 +1860,24 @@ export default function Home() {
         setOcrProgress(0);
         try {
           const receipts = await parseUploadedFile(file);
-          parsed.push(...receipts.map((receipt) =>
-            attachPreviousPurchases(receipt, [...parsed, ...documents], products)));
+          for(const receipt of receipts){
+            const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
+            parsed.push(await storePendingReceipt(file,mapped));
+          }
         } catch (e) {
           issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
-          parsed.push({
-            supplier: '', invoiceNumber: '', date: '', source: 'Arquivo (conferência manual)',
-            checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento',
-            importWarning: e?.message || 'Não foi possível interpretar automaticamente.',
-            items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
-          });
+          const fallback={supplier:'',invoiceNumber:'',date:'',
+            source:'Arquivo (conferência manual)',checkedBy:'',fileName:file.name,
+            status:'Aguardando preenchimento',
+            importWarning:e?.message||'Não foi possível interpretar automaticamente.',
+            items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
+          try{parsed.push(await storePendingReceipt(file,fallback));}
+          catch(saveError){issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);}
+
         }
       }
       if (parsed.length) {
+        await refreshPending();
         setDraft(parsed[0]);
         setDraftQueue(parsed.slice(1));
         setDraftBatch(parsed.length > 1 ? {current: 1, total: parsed.length} : null);
@@ -1814,6 +1890,29 @@ export default function Home() {
       setUploadBatchProgress(null);
     }
   }
+  useEffect(()=>{
+    if(!draft?.pendingId||!supabase||!accessCode||!dataReady)return;
+    const snapshot=cleanPendingDraft(draft),id=draft.pendingId;
+    const fingerprint=JSON.stringify(snapshot);
+    if(pendingFingerprints.current.get(id)===fingerprint)return;
+    const timer=setTimeout(()=>{
+      pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
+        setPendingBusy(true);setPendingSaveError('');
+        const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
+          p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
+        });
+        if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
+        pendingFingerprints.current.set(id,fingerprint);
+        pendingRevisions.current.set(id,data.revision);
+        // Trigger another autosave if the reviewer edited while the previous RPC was running.
+        setDraft(current=>current?.pendingId===id?{...current,pendingRevision:data.revision}:current);
+        setPendingReceipts(old=>old.map(row=>row.id===id
+          ? {...row,draft:snapshot,revision:data.revision}:row));
+      }).catch(e=>setPendingSaveError(e.message)).finally(()=>setPendingBusy(false));
+    },1200);
+    return ()=>clearTimeout(timer);
+  },[draft,supabase,accessCode,dataReady]);
+
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
     setDraft((d) => d ? ({ ...d, finalReviewed: key === 'checkedBy' ? d.finalReviewed : false,
@@ -1970,6 +2069,11 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
+    if(draft?.pendingId && (pendingBusy||pendingSaveError||
+      pendingFingerprints.current.get(draft.pendingId)!==JSON.stringify(cleanPendingDraft(draft)))){
+      setError(pendingSaveError||'Aguarde a conferência ser salva no servidor antes de lançar.');
+      return;
+    }
     if (officialMissing) {
       setError('Há ' + officialMissing + ' item(ns) da consulta ainda ausentes. Inclua-os ou use os itens oficiais antes de lançar.');
       return;
@@ -2102,6 +2206,7 @@ export default function Home() {
     setDocuments((old) => [{ ...documentToSave,
       ...(draft.manualInvoice ? {subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras} : {}),
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
+      pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
@@ -2352,6 +2457,17 @@ export default function Home() {
         </section>}
 
         {view === 'documents' && <>
+          <section className="panel pending-documents-panel">
+            <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
+            {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
+            {pendingBusy&&<small>Salvando conferência no servidor…</small>}
+            {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
+              <span className="history-file"><Icon type="file" size={18}/></span>
+              <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
+              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
+              <button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>
+            </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
+          </section>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
           <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
             <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
