@@ -455,29 +455,53 @@ grant execute on function public.inventory_delete_document(text, text) to anon, 
 
 -- Periodic stock counting: only Gestor can set the cadence; staff and Gestor can complete counts.
 -- Full-count completion adjusts quantities atomically and saves the audit trail.
+-- Local-day schedule calculation kept in sync with lib/stock-count.mjs.
 CREATE OR REPLACE FUNCTION private.inventory_due_date(p_state jsonb)
  RETURNS date
  LANGUAGE plpgsql
  STABLE
  SET search_path TO ''
 AS $function$
-declare cfg jsonb:=p_state->'countSettings'; a date; d int; t date;
+declare
+  cfg jsonb := coalesce(p_state->'countSettings','{}'::jsonb);
+  anchor_date date;
+  weekday int;
+  selected_day int;
+  first_day date;
+  proposed date;
 begin
- if cfg->>'enabled'<>'true' then return null; end if;
- select max((x->>'completedAt')::timestamptz::date) into a from jsonb_array_elements(coalesce(p_state->'stockCounts','[]'::jsonb)) x;
- a:=coalesce(a,(cfg->>'configuredAt')::date,current_date);
- if cfg->>'mode'='weekly' then
-  return a+(((cfg->>'weekday')::int-extract(isodow from a)::int+6)%7)+1;
- end if;
- if cfg->>'mode'='monthly' then
-  t:=date_trunc('month',a)::date;
-  d:=least((cfg->>'monthDay')::int,extract(day from t+interval '1 month - 1 day')::int);
-  if t+d-1>a then return t+d-1; end if;
-  t:=(t+interval '1 month')::date;
-  return t+least((cfg->>'monthDay')::int,extract(day from t+interval '1 month - 1 day')::int)-1;
- end if;
- return a+(cfg->>'intervalDays')::int;
-end; $function$;
+  if coalesce((cfg->>'enabled')::boolean, false) is false then
+    return null;
+  end if;
+
+  select max(((entry->>'completedAt')::timestamptz at time zone 'America/Sao_Paulo')::date)
+    into anchor_date
+    from jsonb_array_elements(coalesce(p_state->'stockCounts','[]'::jsonb)) entry
+   where entry ? 'completedAt';
+
+  anchor_date := coalesce(
+    anchor_date,
+    nullif(cfg->>'configuredAt','')::date,
+    (now() at time zone 'America/Sao_Paulo')::date
+  );
+
+  if cfg->>'mode' = 'weekly' then
+    weekday := least(7, greatest(1, coalesce((cfg->>'weekday')::int,1)));
+    return anchor_date + (((weekday - extract(isodow from anchor_date)::int + 6) % 7) + 1);
+  end if;
+
+  if cfg->>'mode' = 'monthly' then
+    selected_day := least(31, greatest(1, coalesce((cfg->>'monthDay')::int,1)));
+    first_day := date_trunc('month',anchor_date)::date;
+    proposed := first_day + (least(selected_day,extract(day from (first_day+interval '1 month - 1 day'))::int)-1);
+    if proposed > anchor_date then return proposed; end if;
+    first_day := (first_day+interval '1 month')::date;
+    return first_day + (least(selected_day,extract(day from (first_day+interval '1 month - 1 day'))::int)-1);
+  end if;
+
+  return anchor_date + least(365,greatest(1,coalesce((cfg->>'intervalDays')::int,7)));
+end;
+$function$
 
 CREATE OR REPLACE FUNCTION public.inventory_count_settings(p_token text, p_config jsonb, p_rev bigint)
  RETURNS jsonb
