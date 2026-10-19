@@ -1,3 +1,4 @@
+-- REQUISITO: aplicar db/access-permissions.sql antes deste arquivo.
 create table if not exists public.pending_receipts (
  id uuid primary key default gen_random_uuid(),
  owner_id uuid not null references private.app_users(id),
@@ -24,6 +25,7 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if not private.has_permission(uid,'fiscal.pending.read') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  return coalesce((select jsonb_agg(jsonb_build_object(
  'id',p.id,'fileName',p.file_name,'mime',p.mime,'draft',p.draft,'revision',p.revision,
  'state',p.state,'createdAt',p.created_at,'updatedAt',p.updated_at)
@@ -42,6 +44,7 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if not private.has_permission(uid,'fiscal.pending.create') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  if p_draft is null or jsonb_typeof(p_draft)<>'object' or octet_length(p_draft::text)>250000
  or length(coalesce(p_file_name,'')) not between 1 and 180
  or coalesce(p_mime,'') not in ('application/xml','text/xml','image/jpeg','image/png','image/webp','application/pdf','')
@@ -66,6 +69,7 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if not private.has_permission(uid,'fiscal.pending.review') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  if jsonb_typeof(p_draft)<>'object' or octet_length(p_draft::text)>250000 then
  raise exception 'Dados inválidos' using errcode='22023'; end if;
  select * into existing from public.pending_receipts where id=p_id for update;
@@ -85,6 +89,7 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if not private.has_permission(uid,'fiscal.pending.read') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  select jsonb_build_object('fileName',file_name,'mime',mime,'base64',encode(file_bytes,'base64')) into result
  from public.pending_receipts where id=p_id and state='pending';
  return coalesce(result,'{}'::jsonb);
@@ -100,6 +105,7 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if not private.has_permission(uid,'fiscal.pending.review') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  -- Never allow the UI to hide a pending receipt unless its posted
  -- document is already committed to the shared inventory snapshot.
  if not exists (
@@ -142,7 +148,7 @@ begin
   from private.app_sessions s join private.app_users u on u.id=s.user_id
   where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
     and s.expires_at>now() and s.revoked_at is null and u.active;
-  if actor_role is distinct from 'admin' then
+  if (actor_role is distinct from 'admin' or not private.has_permission(actor_id,'fiscal.pending.cancel')) then
     raise exception 'Somente o Gestor pode cancelar notas pendentes.' using errcode='42501';
   end if;
   select * into existing from public.pending_receipts where id=p_id for update;
