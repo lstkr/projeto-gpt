@@ -1,6 +1,7 @@
 // Optional fallback for QR decoding using pcelias-ctrl/nfc-e's published HTTP API.
 // Unlike its NFCE_SP extraction endpoint, the generic QR endpoint accepts RS QR URLs.
-// Receipt images are transmitted to a third party ONLY after the user opts in.
+// The current UI invokes this fallback automatically when local QR decoding fails.
+// The cropped footer can contain fiscal data; review the privacy policy before production use.
 const QR_DECODER_URL = process.env.NFCE_QR_DECODER_URL ||
   'https://nfc.kopilot.food/api/v1/qrcode/decode';
 
