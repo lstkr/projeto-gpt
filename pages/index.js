@@ -1464,6 +1464,7 @@ export default function Home() {
     event.target.value='';
     if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
     if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
+    newCashClosing('upload');
     setCashImporting(true);setCashError('');setCashImportWarnings([]);
     try{
       let text='';
@@ -2748,7 +2749,7 @@ export default function Home() {
           {cashEntryMode === 'choose' && <section className="panel cash-entry cash-choice-panel">
             <div className="panel-head"><div><h2>Registrar novo fechamento</h2><p>Como deseja preencher os dados?</p></div><button className="btn secondary" type="button" onClick={()=>setCashEntryMode('')}>Cancelar</button></div>
             <div className="cash-choice-options">
-              <button className="cash-choice-option" type="button" onClick={()=>{newCashClosing('upload');cashFileRef.current?.click();}}><Icon type="upload" size={23}/><b>Enviar PDF ou foto</b><span>Preencher faturamento e movimentações a partir do comprovante.</span></button>
+              <button className="cash-choice-option" type="button" onClick={()=>cashFileRef.current?.click()}><Icon type="upload" size={23}/><b>Enviar PDF ou foto</b><span>Preencher faturamento e movimentações a partir do comprovante.</span></button>
               <button className="cash-choice-option" type="button" onClick={()=>newCashClosing('manual')}><Icon type="edit" size={23}/><b>Inserir manualmente</b><span>Digitar os valores e as sangrias e suprimentos.</span></button>
             </div>
             <input ref={cashFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)}/>
