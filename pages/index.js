@@ -1904,6 +1904,8 @@ export default function Home() {
         if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
         pendingFingerprints.current.set(id,fingerprint);
         pendingRevisions.current.set(id,data.revision);
+        // Trigger another autosave if the reviewer edited while the previous RPC was running.
+        setDraft(current=>current?.pendingId===id?{...current,pendingRevision:data.revision}:current);
         setPendingReceipts(old=>old.map(row=>row.id===id
           ? {...row,draft:snapshot,revision:data.revision}:row));
       }).catch(e=>setPendingSaveError(e.message)).finally(()=>setPendingBusy(false));
