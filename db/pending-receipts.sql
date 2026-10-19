@@ -1,0 +1,118 @@
+create table if not exists public.pending_receipts (
+ id uuid primary key default gen_random_uuid(),
+ owner_id uuid not null references private.app_users(id),
+ file_name text not null,
+ mime text not null,
+ file_bytes bytea,
+ draft jsonb not null,
+ state text not null default 'pending' check(state in ('pending','posted')),
+ revision bigint not null default 1,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+alter table public.pending_receipts enable row level security;
+revoke all on public.pending_receipts from public,anon,authenticated;
+drop policy if exists deny_pending on public.pending_receipts;
+create policy deny_pending on public.pending_receipts for all to anon,authenticated using(false) with check(false);
+
+create or replace function public.pending_receipts_list(p_token text)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare uid uuid;
+begin
+ select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+ and s.expires_at>now() and s.revoked_at is null and u.active;
+ if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ return coalesce((select jsonb_agg(jsonb_build_object(
+ 'id',p.id,'fileName',p.file_name,'mime',p.mime,'draft',p.draft,'revision',p.revision,
+ 'state',p.state,'createdAt',p.created_at,'updatedAt',p.updated_at)
+ order by p.created_at desc)
+ from public.pending_receipts p where p.state='pending'),'[]'::jsonb);
+end;
+$function$;
+
+create or replace function public.pending_receipt_create(
+ p_token text,p_file_name text,p_mime text,p_base64 text,p_draft jsonb)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare uid uuid; new_id uuid; bytes bytea;
+begin
+ select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+ and s.expires_at>now() and s.revoked_at is null and u.active;
+ if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if p_draft is null or jsonb_typeof(p_draft)<>'object' or octet_length(p_draft::text)>250000
+ or length(coalesce(p_file_name,'')) not between 1 and 180
+ or coalesce(p_mime,'') not in ('application/xml','text/xml','image/jpeg','image/png','image/webp','application/pdf','')
+ then raise exception 'Metadados de nota inválidos' using errcode='22023'; end if;
+ if length(coalesce(p_base64,''))>5600000 then raise exception 'Arquivo excede 4 MB' using errcode='22023'; end if;
+ begin bytes:=case when coalesce(p_base64,'')='' then null else decode(p_base64,'base64') end;
+ exception when others then raise exception 'Arquivo codificado inválido' using errcode='22023'; end;
+ if bytes is not null and octet_length(bytes)>4000000 then
+ raise exception 'Arquivo excede 4 MB' using errcode='22023'; end if;
+ insert into public.pending_receipts(owner_id,file_name,mime,file_bytes,draft)
+ values(uid,p_file_name,coalesce(p_mime,''),bytes,p_draft) returning id into new_id;
+ return jsonb_build_object('ok',true,'id',new_id,'revision',1);
+end;
+$function$;
+
+create or replace function public.pending_receipt_save(p_token text,p_id uuid,p_draft jsonb,p_rev bigint)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare uid uuid; existing public.pending_receipts%rowtype;
+begin
+ select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+ and s.expires_at>now() and s.revoked_at is null and u.active;
+ if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ if jsonb_typeof(p_draft)<>'object' or octet_length(p_draft::text)>250000 then
+ raise exception 'Dados inválidos' using errcode='22023'; end if;
+ select * into existing from public.pending_receipts where id=p_id for update;
+ if not found or existing.state<>'pending' then raise exception 'Nota não está mais pendente' using errcode='22023'; end if;
+ if existing.revision<>p_rev then raise exception 'Outra sessão alterou esta nota. Reabra para atualizar.' using errcode='40001'; end if;
+ update public.pending_receipts set draft=p_draft,revision=revision+1,updated_at=now() where id=p_id;
+ return jsonb_build_object('ok',true,'revision',p_rev+1);
+end;
+$function$;
+
+create or replace function public.pending_receipt_file(p_token text,p_id uuid)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare uid uuid; result jsonb;
+begin
+ select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+ and s.expires_at>now() and s.revoked_at is null and u.active;
+ if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ select jsonb_build_object('fileName',file_name,'mime',mime,'base64',encode(file_bytes,'base64')) into result
+ from public.pending_receipts where id=p_id and state='pending';
+ return coalesce(result,'{}'::jsonb);
+end;
+$function$;
+
+create or replace function public.pending_receipt_mark_posted(p_token text,p_id uuid)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare uid uuid;
+begin
+ select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+ and s.expires_at>now() and s.revoked_at is null and u.active;
+ if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ update public.pending_receipts set state='posted',updated_at=now()
+ where id=p_id and state='pending';
+ return jsonb_build_object('ok',found);
+end;
+$function$;
+
+revoke all on function public.pending_receipts_list(text) from public;
+revoke all on function public.pending_receipt_create(text,text,text,text,jsonb) from public;
+revoke all on function public.pending_receipt_save(text,uuid,jsonb,bigint) from public;
+revoke all on function public.pending_receipt_file(text,uuid) from public;
+revoke all on function public.pending_receipt_mark_posted(text,uuid) from public;
+grant execute on function public.pending_receipts_list(text) to anon,authenticated;
+grant execute on function public.pending_receipt_create(text,text,text,text,jsonb) to anon,authenticated;
+grant execute on function public.pending_receipt_save(text,uuid,jsonb,bigint) to anon,authenticated;
+grant execute on function public.pending_receipt_file(text,uuid) to anon,authenticated;
+grant execute on function public.pending_receipt_mark_posted(text,uuid) to anon,authenticated;
