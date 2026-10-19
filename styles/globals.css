@@ -531,3 +531,10 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .manual-new-fields h3,.manual-stock-fields h3 { font-size:13px; color:#3b6246; margin:0 0 13px; }
 .manual-total { margin:14px 0 0; color:#48634f; font-size:13px; }
 @media (max-width:760px) { .manual-entry-panel{padding:13px} .manual-top-actions{width:100%} }
+
+.manual-invoice-helper {padding:18px;margin:14px 0;}
+.manual-invoice-helper .panel-head{padding:0 0 10px;}
+.manual-invoice-helper .btn{margin-top:12px;}
+.manual-invoice-product{display:grid;gap:7px;min-width:190px;}
+.manual-invoice-product select{max-width:100%;}
+.manual-invoice-product small{font-size:10px;color:#647768;line-height:1.45;}
