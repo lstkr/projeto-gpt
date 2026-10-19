@@ -1347,7 +1347,7 @@ export default function Home() {
       done: issues.length === 0 || draft.reviewedItems?.[index] === true };
   });
   const totalsRequireReview = Boolean(draft && (
-    totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
+    Boolean(draft.manualInvoice) || totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
@@ -1383,6 +1383,32 @@ export default function Home() {
     document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); setToast('Lista de compras exportada.');
   }
 
+  function startManualInvoice() {
+    if (manualMode || draft || draftQueue.length) {
+      setError('Conclua a entrada ou conferência atual antes de iniciar outra nota.');
+      return;
+    }
+    setDraft({
+      source:'Nota cadastrada manualmente (sem validação SEFAZ)',
+      fileName:'Nota digitada manualmente',
+      supplier:'', supplierCnpj:'', invoiceNumber:'',
+      date:new Date().toLocaleDateString('pt-BR'),
+      checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
+      items:[], subtotal:0, discount:0, total:0, additionalCharges:0,
+      status:'Aguardando conferência', manualInvoice:true
+    });
+    setError('');setView('documents');
+  }
+  function selectManualInvoiceProduct(index, id) {
+    const product=products.find((p)=>p.id===id);
+    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[index]:false},
+      finalReviewed:false,totalsReviewed:false,
+      items:d.items.map((it,i)=>i===index && product
+        ? {...it,productId:product.id,name:product.name,code:product.sku,
+           unit:product.unit,unitPrice:Number(product.cost)||0,
+           lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
+           readingWarning:''} : it)}));
+  }
   function openManualEntry() {
     if (draft || draftQueue.length) {
       setError('Conclua ou descarte a conferência das notas antes de iniciar uma entrada manual.');
@@ -1899,6 +1925,20 @@ export default function Home() {
     if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
       setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
     }
+    if (draft.manualInvoice) {
+      if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
+        setError('Informe fornecedor, número e data da nota manual.');
+        return;
+      }
+      if (draft.items.some((item)=>!products.some((p)=>p.id===item.productId))) {
+        setError('Associe cada linha a um produto já cadastrado. Para um produto novo, use o botão Novo produto na tela de Estoque.');
+        return;
+      }
+      if (Math.abs(Number(draftSubtotal) - Number(draftItemsSubtotal)) > 0.02) {
+        setError('Confira o subtotal: ele deve corresponder à soma das linhas digitadas.');
+        return;
+      }
+    }
     const missingHistoricalLinks = draft.items.some((item, index) => {
       if (!shouldPostReceiptItem(item) || item.productId) return false;
       const matched = findHistoricalMatches(draft, documents, products)[index];
@@ -2248,7 +2288,7 @@ export default function Home() {
         </section>}
 
         {view === 'documents' && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
           <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
             <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
             <span><b>Usar API externa para tentar ler QR Codes difíceis</b> — somente se a leitura local falhar. Envia um recorte da parte inferior do cupom ao serviço de terceiros baseado em <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>; não envia o documento inteiro nem altera produtos sem conferência.</span>
@@ -2294,6 +2334,11 @@ export default function Home() {
               <div className="modal-actions"><button className="btn secondary" type="button" onClick={()=>{setManualMode(false);setError('');}}>Cancelar</button><button className="btn primary" type="submit" disabled={!manualNew&&!manualChosen}><Icon type="check" size={16}/>{manualNew?'Criar produto e lançar entrada':'Registrar entrada no produto selecionado'}</button></div>
             </form>
           </section>}
+          {draft?.manualInvoice && <section className="panel manual-invoice-helper">
+            <div className="panel-head"><div><h2>Nota de compra digitada manualmente</h2><p>Informe os dados do documento e adicione quantos produtos precisar, vinculando cada linha ao catálogo existente.</p></div></div>
+            <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
+            <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
+          </section>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
@@ -2329,7 +2374,17 @@ export default function Home() {
                     background: attention ? '#fffbeb' : undefined
                   });
                   return <tr key={i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
-                    <td><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</td>
+                    <td>{draft.manualInvoice ? <div className="manual-invoice-product">
+                      <input className="inline-input name-field" aria-label={'Buscar produto da linha '+(i+1)} value={it.search ?? ''} placeholder="Buscar produto por nome ou código"
+                        onChange={(e)=>changeItem(i,'search',e.target.value)}/>
+                      <select className="inline-input" aria-label={'Selecionar produto da linha '+(i+1)} value={it.productId||''}
+                        onChange={(e)=>selectManualInvoiceProduct(i,e.target.value)}>
+                        <option value="">Selecione um produto existente</option>
+                        {products.filter((p)=>[p.name,p.sku].some((v)=>norm(v).includes(norm(it.search||'')))).slice(0,100).map((p)=><option key={p.id} value={p.id}>{p.name} — {p.sku||'sem código'} ({p.unit})</option>)}
+                      </select>
+                      {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
+                      {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
+                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td><input className="inline-input small-field" style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -2410,7 +2465,7 @@ export default function Home() {
               </label>
               <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
               <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
