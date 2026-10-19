@@ -1,5 +1,5 @@
 -- Estoque+ | ACL por usuario e operacao fiscal.
--- Executar depois de db/schema.sql e db/pending-receipts.sql.
+-- Executar apos db/schema.sql e ANTES de db/pending-receipts.sql.\n-- Em ambientes existentes, executar este arquivo e reaplicar db/pending-receipts.sql.
 -- Idempotente. RPCs expostas usam sessao individual; configuracao so pelo gestor.
 create table if not exists private.user_permissions (
  user_id uuid not null references private.app_users(id) on delete cascade,
