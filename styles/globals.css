@@ -511,3 +511,23 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .purchases-panel,.suppliers-panel { padding: 13px; }
   .purchase-category-head { align-items: flex-start; flex-direction: column; }
 }
+
+
+/* Entrada manual dentro da conferência de notas */
+.manual-top-actions { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+.manual-entry-panel { padding:20px; margin:16px 0; }
+.manual-entry-panel .panel-head { padding:0 0 16px; }
+.manual-entry-panel .field.full { display:block; }
+.manual-catalog-results { max-height:260px; overflow:auto; border:1px solid #dae5d8; border-radius:10px; margin:10px 0; background:#fff; }
+.manual-catalog-option { display:flex; align-items:center; justify-content:space-between; gap:13px; padding:13px; width:100%; border:0; border-bottom:1px solid #e8eee7; background:white; text-align:left; cursor:pointer; }
+.manual-catalog-option:hover,.manual-catalog-option.chosen { background:#eef7ed; }
+.manual-catalog-option span { display:grid; gap:6px; min-width:0; }
+.manual-catalog-option b { color:#335640; font-size:12px; overflow-wrap:anywhere; }
+.manual-catalog-option small { color:#758676; font-size:10px; }
+.manual-catalog-option strong { color:#467c51; font-size:11px; white-space:nowrap; }
+.manual-empty-results { color:#8f6e36; font-size:11px; padding:14px; }
+.manual-new-toggle { margin:9px 0 16px; }
+.manual-new-fields,.manual-stock-fields { padding:15px; margin:12px 0; background:#f7faf6; border:1px solid #e5ece3; border-radius:10px; }
+.manual-new-fields h3,.manual-stock-fields h3 { font-size:13px; color:#3b6246; margin:0 0 13px; }
+.manual-total { margin:14px 0 0; color:#48634f; font-size:13px; }
+@media (max-width:760px) { .manual-entry-panel{padding:13px} .manual-top-actions{width:100%} }
