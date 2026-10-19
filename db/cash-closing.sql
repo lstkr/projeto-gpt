@@ -43,7 +43,47 @@ begin
  if actor_role is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
  if jsonb_typeof(p_entry)<>'object' or length(coalesce(p_entry->>'operator','')) not between 1 and 100
  or length(coalesce(p_entry->>'register','')) not between 1 and 30
- or p_entry->>'day' !~ '^\\d{4}-\\d{2}-\\d{2}$'
+ or p_entry->>'day' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}
+ or jsonb_typeof(p_entry->'movements')<>'array'
+ or jsonb_array_length(p_entry->'movements')>100
+ or octet_length(p_entry::text)>35000 then
+ raise exception 'Fechamento inválido' using errcode='22023'; end if;
+ -- Validate the same numeric fields server-side: the client is untrusted.
+ foreach k in array array['cartaoCredito','cartaoDebito','credito','debito','outras','dinheiroVendas'] loop
+   raw_amount := coalesce(p_entry->>k,'0');
+   if raw_amount !~ '^[0-9]+([.][0-9]{1,2})? or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^\\d+(\\.\\d{1,2})?$' then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+
  or jsonb_typeof(p_entry->'movements')<>'array'
  or jsonb_array_length(p_entry->'movements')>100
  or octet_length(p_entry::text)>35000 then
@@ -64,6 +104,280 @@ begin
  end loop;
  if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
    p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^[0-9]+([.][0-9]{1,2})? then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+
+ or jsonb_typeof(p_entry->'movements')<>'array'
+ or jsonb_array_length(p_entry->'movements')>100
+ or octet_length(p_entry::text)>35000 then
+ raise exception 'Fechamento inválido' using errcode='22023'; end if;
+ -- Validate the same numeric fields server-side: the client is untrusted.
+ foreach k in array array['cartaoCredito','cartaoDebito','credito','debito','outras','dinheiroVendas'] loop
+   raw_amount := coalesce(p_entry->>k,'0');
+   if raw_amount !~ '^\\d+(\\.\\d{1,2})?$' or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^\\d+(\\.\\d{1,2})?$' then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^[0-9]+([.][0-9]{1,2})? then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+
+ or jsonb_typeof(p_entry->'movements')<>'array'
+ or jsonb_array_length(p_entry->'movements')>100
+ or octet_length(p_entry::text)>35000 then
+ raise exception 'Fechamento inválido' using errcode='22023'; end if;
+ -- Validate the same numeric fields server-side: the client is untrusted.
+ foreach k in array array['cartaoCredito','cartaoDebito','credito','debito','outras','dinheiroVendas'] loop
+   raw_amount := coalesce(p_entry->>k,'0');
+   if raw_amount !~ '^\\d+(\\.\\d{1,2})?$' or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^\\d+(\\.\\d{1,2})?$' then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+
+ or jsonb_typeof(p_entry->'movements')<>'array'
+ or jsonb_array_length(p_entry->'movements')>100
+ or octet_length(p_entry::text)>35000 then
+ raise exception 'Fechamento inválido' using errcode='22023'; end if;
+ -- Validate the same numeric fields server-side: the client is untrusted.
+ foreach k in array array['cartaoCredito','cartaoDebito','credito','debito','outras','dinheiroVendas'] loop
+   raw_amount := coalesce(p_entry->>k,'0');
+   if raw_amount !~ '^[0-9]+([.][0-9]{1,2})? or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^\\d+(\\.\\d{1,2})?$' then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ or raw_amount::numeric>99999999 then
+     raise exception 'Valor inválido no faturamento' using errcode='22023';
+   end if;
+ end loop;
+ for m in select value from jsonb_array_elements(p_entry->'movements') loop
+   if m->>'type' not in ('sangria','suprimento')
+   or length(btrim(coalesce(m->>'reason','')))=0 or length(m->>'reason')>300
+   or coalesce(m->>'amount','') !~ '^[0-9]+([.][0-9]{1,2})? then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^\\d+(\\.\\d{1,2})?$' then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ then
+     raise exception 'Movimentação inválida' using errcode='22023';
+   end if;
+ end loop;
+ if p_entry ? 'cashCounted' and coalesce(p_entry->>'cashCounted','')<>'' and
+   p_entry->>'cashCounted' !~ '^[0-9]+([.][0-9]{1,2})? then
+   raise exception 'Conferência física inválida' using errcode='22023';
+ end if;
+ -- Employees may create closings but only a manager can change a recorded one.
+ if exists(select 1 from public.cash_closings
+ where day=(p_entry->>'day')::date and register=p_entry->>'register') then
+   if actor_role<>'admin' then raise exception 'Somente o Gestor pode substituir um fechamento' using errcode='42501'; end if;
+ end if;
+ insert into public.cash_closings(day,register,operator,payload)
+ values ((p_entry->>'day')::date,p_entry->>'register',p_entry->>'operator',
+         p_entry - 'day' - 'register' - 'operator' - 'id' - 'createdAt' - 'updatedAt')
+ on conflict (day,register) do update set operator=excluded.operator,payload=excluded.payload,updated_at=now()
+ returning id into rec_id;
+ return jsonb_build_object('ok',true,'id',rec_id);
+end;
+$function$;
+revoke all on function public.cash_closings_list(text) from public;
+revoke all on function public.cash_closing_save(text,jsonb) from public;
+grant execute on function public.cash_closings_list(text) to anon,authenticated;
+grant execute on function public.cash_closing_save(text,jsonb) to anon,authenticated;
+ then
    raise exception 'Conferência física inválida' using errcode='22023';
  end if;
  -- Employees may create closings but only a manager can change a recorded one.
