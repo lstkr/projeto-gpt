@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
+import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -587,15 +588,14 @@ async function decodeQrViaExternalApi(canvas) {
   return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = [], useExternal = false) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
   try {
-    const decoderModule = await import('jsqr');
-    decodeQR = decoderModule.default || decoderModule;
+    const module = await import('jsqr');
+    decodeQR = module.default || module;
   } catch (_) {}
-
   let detector = null;
   try {
     if ('BarcodeDetector' in window) {
@@ -603,72 +603,55 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], useExternal = false
       if (formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
     }
   } catch (_) {}
-
   const results = [];
   for (let index = 0; index < canvases.length; index++) {
     let found = empty();
-    const candidates = [canvases[index], rawCanvases[index]].filter(Boolean);
-    for (const canvas of candidates) {
+    const reference = rawCanvases[index] || canvases[index];
+    // Small, capped footer crops are much faster than repeatedly scanning full photos.
+    const footer = createQrFooterCrop(reference);
+    const rotated = createQrFooterCrop(reference, 180);
+    for (const target of [footer, rotated]) {
+      if (detector) {
+        try {
+          for (const hit of await detector.detect(target) || []) {
+            const candidate = parseNfceQrPayload(hit.rawValue);
+            if (candidate.qrUrlPreserved) { found = candidate; break; }
+          }
+        } catch (_) {}
+      }
+      if (found.qrUrlPreserved) break;
       if (decodeQR) {
         try {
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
-          if (decoded?.data) found = parseNfceQrPayload(decoded.data);
-        } catch (_) {}
-      }
-      if (!found.accessKey && !found.consultaUrl) {
-        try {
-          const decoded = await decodeNfceQrWithZXing(canvas);
-          if (decoded) found = parseNfceQrPayload(decoded);
-        } catch (_) {}
-      }
-      if (!found.accessKey && !found.consultaUrl && detector) {
-        try {
-          const detections = await detector.detect(canvas);
-          for (const detection of detections || []) {
-            const candidate = parseNfceQrPayload(detection.rawValue);
-            if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
+          const pixels = target.getContext('2d', { willReadFrequently: true })
+            .getImageData(0, 0, target.width, target.height);
+          const hit = decodeQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+          if (hit?.data) {
+            const candidate = parseNfceQrPayload(hit.data);
+            if (candidate.qrUrlPreserved || (candidate.accessKey && !found.accessKey)) found = candidate;
           }
         } catch (_) {}
       }
-      if (found.accessKey || found.consultaUrl) break;
+      if (found.qrUrlPreserved) break;
     }
-    // A small QR in a large receipt benefits from footer cropping and rotation.
+    // No opt-in button: request the generic external QR decoder automatically as
+    // a fallback. Only the footer crop is transmitted, not the full note.
     if (!found.qrUrlPreserved) {
-      const reference = rawCanvases[index] || canvases[index];
-      for (const angle of [0, 90, 270, 180]) {
-        try {
-          const cropped = createQrFooterCrop(reference, angle);
-          if (decodeQR) {
-            const img = cropped.getContext('2d', { willReadFrequently: true })
-              .getImageData(0, 0, cropped.width, cropped.height);
-            const decoded = decodeQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-            if (decoded?.data) {
-              const candidate = parseNfceQrPayload(decoded.data);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-            }
-          }
-          if (angle === 0 && !found.qrUrlPreserved) {
-            const decoded = await decodeNfceQrWithZXing(cropped);
-            if (decoded) {
-              const candidate = parseNfceQrPayload(decoded);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-            }
-          }
-        } catch (_) {}
-      }
-    }
-    // The repository's PHP API handles generic QR codes, including URLs from RS.
-    // Its structured NFC-e parser explicitly rejects non-SP receipts; only use QR.
-    if (!found.qrUrlPreserved && useExternal) {
       try {
-        found = await decodeQrViaExternalApi(rawCanvases[index] || canvases[index]);
+        found = await decodeQrViaExternalApi(reference);
       } catch (error) {
-        found = {
-          ...found,
-          qrReaderWarning: error?.message || 'Leitor de QR externo indisponível.'
-        };
+        const warning = error?.message || 'Leitor QR complementar indisponível.';
+        // Keep an offline recovery path when the external API times out.
+        for (const target of [footer, rotated]) {
+          try {
+            const result = await decodeNfceQrWithZXing(target);
+            if (result) {
+              const candidate = parseNfceQrPayload(result);
+              if (candidate.qrUrlPreserved) { found = candidate; break; }
+              if (candidate.accessKey && !found.accessKey) found = candidate;
+            }
+          } catch (_) {}
+        }
+        if (!found.qrUrlPreserved) found = { ...found, qrReaderWarning: warning };
       }
     }
     results.push(found);
@@ -1115,8 +1098,8 @@ export default function Home() {
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
   const skipNextSyncRef = useRef(false);
-  // Off by default: an external fallback uploads a QR-only crop to a third party.
-  const [enableExternalQr, setEnableExternalQr] = useState(false);
+  const receiptOcrWorkerRef = useRef(null);
+  const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
   const uploadRef = useRef(null);
 
   async function loadSharedInventory(token) {
@@ -1717,7 +1700,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResults = await detectNfceQrCodes(canvases, prepared.qrCanvases, enableExternalQr);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           worker = await createWorker('por', 1, {
             logger: (message) => {
@@ -2561,10 +2544,9 @@ export default function Home() {
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
-          <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
-            <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
-            <span><b>Usar API externa para tentar ler QR Codes difíceis</b> — somente se a leitura local falhar. Envia um recorte da parte inferior do cupom ao serviço de terceiros baseado em <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>; não envia o documento inteiro nem altera produtos sem conferência.</span>
-          </label>
+          <div className="notice" role="note" style={{margin:'12px 4px'}}>
+            Leitura automática de QR: o sistema usa leitores locais e, quando necessário, envia somente o recorte inferior do cupom à API externa. A conferência fiscal permanece na SEFAZ, com revisão antes de lançar.
+          </div>
           {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
