@@ -46,6 +46,9 @@ test('dialog keyboard lifecycle handles Escape, Tab, focus return and background
   assert.match(dialogHook, /event\.shiftKey/);
   assert.match(dialogHook, /element\.inert = true/);
   assert.match(dialogHook, /element\.inert = previousInert\[index\]/);
+  assert.match(dialogHook, /openerRef\.current/);
+  assert.match(dialogHook, /document\.addEventListener\('pointerdown', rememberOpener/);
+  assert.match(dialogHook, /dialog\.contains\(activeElement\)/);
   assert.match(dialogHook, /previouslyFocused\.focus/);
   assert.match(dialogHook, /removeEventListener\('keydown'/);
 });
