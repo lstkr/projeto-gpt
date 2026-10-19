@@ -2791,7 +2791,7 @@ export default function Home() {
               {cashForm.cashCounted!==''&&<p>Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
               <div className="modal-actions"><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
             </form>
-          </section>
+          </section>}
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>SUPRIMENTOS</th><th>SANGRIAS</th><th></th></tr></thead><tbody>
             {closings.map(entry=>{const totals=cashTotals(entry);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td>{money(totals.inflow)}</td><td>{money(totals.outflow)}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
