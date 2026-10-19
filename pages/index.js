@@ -666,7 +666,7 @@ function createQrFooterCrop(canvas, rotation = 0) {
   return out;
 }
 
-async function decodeQrViaExternalApi(canvas) {
+async function decodeQrViaExternalApi(canvas, sessionToken) {
   const crop = createQrFooterCrop(canvas);
   const image = crop.toDataURL('image/jpeg', 0.82);
   const controller = new AbortController();
@@ -674,7 +674,7 @@ async function decodeQrViaExternalApi(canvas) {
   try {
     const response = await fetch('/api/qr-externo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-estoque-session': sessionToken },
       body: JSON.stringify({ image_base64: image }),
       signal: controller.signal
     });
@@ -690,7 +690,7 @@ async function decodeQrViaExternalApi(canvas) {
   }
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = []) {
+async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -739,7 +739,7 @@ async function detectNfceQrCodes(canvases, rawCanvases = []) {
     // a fallback. Only the footer crop is transmitted, not the full note.
     if (!found.qrUrlPreserved) {
       try {
-        found = await decodeQrViaExternalApi(reference);
+        found = await decodeQrViaExternalApi(reference, sessionToken);
       } catch (error) {
         const warning = error?.message || 'Leitor QR complementar indisponível.';
         // Keep an offline recovery path when the external API times out.
@@ -1793,7 +1793,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
           if (!receiptOcrWorkerRef.current) {
@@ -2153,7 +2153,7 @@ export default function Home() {
     (async () => {
       try {
         const response = await fetch('/api/consulta-nfce', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-estoque-session': accessCode },
           body: JSON.stringify({ url }), signal: controller.signal
         });
         const data = await response.json().catch(() => ({}));
