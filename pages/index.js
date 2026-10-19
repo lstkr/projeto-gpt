@@ -1110,6 +1110,33 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [fiscalPermissions,setFiscalPermissions]=useState(null);
+  const [permissionUsers,setPermissionUsers]=useState([]);
+  const [permissionBusy,setPermissionBusy]=useState(false);
+  const [permissionError,setPermissionError]=useState('');
+  const fiscalKeys=[
+    ['fiscal.pending.read','Notas fiscais','Visualizar notas pendentes'],
+    ['fiscal.pending.create','Notas fiscais','Importar nota'],
+    ['fiscal.pending.review','Notas fiscais','Conferir e lançar nota'],
+    ['fiscal.pending.cancel','Notas fiscais','Cancelar nota pendente (somente gestor)']
+  ];
+  const canFiscal=(key)=>fiscalPermissions?.[key]===true;
+  async function changeFiscalPermission(user,key,allowed) {
+    if(!supabase||!accessCode||currentUser?.role!=='admin'||permissionBusy)return;
+    setPermissionBusy(true);setPermissionError('');
+    try {
+      const {data,error}=await supabase.rpc('inventory_permission_set',{
+        p_token:accessCode,p_user_id:user.id,p_key:key,p_allowed:allowed
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Permissão não foi salva.');
+      const result=await supabase.rpc('inventory_permissions_list',{p_token:accessCode});
+      if(result.error||!result.data)throw new Error('Salvo, mas não foi possível atualizar a lista.');
+      setFiscalPermissions(result.data.self||{});
+      setPermissionUsers(result.data.users||[]);
+      setToast('Permissão atualizada e registrada na auditoria.');
+    }catch(e){setPermissionError(e?.message||'Erro ao salvar permissão.');}
+    finally{setPermissionBusy(false);}
+  }
   const [menuOpen,setMenuOpen]=useState(false);
   const [navCollapsed,setNavCollapsed]=useState(false);
   const [accountOpen,setAccountOpen]=useState(false);
@@ -1225,6 +1252,15 @@ export default function Home() {
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
     setCurrentUser(state.user || null);
+    const permissionsResult=await supabase.rpc('inventory_permissions_list',{p_token:token});
+    if(!permissionsResult.error && permissionsResult.data?.self) {
+      setFiscalPermissions(permissionsResult.data.self);
+      setPermissionUsers(permissionsResult.data.users||[]);
+    } else {
+      // Fail closed until the access-permissions migration is installed.
+      setFiscalPermissions({});
+      setPermissionUsers([]);
+    }
     setAccessCode(token);
     setAccessGranted(true);
     setDataReady(true);
@@ -1391,7 +1427,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1970,7 +2006,7 @@ export default function Home() {
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
   async function cancelPendingReceipt(row) {
-    if (currentUser?.role !== 'admin' || !supabase || !accessCode) {
+    if (currentUser?.role !== 'admin' || !canFiscal('fiscal.pending.cancel') || !supabase || !accessCode) {
       setError('Somente o Gestor pode cancelar notas pendentes.'); return;
     }
     if (!window.confirm('Cancelar definitivamente a nota "' +
@@ -2545,10 +2581,11 @@ export default function Home() {
         <button className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
         <button className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
         {currentUser?.role === 'admin' && <button className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
-        <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>
+        {canFiscal('fiscal.pending.read')&&<button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
         <button className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button className={view === 'permissions' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('permissions')}><Icon type="check"/><span>Gestor · Permissões</span></button>}
         {currentUser?.role === 'admin' && <button className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
@@ -2680,7 +2717,22 @@ export default function Home() {
           {supplierGroups.length > 0 && !supplierGroups.some((s)=>norm(s.name+' '+s.cnpj).includes(norm(supplierFilter))) && <div className="empty-docs">Nenhum fornecedor encontrado para esta busca.</div>}
         </section>}
 
-        {view === 'documents' && <>
+        {view === 'permissions' && currentUser?.role==='admin' && <section className="panel" style={{padding:20}}>
+          <h2>Permissões por usuário</h2>
+          <p>As operações fiscais são verificadas no banco a cada chamada. Cancelar nota continua exclusivo de contas gestoras.</p>
+          {permissionError&&<div className="notice" role="alert">{permissionError}</div>}
+          {!permissionUsers.length&&<div className="notice" role="alert">Nenhum usuário carregado. Verifique se a migração db/access-permissions.sql foi aplicada antes de db/pending-receipts.sql.</div>}
+          {permissionUsers.map(user=><div key={user.id} style={{borderTop:'1px solid #ddd',padding:'14px 0'}}>
+            <b>{user.name}</b> <small>({user.username} · {user.role==='admin'?'Gestor':'Funcionário'}{user.active?'':' · Inativo'})</small>
+            {fiscalKeys.map(([key,module,label])=><label key={key} style={{display:'flex',alignItems:'center',gap:10,marginTop:10}}>
+              <input type="checkbox" checked={user.permissions?.[key]===true}
+                disabled={permissionBusy||!user.active||(key==='fiscal.pending.cancel'&&user.role!=='admin')}
+                onChange={e=>void changeFiscalPermission(user,key,e.target.checked)}/>
+              <span><small>{module} / </small>{label}</span>
+            </label>)}
+          </div>)}
+        </section>}
+        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
           <section className="panel pending-documents-panel">
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
             {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
@@ -2689,12 +2741,12 @@ export default function Home() {
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              <button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>
-              {currentUser?.role==='admin'&&<button className="btn secondary" type="button"
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
             Leitura automática de QR: o sistema usa leitores locais e, quando necessário, envia somente o recorte inferior do cupom à API externa. A conferência fiscal permanece na SEFAZ, com revisão antes de lançar.
           </div>
