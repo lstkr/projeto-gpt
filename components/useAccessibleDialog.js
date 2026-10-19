@@ -12,7 +12,24 @@ const FOCUSABLE_SELECTOR = [
  */
 export function useAccessibleDialog(dialogKey, onRequestClose) {
   const closeRef = useRef(onRequestClose);
+  const openerRef = useRef(null);
   closeRef.current = onRequestClose;
+
+  // React autoFocus runs during mount, before this hook's dialog effect.
+  // Track the triggering control in advance so closing always restores its focus.
+  useEffect(() => {
+    const rememberOpener = (event) => {
+      if (document.querySelector('.overlay [role="dialog"][aria-modal="true"]')) return;
+      const control = event.target?.closest?.('button, a, input, select, [tabindex]');
+      if (control) openerRef.current = control;
+    };
+    document.addEventListener('focusin', rememberOpener, true);
+    document.addEventListener('pointerdown', rememberOpener, true);
+    return () => {
+      document.removeEventListener('focusin', rememberOpener, true);
+      document.removeEventListener('pointerdown', rememberOpener, true);
+    };
+  }, []);
 
   useEffect(() => {
     if (!dialogKey) return;
@@ -20,7 +37,8 @@ export function useAccessibleDialog(dialogKey, onRequestClose) {
     const dialog = document.querySelector('.overlay [role="dialog"][aria-modal="true"]');
     if (!dialog) return;
 
-    const previouslyFocused = document.activeElement;
+    const activeElement = document.activeElement;
+    const previouslyFocused = dialog.contains(activeElement) ? openerRef.current : activeElement;
     const background = [
       document.querySelector('.shell > .sidebar'),
       document.querySelector('.shell > .main')
