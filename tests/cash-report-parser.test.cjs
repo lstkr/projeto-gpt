@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs');
 const parser=import('../lib/cash-report-parser.mjs');
-const fixture=\`Fantasia: Leve CAFÈ
+const fixture=`Fantasia: Leve CAFÈ
 Caixa do dia: 10/10/2026
 Caixa Nº: 003
 Operador: ADMINISTRADOR
@@ -35,7 +35,7 @@ DEBITO                   R$ 72,00          R$ 0,00
 OUTRAS                   R$ 165,00         R$ 0,00
 (=)Total                 R$ 569,00         R$ 0,00
 Caixa Físico
-\`;
+`;
 test('PDF 1501: detecta vendas uma vez e 3 movimentações distintas',async()=>{
  const {parseCashReport}=await parser;
  const r=parseCashReport(fixture);
