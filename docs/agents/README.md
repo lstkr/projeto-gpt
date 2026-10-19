@@ -1,20 +1,31 @@
 # Agentes do Estoque+
 
-Perfis disponíveis:
-- [Database Architect](database-architect.md): PostgreSQL/Supabase, migrações versionadas, dados e integridade fiscal.
-- [Back-end Specialist](backend-specialist.md): Node.js/Next.js, APIs, segurança, concorrência, testes de contrato e CI/CD.
-- UI/UX: experiência de uso e interface; não substitui controles de segurança no servidor.
+Este diretório contém as especialidades operacionais do projeto. **Todos os agentes devem seguir primeiro [AGENTS.md](../../AGENTS.md)**, que centraliza os padrões compartilhados de segurança, integridade, testes e colaboração.
 
-## Como usar
+## Perfis disponíveis
 
-Estes arquivos são instruções de trabalho para os agentes. **Não criam automaticamente um novo chat ou agente autônomo no ChatGPT.** Para iniciar o agente de banco de dados, abra um chat no projeto Estoque+ e peça: “Atue como Estoque+ Database Architect, seguindo AGENTS.md e docs/agents/database-architect.md no repositório lstkr/projeto-gpt.”
+| Perfil | Competências e responsabilidade |
+| --- | --- |
+| [Database Architect](database-architect.md) | PostgreSQL, Supabase, Database Migration Specialist, Fiscal Data Integrity, RLS/RPC, transações, auditoria e recuperação. |
+| [Back-end Specialist](backend-specialist.md) | Node.js/Next.js, APIs, autenticação/autorização no servidor, integrações fiscais, concorrência, API Contract Testing, CI/CD e testes. |
+| [UI/UX Specialist](ui-ux-specialist.md) | React/Next.js, design system, UX, acessibilidade, responsividade, desempenho e testes de interface. |
 
-## Responsabilidades compartilhadas
+## Como usar no ChatGPT
 
-- **Banco** cuida de schema, migrações, constraints, índices, RLS/RPCs e regras persistentes de integridade.
-- **Back-end** cuida de endpoints, autenticação/autorização do servidor, integrações fiscais, contratos de API, testes e implantação.
-- **Ambos** acordam operações transacionais, permissões e compatibilidade antes de mudanças que atinjam as duas camadas.
+Abra **uma conversa separada para cada especialidade** dentro do projeto Estoque+. Exemplos de mensagens iniciais:
 
-Ao entregar uma alteração, documentar contratos impactados, testes executados, riscos e cuidados de migração.
+- **Banco de dados:** “Atue como Estoque+ Database Architect, seguindo AGENTS.md e docs/agents/database-architect.md no repositório lstkr/projeto-gpt.”
+- **Back-end:** “Atue como Estoque+ Back-end Specialist, seguindo AGENTS.md e docs/agents/backend-specialist.md no repositório lstkr/projeto-gpt.”
+- **Front-end:** “Atue como Estoque+ UI/UX Specialist, seguindo AGENTS.md e docs/agents/ui-ux-specialist.md no repositório lstkr/projeto-gpt.”
+
+Os documentos **não criam chats nem agentes autônomos automaticamente**. Eles fornecem instruções reutilizáveis para o especialista solicitado.
+
+## Coordenação
+
+- Banco: lidera alteração de schema, migrações, privilégios, RPC/RLS e garantias persistentes.
+- Back-end: lidera endpoints, contratos de API, autenticação no servidor, integrações e entrega.
+- UI/UX: lidera layout, acessibilidade, componentes, formulários e fluxos visuais.
+- Alterações que atravessam camadas exigem **acordo de contrato**, análise de riscos e testes de integração antes de merge.
+- Cada entrega deve citar as mudanças realizadas, testes efetivamente executados, riscos, pendências e eventual plano de rollback.
 
 **Regra central:** nenhuma alteração pode comprometer a integridade do estoque, a segurança dos usuários ou funcionalidades existentes.
