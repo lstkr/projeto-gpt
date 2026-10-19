@@ -164,3 +164,103 @@ test('Public café: Caramella (Câmara), preserves zero-cost entries and tip', (
   assert.ok(comparison.every(row=>row.status==='Confere'),
     'UND and UN are equivalent while zero-cost fiscal lines remain present');
 });
+
+
+test('Leading zeros and numeric code zero preserve original spelling and match once', () => {
+  for (const [a,b] of [['000123','123'],['000','0'],['ABC-001','abc-1']]) {
+    const first = line(a,'LEITE INTEGRAL',1,'un',5,5);
+    const second = line(b,'LEITE INTEGRAL',1,'UND',5,5);
+    const merged = rules.mergeReceiptCandidates([first],[second]);
+    assert.equal(merged.length,1);
+    assert.equal(merged[0].code,a);
+    assert.equal(first.code,a, 'Inputs are not mutated');
+    assert.equal(rules.compareInvoiceItems([first],[second])[0].status,'Confere');
+  }
+});
+
+test('Different nonempty codes are never merged by identical descriptions', () => {
+  const a = line('001','LEITE INTEGRAL',1,'un',5,5);
+  const b = line('002','LEITE INTEGRAL',1,'un',5,5);
+  assert.equal(rules.mergeReceiptCandidates([a],[b]).length,2);
+  const rows = rules.compareInvoiceItems([a],[b]);
+  assert.equal(rows.length,2);
+  assert.ok(rows.every(row=>row.status!=='Confere'));
+});
+
+test('Repeated identical fiscal rows survive both readings, including an extra occurrence', () => {
+  const item = line('001','LEITE INTEGRAL',1,'un',5,5);
+  assert.equal(rules.mergeReceiptCandidates([item,item],[item,item]).length,2);
+  assert.equal(rules.mergeReceiptCandidates([item],[item,item]).length,2);
+  const rows = rules.compareInvoiceItems([item],[item,item]);
+  assert.equal(rows.length,2);
+  assert.equal(rows[1].status,'Item ausente no OCR');
+});
+
+test('Rows without codes match by description without collapsing repeated purchases', () => {
+  const item = line('','LEITE INTEGRAL',1,'un',5,5);
+  assert.equal(rules.mergeReceiptCandidates([item,item],[item,item]).length,2);
+  assert.ok(rules.compareInvoiceItems([item,item],[item,item]).every(row=>row.status==='Confere'));
+  const changed = {...item,unit:'kg'};
+  assert.match(rules.mergeReceiptCandidates([item],[changed])[0].readingWarning,/unidade/i);
+  assert.match(rules.compareInvoiceItems([item],[changed])[0].status,/Unidade/);
+});
+
+test('Empty names and absent codes cannot establish product identity', () => {
+  const item = line('','',1,'un',5,5);
+  const rows = rules.compareInvoiceItems([item],[item]);
+  assert.equal(rows.length,2);
+  assert.ok(rows.every(row=>row.status!=='Confere'));
+});
+
+test('Matching codes with incompatible descriptions require review', () => {
+  const a = line('001','LEITE INTEGRAL',1,'un',5,5);
+  const b = line('1','DETERGENTE NEUTRO',1,'un',5,5);
+  const [row] = rules.compareInvoiceItems([a],[b]);
+  assert.match(row.status,/Descrição/);
+});
+
+test('Repeated code with different units aligns by unit even when official rows are reordered', () => {
+  const a = line('001','ACUCAR',1,'un',5,5);
+  const b = {...a,unit:'kg'};
+  assert.ok(rules.compareInvoiceItems([a,b],[b,a]).every(row=>row.status==='Confere'));
+});
+
+test('All item discounts are summed when no summary discount is printed', () => {
+  const text = '001 LEITE INTEGRAL\n1,00 UN 10,00 10,00\nDesconto 1,00\n002 CAFE TORRADO\n1,00 UN 20,00 20,00\nDesconto 2,00\nQTD TOTAL DE ITENS 2\nValor Total 27,00';
+  const items = rules.parseReceiptOcr(text);
+  assert.equal(items.length,2);
+  const totals = rules.reconcileReceiptTotals(text,text,items);
+  assert.equal(totals.discount,3);
+  assert.equal(totals.total,27);
+  assert.equal(totals.totalsWarning,'');
+});
+
+test('Subtotal and discount conflicts cannot cancel out silently at the same final total', () => {
+  const a = 'Sub-Total 100,00\nDesconto 10,00\nValor Total 90,00';
+  const b = 'Sub-Total 110,00\nDesconto 20,00\nValor Total 90,00';
+  const totals = rules.reconcileReceiptTotals(a,b,[line('1','ITEM',1,'un',100,100)]);
+  assert.equal(totals.total,90);
+  assert.match(totals.totalsWarning,/discordam sobre o subtotal/);
+  assert.match(totals.totalsWarning,/discordam sobre o desconto/);
+});
+
+test('Printed total is preserved and inconsistent item sum or discount is flagged', () => {
+  const item = {...line('1','ITEM',1,'un',100,100),itemDiscount:20};
+  const text = 'Sub-Total 110,00\nDesconto 10,00\nValor Total 95,00';
+  const totals = rules.reconcileReceiptTotals(text,text,[item]);
+  assert.equal(totals.total,95);
+  assert.match(totals.totalsWarning,/Soma das linhas/);
+  assert.match(totals.totalsWarning,/Subtotal menos desconto/);
+  assert.match(totals.totalsWarning,/Descontos nas linhas/);
+});
+
+test('Summary discount replaces item sum instead of applying it twice; zero is explicit', () => {
+  const item = {...line('1','ITEM',1,'un',100,100),itemDiscount:10};
+  const text = 'Sub-Total 100,00\nDesconto 10,00\nValor Total 90,00';
+  assert.equal(rules.reconcileReceiptTotals(text,text,[item]).total,90);
+  const zero = 'Sub-Total 100,00\nDesconto 0,00\nValor Total 100,00';
+  const totals = rules.reconcileReceiptTotals(zero,text,[item]);
+  assert.equal(totals.discount,0);
+  assert.equal(totals.total,100);
+  assert.match(totals.totalsWarning,/discordam sobre o desconto/);
+});
