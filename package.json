@@ -16,7 +16,8 @@
     "@supabase/supabase-js": "^2.57.4",
     "jsqr": "1.4.0",
     "@zxing/library": "0.21.3",
-    "cheerio": "1.0.0"
+    "cheerio": "1.0.0",
+    "pdf-parse": "^1.1.1"
   },
   "engines": {
     "node": ">=20.9.0"
