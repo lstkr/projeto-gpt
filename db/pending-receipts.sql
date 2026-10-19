@@ -100,6 +100,15 @@ begin
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
+ -- Never allow the UI to hide a pending receipt unless its posted
+ -- document is already committed to the shared inventory snapshot.
+ if not exists (
+   select 1 from public.shared_inventory inventory,
+     lateral jsonb_array_elements(coalesce(inventory.state->'documents','[]'::jsonb)) doc
+   where inventory.id=true and doc->>'pendingReceiptId'=p_id::text
+ ) then
+   raise exception 'A nota ainda não foi lançada no estoque.' using errcode='22023';
+ end if;
  update public.pending_receipts set state='posted',updated_at=now()
  where id=p_id and state='pending';
  return jsonb_build_object('ok',found);
