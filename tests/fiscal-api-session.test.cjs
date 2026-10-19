@@ -4,6 +4,7 @@ const fs = require('node:fs');
 
 const authModule = import('../lib/server/inventory-session.mjs');
 const TOKEN = 'a'.repeat(64);
+const USER_ID = '00000000-0000-4000-8000-000000000001';
 
 function mockResponse() {
   return {
@@ -34,7 +35,7 @@ test('expired or revoked native session is rejected by the RPC', async () => {
     { headers: { 'x-estoque-session': TOKEN } }, res,
     { clientFactory: () => ({ rpc: async (name, params) => {
       calls++;
-      assert.equal(name, 'inventory_get');
+      assert.equal(name, 'inventory_validate_session');
       assert.deepEqual(params, { p_session_token: TOKEN });
       return { data: null, error: { code: '28000' } };
     } }) }
@@ -57,18 +58,71 @@ test('Supabase outage returns 503 rather than exposing internal errors', async (
   assert.ok(!JSON.stringify(res.body).includes(TOKEN));
 });
 
-test('active session is accepted without returning inventory data to the caller', async () => {
+test('active native sessions use only the lightweight RPC without returning data or caching', async () => {
   const { requireInventorySession } = await authModule;
-  const res = mockResponse();
-  const valid = await requireInventorySession(
-    { headers: { 'x-estoque-session': TOKEN } }, res,
-    { clientFactory: () => ({ rpc: async () => ({
-      data: { user: { role: 'employee' }, products: [{ cost: 123 }] }, error: null
-    }) }) }
-  );
-  assert.equal(valid, true);
-  assert.equal(res.code, null);
-  assert.equal(res.body, null);
+  const calls = [];
+  for (const role of ['admin', 'employee']) {
+    const res = mockResponse();
+    const valid = await requireInventorySession(
+      { headers: { 'x-estoque-session': TOKEN } }, res,
+      { clientFactory: (_url, _key, options) => {
+        assert.deepEqual(options.auth, { persistSession: false, autoRefreshToken: false });
+        return { rpc: async (name, params) => {
+          calls.push(name);
+          assert.deepEqual(params, { p_session_token: TOKEN });
+          return { data: { valid: true, user: { id: USER_ID, role } }, error: null };
+        } };
+      } }
+    );
+    assert.equal(valid, true);
+    assert.equal(res.code, null);
+    assert.equal(res.body, null);
+  }
+  assert.deepEqual(calls, ['inventory_validate_session', 'inventory_validate_session']);
+});
+
+test('RPC absence and database errors fail closed with no inventory fallback or leaks', async () => {
+  const { requireInventorySession } = await authModule;
+  for (const code of ['PGRST202', '42883', '42501', 'XX000']) {
+    const res = mockResponse();
+    const calls = [];
+    const valid = await requireInventorySession(
+      { headers: { 'x-estoque-session': TOKEN } }, res,
+      { clientFactory: () => ({ rpc: async (name) => {
+        calls.push(name);
+        return { data: null, error: { code, message: TOKEN, details: 'private database details' } };
+      } }) }
+    );
+    assert.equal(valid, false);
+    assert.equal(res.code, 503);
+    assert.deepEqual(calls, ['inventory_validate_session']);
+    assert.ok(!JSON.stringify(res.body).includes(TOKEN));
+    assert.doesNotMatch(JSON.stringify(res.body), /private database details/);
+  }
+});
+
+test('malformed or legacy RPC responses are unavailable, never authenticated', async () => {
+  const { requireInventorySession } = await authModule;
+  for (const data of [
+    null, false, [], {}, { valid: true },
+    { user: { id: USER_ID, role: 'admin' }, products: [] },
+    { valid: false, user: { id: USER_ID, role: 'admin' } },
+    { valid: 'true', user: { id: USER_ID, role: 'admin' } },
+    { valid: true, user: { role: 'employee' } },
+    { valid: true, user: { id: 'invalid', role: 'employee' } },
+    { valid: true, user: { id: USER_ID, role: 'owner' } },
+    { valid: true, user: { id: USER_ID, role: null } }
+  ]) {
+    const res = mockResponse();
+    const valid = await requireInventorySession(
+      { headers: { 'x-estoque-session': TOKEN } }, res,
+      { clientFactory: () => ({ rpc: async () => ({ data, error: null }) }) }
+    );
+    assert.equal(valid, false);
+    assert.equal(res.code, 503);
+    assert.ok(!JSON.stringify(res.body).includes(TOKEN));
+    assert.ok(!JSON.stringify(res.body).includes(USER_ID));
+  }
 });
 
 test('both fiscal routes enforce session checks before making external requests', () => {
@@ -87,3 +141,4 @@ test('both fiscal routes enforce session checks before making external requests'
   assert.match(page, /detectNfceQrCodes\(canvases, prepared\.qrCanvases, accessCode\)/);
   assert.match(page, /'x-estoque-session': accessCode/);
 });
+
