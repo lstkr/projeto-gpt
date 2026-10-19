@@ -10,7 +10,9 @@ test('pending cancellation is guarded by database role, not UI alone', () => {
   assert.match(sql,/existing\.state <> 'pending'/);
   assert.match(sql,/state='cancelled'/);
   assert.match(sql,/cancelled_by=actor_id/);
-  assert.match(page,/currentUser\?\.role==='admin'&&<button[^>]*className="btn secondary"/);
+  // A UI deve exigir papel gestor E permissao explicita; a RPC aplica a barreira real.
+  assert.match(page,/currentUser\?\.role==='admin'&&canFiscal\('fiscal\.pending\.cancel'\)&&<button[^>]*className="btn secondary"/);
+  assert.match(page,/currentUser\?\.role !== 'admin' \|\| !canFiscal\('fiscal\.pending\.cancel'\)/);
 });
 test('official data becomes default only for verified SEFAZ response', () => {
   assert.match(page,/data\.source !== 'SVRS' \|\| data\.accessKey !== expectedKey/);
