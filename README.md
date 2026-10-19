@@ -32,17 +32,17 @@ A consulta pública oficial permite consultar pela chave e pelo QR Code. Isso n�
 
 O OCR/QR ainda é assistivo: confirme descrição, quantidade, unidade e preço com o documento original. Uma imagem com vários cupons pode exigir que cada um seja revisado individualmente. Nada é lançado automaticamente.
 
-## Leitura de QR por API externa (opcional)
+## Leitura de QR por API externa (fallback automático)
 
-O leitor de fotos tenta primeiro `jsqr`, `@zxing/library` e as APIs nativas do navegador, incluindo recortes da região inferior do cupom e tentativas de rotação. Essa abordagem foi inspirada nas variantes do worker Python de [pcelias-ctrl/nfc-e](https://github.com/pcelias-ctrl/nfc-e).
+O leitor tenta reconhecer o QR Code localmente com `jsqr`, `@zxing/library` e as APIs nativas do navegador. Se os leitores locais não obtiverem uma URL fiscal completa, o navegador **envia automaticamente um recorte comprimido do rodapé** para `POST /api/qr-externo`, que o encaminha a um serviço externo de decodificação. O arquivo inteiro da nota não é enviado por essa integração.
 
-Na área **Notas fiscais** há uma opção desmarcada por padrão: **Usar API externa para tentar ler QR Codes difíceis**. Com ela ativa, se nenhum leitor local obtiver uma URL fiscal completa, o navegador recorta o rodapé da nota e envia o recorte compactado ao endpoint interno `POST /api/qr-externo`; esse endpoint envia a imagem ao `POST /api/v1/qrcode/decode` do serviço descrito no repositório. Apenas os campos da URL de QR recebida são aproveitados; não há lançamento automático de itens.
+O fallback foi inspirado no projeto [pcelias-ctrl/nfc-e](https://github.com/pcelias-ctrl/nfc-e). A URL padrão configurada no back-end é `https://nfc.kopilot.food/api/v1/qrcode/decode`. A disponibilidade e a política de tratamento de dados do serviço não foram verificadas em produção. É possível definir outro serviço compatível por meio de `NFCE_QR_DECODER_URL`.
 
-A URL padrão é `https://nfc.kopilot.food/api/v1/qrcode/decode`, fornecida na documentação do repositório como exemplo de implantação. A disponibilidade desse serviço **não foi verificada em produção**. Quem preferir rodar o serviço por conta própria pode definir `NFCE_QR_DECODER_URL` no ambiente Next.js. Em falhas e timeouts, o OCR segue funcionando e a interface mostra o erro de QR externo.
+**Privacidade:** atualmente a tentativa externa ocorre **sem solicitação de consentimento por operação**. Mesmo um recorte do rodapé pode conter informações fiscais sensíveis. O uso em ambiente comercial requer revisão da política de transmissão de dados e da interface. O endpoint externo ainda precisa de autenticação e controle de tráfego no servidor; estes itens foram registrados na auditoria de segurança. Até serem concluídos, evite enviar documentos contendo informações cuja transmissão a terceiros não tenha sido autorizada.
 
-**Limitação:** o endpoint `/api/v1/nfce/decode` de pcelias-ctrl suporta extração estruturada de itens somente para São Paulo (`NFCE_SP`), por isso **não é usado** para cupons do Rio Grande do Sul. O serviço externo apenas melhora a **decodificação do QR**; a consulta fiscal continua na integração separada com o portal SVRS. Essa integração também depende da resposta HTTP e do HTML da página oficial.
+Em caso de erro ou timeout no serviço complementar, o OCR local continua disponível. A API de terceiros é utilizada apenas para decodificar o QR Code; não confirma nem lança estoque.
 
-**Privacidade:** a imagem enviada ao serviço de terceiros contém apenas um recorte do rodapé do cupom (que pode incluir informações fiscais). A opção externa requer ativação explícita e não altera a leitura local quando estiver desmarcada.
+**Limitação:** o endpoint `/api/v1/nfce/decode` do projeto de referência extrai itens apenas em cenários específicos de São Paulo (`NFCE_SP`) e **não é utilizado** para interpretar cupons do Rio Grande do Sul. A conferência fiscal dos itens depende de uma integração separada com a SVRS e da estrutura HTML retornada pelo portal.
 
 ## Banco de dados
 
