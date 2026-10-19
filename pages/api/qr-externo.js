@@ -39,7 +39,7 @@ export default async function handler(req, res) {
         'Accept': 'application/json'
       },
       body: JSON.stringify({ image_base64: input }),
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(6500),
       cache: 'no-store',
       redirect: 'error'
     });
