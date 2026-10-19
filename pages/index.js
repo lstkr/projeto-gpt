@@ -574,18 +574,25 @@ function createQrFooterCrop(canvas, rotation = 0) {
 async function decodeQrViaExternalApi(canvas) {
   const crop = createQrFooterCrop(canvas);
   const image = crop.toDataURL('image/jpeg', 0.82);
-  const response = await fetch('/api/qr-externo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_base64: image })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
-  const parsed = parseNfceQrPayload(data.url);
-  if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
-    throw new Error('O leitor externo respondeu, mas não encontrou um QR Code fiscal válido do RS.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7500);
+  try {
+    const response = await fetch('/api/qr-externo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: image }),
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
+    const parsed = parseNfceQrPayload(data.url);
+    if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
+      throw new Error('O leitor externo não encontrou um QR Code fiscal válido do RS.');
+    }
+    return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
+  } finally {
+    clearTimeout(timer);
   }
-  return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
 }
 
 async function detectNfceQrCodes(canvases, rawCanvases = []) {
@@ -877,8 +884,15 @@ async function prepareReceiptCanvases(file) {
     URL.revokeObjectURL(objectUrl);
   }
 
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
+  const originalWidth = image.naturalWidth || image.width;
+  const originalHeight = image.naturalHeight || image.height;
+  // Only segmentation needs a small preview; the final QR and OCR crops still
+  // sample the original photo for maximum character/module sharpness.
+  const previewScale = Math.min(1, 1600 / originalWidth, 3200 / originalHeight);
+  const width = Math.max(1, Math.round(originalWidth * previewScale));
+  const height = Math.max(1, Math.round(originalHeight * previewScale));
+  const ratioX = originalWidth / width;
+  const ratioY = originalHeight / height;
   const base = document.createElement('canvas');
   base.width = width;
   base.height = height;
@@ -974,14 +988,14 @@ async function prepareReceiptCanvases(file) {
     const qrCanvas = document.createElement('canvas');
     qrCanvas.width = scaledWidth;
     qrCanvas.height = qrScaledHeight;
-    qrCanvas.getContext('2d').drawImage(image, sx, y0, sw, qrHeight, 0, 0, scaledWidth, qrScaledHeight);
+    qrCanvas.getContext('2d').drawImage(image, sx * ratioX, y0 * ratioY, sw * ratioX, qrHeight * ratioY, 0, 0, scaledWidth, qrScaledHeight);
     qrCrops.push(qrCanvas);
 
     const canvas = document.createElement('canvas');
     canvas.width = scaledWidth;
     canvas.height = scaledHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, sx, y0, sw, ocrHeight, 0, 0, scaledWidth, scaledHeight);
+    ctx.drawImage(image, sx * ratioX, y0 * ratioY, sw * ratioX, ocrHeight * ratioY, 0, 0, scaledWidth, scaledHeight);
     const data = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
     for (let i = 0; i < data.data.length; i += 4) {
       const gray = data.data[i] * 0.299 + data.data[i + 1] * 0.587 + data.data[i + 2] * 0.114;
