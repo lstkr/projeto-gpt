@@ -1049,7 +1049,7 @@ export default function Home() {
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
   const [cashForm,setCashForm]=useState({
-    day:new Date().toLocaleDateString('en-CA'),register:'003',operator:'',
+    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
     dinheiroVendas:'0',cashCounted:'',movements:[]
   });
@@ -1430,7 +1430,7 @@ export default function Home() {
   function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
   function newCashClosing(){
     setCashEditId('');
-    setCashForm({day:new Date().toLocaleDateString('en-CA'),register:'003',
+    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
       credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]});
     setCashError('');
