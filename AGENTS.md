@@ -44,7 +44,7 @@ Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de p
 2. Aplicar **menor privilégio**, proteção contra acessos diretos indevidos, validação de entradas e saída mínima de dados. Não expor custo e informações administrativas a perfis sem permissão.
 3. Não expor senhas, tokens, service role/secret keys, documentos fiscais pessoais ou dados de produção no repositório, logs, respostas de API, testes ou telas.
 4. Revisar funções `SECURITY DEFINER`, privilégios `EXECUTE`, `search_path`, RLS e schemas expostos ao modificar SQL. Não presumir que a existência de RLS, isoladamente, restringe uma RPC privilegiada.
-5. Nunca apagar, recriar ou alterar usuários reais, `private.app_users`, hashes de senha ou sessões como efeito colateral de limpeza de estoque ou testes.
+5. Nunca apagar, recriar ou modificar `private.app_users`, usuários reais ou hashes de senha em resets de estoque ou testes. Quando um reset legítimo exigir **revogação das sessões antigas**, fazê-lo explicitamente e preservar os logins e senhas existentes.
 
 ## Integridade operacional e fiscal
 
