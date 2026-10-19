@@ -1033,6 +1033,9 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [menuOpen,setMenuOpen]=useState(false);
+  const [navCollapsed,setNavCollapsed]=useState(false);
+  const [accountOpen,setAccountOpen]=useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -2400,11 +2403,13 @@ export default function Home() {
     return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
-  return <div className="shell">
-    <aside className="sidebar">
-      <button className="brand" onClick={() => setView('stock')}><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
+  return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
+    {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
+    <aside className="sidebar" id="primary-navigation">
+      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}}><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
+      <button className="sidebar-close" type="button" aria-label="Fechar menu" onClick={()=>setMenuOpen(false)}>×</button>
       <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>Meu estoque</b><small>Ambiente de demonstração</small></span><Icon type="down" size={15}/></div>
-      <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation">
+      <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation" aria-label="Menu principal" onClick={e=>{if(e.target.closest(".nav-link"))setMenuOpen(false);}}>
         <button className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
         <button className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
         {currentUser?.role === 'admin' && <button className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
@@ -2414,10 +2419,33 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
-      <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p></div><div className="user-row"><span className="user-avatar">{currentUser?.role === 'admin' ? 'GE' : currentUser ? 'EQ' : 'LG'}</span><span><b>{currentUser?.role === 'admin' && /^(administrador|admin|dono)$/i.test(currentUser?.display_name || '') ? 'Gestor' : (currentUser?.display_name || 'Equipe da cafeteria')}</b><small>{supabase ? (currentUser?.role === 'admin' ? 'Gestor' : 'Funcionário') + ' · ' + (saveStatus || 'Sessão ativa') : 'Protótipo local'}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco compartilhado da equipe.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
+
     </aside>
     <main className="main"><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
-      <header className="topbar"><div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div><div className="top-right"><span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span><button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button><button className="user-avatar user-avatar-button" title={supabase ? "Encerrar sessão" : "Gestor"} onClick={supabase ? handleLock : () => setToast("Modo de demonstração local.")}>{supabase ? "Sair" : "LG"}</button></div></header>
+      <header className="topbar">
+        <div className="topbar-start">
+          <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
+          <button type="button" className="nav-collapse-button" aria-label={navCollapsed?'Expandir menu lateral':'Recolher menu lateral'} title={navCollapsed?'Expandir menu':'Recolher menu'} aria-pressed={navCollapsed} onClick={()=>setNavCollapsed(o=>!o)}><Icon type="grid" size={17}/></button>
+          <div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div>
+        </div>
+        <div className="top-right">
+          <span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span>
+          <button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
+          <div className="account-menu">
+            <button type="button" className="account-trigger" aria-haspopup="menu" aria-expanded={accountOpen} onClick={()=>setAccountOpen(o=>!o)}>
+              <span className="user-avatar">{currentUser?.role==='admin'?'GE':'EQ'}</span>
+              <span className="account-identity"><b>{currentUser?.display_name || 'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'}</small></span>
+              <Icon type="down" size={14}/>
+            </button>
+            {accountOpen&&<><button className="account-menu-dismiss" type="button" aria-label="Fechar menu do usuário" onClick={()=>setAccountOpen(false)}/>
+              <div className="account-dropdown" role="menu">
+                <p><b>{currentUser?.display_name||'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'} · {saveStatus||'Sessão ativa'}</small></p>
+                <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setToast('Os dados são sincronizados no banco compartilhado da equipe.');}}>Sobre a sincronização</button>
+                <button type="button" role="menuitem" className="signout-menu-item" onClick={()=>{setAccountOpen(false);if(supabase)handleLock();}}>Sair da conta</button>
+              </div></>}
+          </div>
+        </div>
+      </header>
       <div className="content">
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
