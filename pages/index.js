@@ -1061,6 +1061,14 @@ export default function Home() {
   const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
   const [draft, setDraft] = useState(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualSearch, setManualSearch] = useState('');
+  const [manualChosenId, setManualChosenId] = useState('');
+  const [manualNew, setManualNew] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    name:'', sku:'', category:'Mercearia', unit:'un', min:'0',
+    quantity:'1', cost:'0', supplier:'', preferredSupplier:'', reason:'Entrada manual'
+  });
   const [draftQueue, setDraftQueue] = useState([]);
   const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
@@ -1350,6 +1358,13 @@ export default function Home() {
   const purchaseList = purchaseData.items;
   const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
   const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
+  const manualMatches = useMemo(() => products.filter((p) =>
+    [p.name, p.sku, ...(p.alternateSkus || [])].some((value) => norm(value).includes(norm(manualSearch)))
+  ).slice(0, 30), [products, manualSearch]);
+  const manualChosen = products.find((p) => p.id === manualChosenId);
+  const manualDuplicateSuggestions = useMemo(() => manualNew && manualForm.name.trim()
+    ? findDuplicatesForCandidate({id:'__manual_new__', name:manualForm.name, sku:manualForm.sku, unit:manualForm.unit}, products)
+    : [], [manualNew,manualForm.name,manualForm.sku,manualForm.unit,products]);
 
   function downloadPurchaseList() {
     if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
@@ -1368,6 +1383,77 @@ export default function Home() {
     document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); setToast('Lista de compras exportada.');
   }
 
+  function openManualEntry() {
+    if (draft || draftQueue.length) {
+      setError('Conclua ou descarte a conferência das notas antes de iniciar uma entrada manual.');
+      setView('documents');
+      return;
+    }
+    setManualMode(true); setManualNew(false); setManualChosenId(''); setManualSearch('');
+    setManualForm({name:'',sku:'',category:'Mercearia',unit:'un',min:'0',
+      quantity:'1',cost:'0',supplier:'',preferredSupplier:'',reason:'Entrada manual'});
+    setError('');setView('documents');
+  }
+  function saveManualEntry(event) {
+    event.preventDefault();
+    if (supabase && saveStatus !== 'Sincronizado') {
+      setError('Aguarde a sincronização do estoque para lançar esta entrada.');
+      return;
+    }
+    const quantity = Number(manualForm.quantity);
+    const cost = Number(manualForm.cost);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 99999999 ||
+      Math.round(quantity*1000) !== quantity*1000 || !Number.isFinite(cost) || cost < 0) {
+      setError('Informe quantidade positiva (até três casas decimais) e custo não negativo.');
+      return;
+    }
+    const reason = manualForm.reason.trim() || 'Entrada manual';
+    let product;
+    const timestamp = dateNow();
+    if (manualNew) {
+      if (currentUser?.role !== 'admin') {
+        setError('Somente o Gestor pode criar cadastros. Selecione um produto existente.');
+        return;
+      }
+      const name = manualForm.name.trim();
+      if (!name) {setError('Informe a descrição do novo produto.');return;}
+      const candidates = findDuplicatesForCandidate({id:'__manual_new__',name,
+        sku:manualForm.sku,unit:manualForm.unit},products);
+      if (candidates.length) {
+        setError('Produto possivelmente já cadastrado: '+candidates[0].left.name+
+          '. Selecione o item na busca; corrija o cadastro existente em vez de criar uma duplicata.');
+        return;
+      }
+      product = {id:uid(),name,sku:manualForm.sku.trim() || 'PRD-'+Date.now(),
+        category:manualForm.category,unit:manualForm.unit,stock:quantity,
+        min:Number(manualForm.min)||0,cost,preferredSupplier:manualForm.preferredSupplier.trim(),
+        updated:timestamp};
+      setProducts((old) => [product,...old]);
+    } else {
+      product = products.find((p) => p.id === manualChosenId);
+      if (!product) {setError('Selecione um produto cadastrado na lista de busca.');return;}
+      const updatedStock = Math.round((Number(product.stock)+quantity)*1000)/1000;
+      if (updatedStock>99999999) {setError('Quantidade final acima do máximo permitido.');return;}
+      setProducts((old)=>old.map((p)=>p.id===product.id ?
+        {...p,stock:updatedStock,cost,updated:timestamp} : p));
+    }
+    const movementId=uid();
+    const documentId=uid();
+    const checkedBy=currentUser?.display_name || 'Usuário autenticado';
+    const amount=Math.round(quantity*cost*100)/100;
+    const entry={id:documentId,source:'Entrada manual (sem documento fiscal)',
+      fileName:'Entrada manual',supplier:manualForm.supplier.trim(),
+      invoiceNumber:'',date:new Date().toLocaleDateString('pt-BR'),
+      checkedBy,status:'Lançamento manual',importedAt:timestamp,subtotal:amount,
+      discount:0,total:amount,items:[{name:product.name,code:product.sku,
+      productId:product.id,quantity,unit:product.unit,unitPrice:cost,lineTotal:amount}],
+      stockEntries:[{productId:product.id,movementId,quantity,netUnitCost:cost}]};
+    setDocuments((old)=>[entry,...old]);
+    setMovements((old)=>[{id:movementId,documentId,productId:product.id,
+      product:product.name,type:'Entrada',quantity,reason,date:timestamp,by:checkedBy},...old]);
+    setManualMode(false);setManualNew(false);setManualChosenId('');setManualSearch('');
+    setError('');setToast(manualNew?'Produto criado e entrada registrada.':'Entrada adicionada ao produto existente.');
+  }
   function openProduct(product) {
     setEditing(product || null);
     setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost), preferredSupplier: product.preferredSupplier || '' } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
@@ -1600,6 +1686,7 @@ export default function Home() {
       setError('Envie até 20 arquivos de cada vez para manter o processamento estável.');
       return;
     }
+    if (manualMode) {setError('Feche a entrada manual antes de importar notas fiscais.');return;}
     if ((draft || draftQueue.length > 0) &&
         !window.confirm('Já existem notas aguardando revisão. Deseja descartar essa conferência e começar um novo lote de arquivos?')) {
       if (uploadRef.current) uploadRef.current.value = '';
@@ -2161,7 +2248,7 @@ export default function Home() {
         </section>}
 
         {view === 'documents' && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><button className="btn primary" disabled={busy} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></section>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
           <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
             <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
             <span><b>Usar API externa para tentar ler QR Codes difíceis</b> — somente se a leitura local falhar. Envia um recorte da parte inferior do cupom ao serviço de terceiros baseado em <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>; não envia o documento inteiro nem altera produtos sem conferência.</span>
@@ -2170,6 +2257,43 @@ export default function Home() {
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
+          {manualMode && <section className="panel manual-entry-panel">
+            <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
+            <form onSubmit={saveManualEntry}>
+              <label className="field full"><span>Buscar produto existente por nome ou código</span><input value={manualSearch} autoFocus onChange={(e)=>{setManualSearch(e.target.value);setManualChosenId('');setManualNew(false);setError('');}} placeholder="Ex.: Café em grãos, leite, 00123..."/></label>
+              <div className="manual-catalog-results" role="listbox" aria-label="Produtos do catálogo">
+                {manualMatches.map((p)=><button type="button" role="option" aria-selected={manualChosenId===p.id&&!manualNew} className={'manual-catalog-option'+(manualChosenId===p.id&&!manualNew?' chosen':'')} key={p.id} onClick={()=>{setManualChosenId(p.id);setManualNew(false);setManualForm((f)=>({...f,cost:String(p.cost??0)}));setError('');}}>
+                  <span><b>{p.name}</b><small>Código: {p.sku || 'sem código'} · {p.category || 'Outros'} · saldo {qty(p.stock)} {p.unit}</small></span><strong>{manualChosenId===p.id&&!manualNew?'✓ Selecionado':'Selecionar'}</strong>
+                </button>)}
+                {!manualMatches.length&&<p className="manual-empty-results">Nenhum produto encontrado. Confira o nome ou código antes de criar outro.</p>}
+                {products.length>30&&!manualSearch&&<small>Exibindo 30 produtos. Digite um nome ou código para pesquisar todos os cadastros.</small>}
+              </div>
+              {currentUser?.role==='admin'&&<button className="btn secondary manual-new-toggle" type="button" onClick={()=>{setManualNew((v)=>!v);setManualChosenId('');setError('');}}>{manualNew?'← Voltar para o catálogo':'Não encontrei — cadastrar um novo produto'}</button>}
+              {manualNew&&currentUser?.role==='admin'&&<div className="manual-new-fields">
+                <h3>Dados do novo produto</h3>
+                <div className="form-grid">
+                  <label className="field"><span>Descrição *</span><input required value={manualForm.name} onChange={(e)=>setManualForm({...manualForm,name:e.target.value})}/></label>
+                  <label className="field"><span>Código / SKU</span><input value={manualForm.sku} onChange={(e)=>setManualForm({...manualForm,sku:e.target.value})}/></label>
+                  <label className="field"><span>Categoria</span><select value={manualForm.category} onChange={(e)=>setManualForm({...manualForm,category:e.target.value})}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((v)=><option key={v}>{v}</option>)}</select></label>
+                  <label className="field"><span>Unidade</span><select value={manualForm.unit} onChange={(e)=>setManualForm({...manualForm,unit:e.target.value})}>{['un','kg','g','L','ml','cx','pct','fardo'].map((v)=><option key={v}>{v}</option>)}</select></label>
+                  <label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={manualForm.min} onChange={(e)=>setManualForm({...manualForm,min:e.target.value})}/></label>
+                  <label className="field"><span>Fornecedor habitual</span><input value={manualForm.preferredSupplier} onChange={(e)=>setManualForm({...manualForm,preferredSupplier:e.target.value})} placeholder="Opcional"/></label>
+                </div>
+                {!!manualDuplicateSuggestions.length&&<div className="duplicate-inline" role="alert"><b>⚠ Cadastro possivelmente existente</b><p>{manualDuplicateSuggestions.slice(0,3).map((item)=>item.left.name+' ('+item.left.sku+')').join(' · ')}. Volte à lista e selecione o produto original.</p></div>}
+              </div>}
+              {(manualChosen||manualNew)&&<div className="manual-stock-fields">
+                <h3>{manualNew?'Quantidade e custo inicial':'Adicionar ao produto: '+manualChosen.name}</h3>
+                <div className="form-grid">
+                  <label className="field"><span>Quantidade a entrar * {manualChosen?'('+manualChosen.unit+')':''}</span><input required type="number" min="0.001" step="0.001" value={manualForm.quantity} onChange={(e)=>setManualForm({...manualForm,quantity:e.target.value})}/></label>
+                  <label className="field"><span>Custo unitário (R$) *</span><input required type="number" min="0" step="0.01" value={manualForm.cost} onChange={(e)=>setManualForm({...manualForm,cost:e.target.value})}/></label>
+                  <label className="field"><span>Fornecedor da compra</span><input value={manualForm.supplier} onChange={(e)=>setManualForm({...manualForm,supplier:e.target.value})} placeholder="Opcional"/></label>
+                  <label className="field"><span>Motivo</span><input value={manualForm.reason} onChange={(e)=>setManualForm({...manualForm,reason:e.target.value})}/></label>
+                </div>
+                <p className="manual-total">Total estimado: <b>{money((Number(manualForm.quantity)||0)*(Number(manualForm.cost)||0))}</b></p>
+              </div>}
+              <div className="modal-actions"><button className="btn secondary" type="button" onClick={()=>{setManualMode(false);setError('');}}>Cancelar</button><button className="btn primary" type="submit" disabled={!manualNew&&!manualChosen}><Icon type="check" size={16}/>{manualNew?'Criar produto e lançar entrada':'Registrar entrada no produto selecionado'}</button></div>
+            </form>
+          </section>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
