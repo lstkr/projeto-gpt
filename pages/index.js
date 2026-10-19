@@ -1696,32 +1696,48 @@ export default function Home() {
     }
     if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
       {
-        let worker;
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
           const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
-          worker = await createWorker('por', 1, {
-            logger: (message) => {
-              if (message.status === 'recognizing text') {
-                const progress = ((message.progress || 0) + (window.__ocrReceiptIndex || 0)) / canvases.length;
-                setOcrProgress(Math.round(progress * 100));
+          // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
+          if (!receiptOcrWorkerRef.current) {
+            receiptOcrWorkerRef.current = await createWorker('por', 1, {
+              logger: (message) => {
+                if (message.status === 'recognizing text') {
+                  const progress = receiptOcrProgressRef.current;
+                  setOcrProgress(Math.min(99, Math.round(100 *
+                    (progress.index + (progress.pass + (message.progress || 0)) / 2) / progress.count)));
+                }
               }
-            }
-          });
+            });
+          }
+          const worker = receiptOcrWorkerRef.current;
+          receiptOcrProgressRef.current = { index: 0, count: canvases.length, pass: 0 };
           const receipts = [];
           for (let index = 0; index < canvases.length; index++) {
-            window.__ocrReceiptIndex = index;
+            receiptOcrProgressRef.current = { index, count: canvases.length, pass: 0 };
             await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
             const primaryResult = await worker.recognize(canvases[index]);
             const primaryText = primaryResult.data.text || '';
             const primaryItems = parseReceiptOcr(primaryText);
 
-            await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-            const alternateResult = await worker.recognize(canvases[index]);
-            const alternateText = alternateResult.data.text || '';
-            const alternateItems = parseReceiptOcr(alternateText);
+            const printedTotal = parseReceiptTotals(primaryText).total;
+            const primaryTotals = reconcileReceiptTotals(primaryText, '', primaryItems);
+            const needsRetry = needsSecondOcrPass(primaryItems,
+              { ...primaryTotals, hasPrintedTotal: printedTotal !== null },
+              Number(primaryResult.data.confidence));
+            let alternateText = '';
+            let alternateItems = [];
+            if (needsRetry) {
+              receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
+              await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+              const alternateResult = await worker.recognize(canvases[index]);
+              alternateText = alternateResult.data.text || '';
+              alternateItems = parseReceiptOcr(alternateText);
+            }
+            setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
             // If either pass recognized real coded lines inside the receipt table,
             // discard unstructured guesses from the legacy OCR fallback. Those guesses
             // were adding Sub-Total, tax, payment and misread fragments as products.
@@ -1731,10 +1747,11 @@ export default function Home() {
               ? mergeReceiptCandidates(primaryCoded, alternateCoded)
               : mergeReceiptCandidates(primaryItems, alternateItems);
             const invoiceTotals = reconcileReceiptTotals(primaryText, alternateText, items);
-            const combinedText = primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText;
+            const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
             const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
+            const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
             const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
             const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
@@ -1754,7 +1771,9 @@ export default function Home() {
               qrUrlPreserved: Boolean(qr.qrUrlPreserved),
               qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
               qrReaderWarning: qr.qrReaderWarning || '',
-              source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
+              source: multiple
+                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — ' + (needsRetry ? '2 leituras OCR' : '1 leitura OCR validada') + ')'
+                : 'Foto (OCR local, ' + (needsRetry ? '2 leituras' : '1 leitura validada') + ')',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
@@ -1813,15 +1832,12 @@ export default function Home() {
             duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
           }
 
-          window.__ocrReceiptIndex = 0;
           const parsedReceipts = uniqueReceipts.length ? uniqueReceipts : receipts;
           return parsedReceipts;
         } catch (e) {
           throw new Error('Leitura OCR de ' + file.name + ': ' + (e?.message || 'erro desconhecido'));
         } finally {
-          if (worker) await worker.terminate().catch(() => {});
-          delete window.__ocrReceiptIndex;
-
+          // The worker remains available for the next image in this import batch.
         }
       }
     }
@@ -1934,6 +1950,9 @@ export default function Home() {
       }
       if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
     } finally {
+      const worker = receiptOcrWorkerRef.current;
+      receiptOcrWorkerRef.current = null;
+      if (worker) await worker.terminate().catch(() => {});
       setBusy(false);
       setOcrProgress(0);
       setUploadBatchProgress(null);
