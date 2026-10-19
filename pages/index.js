@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
+import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -573,29 +574,35 @@ function createQrFooterCrop(canvas, rotation = 0) {
 async function decodeQrViaExternalApi(canvas) {
   const crop = createQrFooterCrop(canvas);
   const image = crop.toDataURL('image/jpeg', 0.82);
-  const response = await fetch('/api/qr-externo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_base64: image })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
-  const parsed = parseNfceQrPayload(data.url);
-  if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
-    throw new Error('O leitor externo respondeu, mas não encontrou um QR Code fiscal válido do RS.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7500);
+  try {
+    const response = await fetch('/api/qr-externo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: image }),
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
+    const parsed = parseNfceQrPayload(data.url);
+    if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
+      throw new Error('O leitor externo não encontrou um QR Code fiscal válido do RS.');
+    }
+    return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
+  } finally {
+    clearTimeout(timer);
   }
-  return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = [], useExternal = false) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
   try {
-    const decoderModule = await import('jsqr');
-    decodeQR = decoderModule.default || decoderModule;
+    const module = await import('jsqr');
+    decodeQR = module.default || module;
   } catch (_) {}
-
   let detector = null;
   try {
     if ('BarcodeDetector' in window) {
@@ -603,72 +610,55 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], useExternal = false
       if (formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
     }
   } catch (_) {}
-
   const results = [];
   for (let index = 0; index < canvases.length; index++) {
     let found = empty();
-    const candidates = [canvases[index], rawCanvases[index]].filter(Boolean);
-    for (const canvas of candidates) {
+    const reference = rawCanvases[index] || canvases[index];
+    // Small, capped footer crops are much faster than repeatedly scanning full photos.
+    const footer = createQrFooterCrop(reference);
+    const rotated = createQrFooterCrop(reference, 180);
+    for (const target of [footer, rotated]) {
+      if (detector) {
+        try {
+          for (const hit of await detector.detect(target) || []) {
+            const candidate = parseNfceQrPayload(hit.rawValue);
+            if (candidate.qrUrlPreserved) { found = candidate; break; }
+          }
+        } catch (_) {}
+      }
+      if (found.qrUrlPreserved) break;
       if (decodeQR) {
         try {
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const decoded = decodeQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
-          if (decoded?.data) found = parseNfceQrPayload(decoded.data);
-        } catch (_) {}
-      }
-      if (!found.accessKey && !found.consultaUrl) {
-        try {
-          const decoded = await decodeNfceQrWithZXing(canvas);
-          if (decoded) found = parseNfceQrPayload(decoded);
-        } catch (_) {}
-      }
-      if (!found.accessKey && !found.consultaUrl && detector) {
-        try {
-          const detections = await detector.detect(canvas);
-          for (const detection of detections || []) {
-            const candidate = parseNfceQrPayload(detection.rawValue);
-            if (candidate.accessKey || candidate.consultaUrl) { found = candidate; break; }
+          const pixels = target.getContext('2d', { willReadFrequently: true })
+            .getImageData(0, 0, target.width, target.height);
+          const hit = decodeQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+          if (hit?.data) {
+            const candidate = parseNfceQrPayload(hit.data);
+            if (candidate.qrUrlPreserved || (candidate.accessKey && !found.accessKey)) found = candidate;
           }
         } catch (_) {}
       }
-      if (found.accessKey || found.consultaUrl) break;
+      if (found.qrUrlPreserved) break;
     }
-    // A small QR in a large receipt benefits from footer cropping and rotation.
+    // No opt-in button: request the generic external QR decoder automatically as
+    // a fallback. Only the footer crop is transmitted, not the full note.
     if (!found.qrUrlPreserved) {
-      const reference = rawCanvases[index] || canvases[index];
-      for (const angle of [0, 90, 270, 180]) {
-        try {
-          const cropped = createQrFooterCrop(reference, angle);
-          if (decodeQR) {
-            const img = cropped.getContext('2d', { willReadFrequently: true })
-              .getImageData(0, 0, cropped.width, cropped.height);
-            const decoded = decodeQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-            if (decoded?.data) {
-              const candidate = parseNfceQrPayload(decoded.data);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-            }
-          }
-          if (angle === 0 && !found.qrUrlPreserved) {
-            const decoded = await decodeNfceQrWithZXing(cropped);
-            if (decoded) {
-              const candidate = parseNfceQrPayload(decoded);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-            }
-          }
-        } catch (_) {}
-      }
-    }
-    // The repository's PHP API handles generic QR codes, including URLs from RS.
-    // Its structured NFC-e parser explicitly rejects non-SP receipts; only use QR.
-    if (!found.qrUrlPreserved && useExternal) {
       try {
-        found = await decodeQrViaExternalApi(rawCanvases[index] || canvases[index]);
+        found = await decodeQrViaExternalApi(reference);
       } catch (error) {
-        found = {
-          ...found,
-          qrReaderWarning: error?.message || 'Leitor de QR externo indisponível.'
-        };
+        const warning = error?.message || 'Leitor QR complementar indisponível.';
+        // Keep an offline recovery path when the external API times out.
+        for (const target of [footer, rotated]) {
+          try {
+            const result = await decodeNfceQrWithZXing(target);
+            if (result) {
+              const candidate = parseNfceQrPayload(result);
+              if (candidate.qrUrlPreserved) { found = candidate; break; }
+              if (candidate.accessKey && !found.accessKey) found = candidate;
+            }
+          } catch (_) {}
+        }
+        if (!found.qrUrlPreserved) found = { ...found, qrReaderWarning: warning };
       }
     }
     results.push(found);
@@ -894,8 +884,15 @@ async function prepareReceiptCanvases(file) {
     URL.revokeObjectURL(objectUrl);
   }
 
-  const width = image.naturalWidth || image.width;
-  const height = image.naturalHeight || image.height;
+  const originalWidth = image.naturalWidth || image.width;
+  const originalHeight = image.naturalHeight || image.height;
+  // Only segmentation needs a small preview; the final QR and OCR crops still
+  // sample the original photo for maximum character/module sharpness.
+  const previewScale = Math.min(1, 1600 / originalWidth, 3200 / originalHeight);
+  const width = Math.max(1, Math.round(originalWidth * previewScale));
+  const height = Math.max(1, Math.round(originalHeight * previewScale));
+  const ratioX = originalWidth / width;
+  const ratioY = originalHeight / height;
   const base = document.createElement('canvas');
   base.width = width;
   base.height = height;
@@ -991,14 +988,14 @@ async function prepareReceiptCanvases(file) {
     const qrCanvas = document.createElement('canvas');
     qrCanvas.width = scaledWidth;
     qrCanvas.height = qrScaledHeight;
-    qrCanvas.getContext('2d').drawImage(image, sx, y0, sw, qrHeight, 0, 0, scaledWidth, qrScaledHeight);
+    qrCanvas.getContext('2d').drawImage(image, sx * ratioX, y0 * ratioY, sw * ratioX, qrHeight * ratioY, 0, 0, scaledWidth, qrScaledHeight);
     qrCrops.push(qrCanvas);
 
     const canvas = document.createElement('canvas');
     canvas.width = scaledWidth;
     canvas.height = scaledHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, sx, y0, sw, ocrHeight, 0, 0, scaledWidth, scaledHeight);
+    ctx.drawImage(image, sx * ratioX, y0 * ratioY, sw * ratioX, ocrHeight * ratioY, 0, 0, scaledWidth, scaledHeight);
     const data = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
     for (let i = 0; i < data.data.length; i += 4) {
       const gray = data.data[i] * 0.299 + data.data[i + 1] * 0.587 + data.data[i + 2] * 0.114;
@@ -1115,8 +1112,8 @@ export default function Home() {
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
   const skipNextSyncRef = useRef(false);
-  // Off by default: an external fallback uploads a QR-only crop to a third party.
-  const [enableExternalQr, setEnableExternalQr] = useState(false);
+  const receiptOcrWorkerRef = useRef(null);
+  const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
   const uploadRef = useRef(null);
 
   async function loadSharedInventory(token) {
@@ -1713,32 +1710,48 @@ export default function Home() {
     }
     if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
       {
-        let worker;
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResults = await detectNfceQrCodes(canvases, prepared.qrCanvases, enableExternalQr);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
-          worker = await createWorker('por', 1, {
-            logger: (message) => {
-              if (message.status === 'recognizing text') {
-                const progress = ((message.progress || 0) + (window.__ocrReceiptIndex || 0)) / canvases.length;
-                setOcrProgress(Math.round(progress * 100));
+          // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
+          if (!receiptOcrWorkerRef.current) {
+            receiptOcrWorkerRef.current = await createWorker('por', 1, {
+              logger: (message) => {
+                if (message.status === 'recognizing text') {
+                  const progress = receiptOcrProgressRef.current;
+                  setOcrProgress(Math.min(99, Math.round(100 *
+                    (progress.index + (progress.pass + (message.progress || 0)) / 2) / progress.count)));
+                }
               }
-            }
-          });
+            });
+          }
+          const worker = receiptOcrWorkerRef.current;
+          receiptOcrProgressRef.current = { index: 0, count: canvases.length, pass: 0 };
           const receipts = [];
           for (let index = 0; index < canvases.length; index++) {
-            window.__ocrReceiptIndex = index;
+            receiptOcrProgressRef.current = { index, count: canvases.length, pass: 0 };
             await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
             const primaryResult = await worker.recognize(canvases[index]);
             const primaryText = primaryResult.data.text || '';
             const primaryItems = parseReceiptOcr(primaryText);
 
-            await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-            const alternateResult = await worker.recognize(canvases[index]);
-            const alternateText = alternateResult.data.text || '';
-            const alternateItems = parseReceiptOcr(alternateText);
+            const printedTotal = parseReceiptTotals(primaryText).total;
+            const primaryTotals = reconcileReceiptTotals(primaryText, '', primaryItems);
+            const needsRetry = needsSecondOcrPass(primaryItems,
+              { ...primaryTotals, hasPrintedTotal: printedTotal !== null },
+              Number(primaryResult.data.confidence));
+            let alternateText = '';
+            let alternateItems = [];
+            if (needsRetry) {
+              receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
+              await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+              const alternateResult = await worker.recognize(canvases[index]);
+              alternateText = alternateResult.data.text || '';
+              alternateItems = parseReceiptOcr(alternateText);
+            }
+            setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
             // If either pass recognized real coded lines inside the receipt table,
             // discard unstructured guesses from the legacy OCR fallback. Those guesses
             // were adding Sub-Total, tax, payment and misread fragments as products.
@@ -1748,10 +1761,11 @@ export default function Home() {
               ? mergeReceiptCandidates(primaryCoded, alternateCoded)
               : mergeReceiptCandidates(primaryItems, alternateItems);
             const invoiceTotals = reconcileReceiptTotals(primaryText, alternateText, items);
-            const combinedText = primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText;
+            const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
             const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
+            const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
             const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
             const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
@@ -1771,7 +1785,9 @@ export default function Home() {
               qrUrlPreserved: Boolean(qr.qrUrlPreserved),
               qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
               qrReaderWarning: qr.qrReaderWarning || '',
-              source: multiple ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — 2 leituras OCR)' : 'Foto (OCR local, 2 leituras)',
+              source: multiple
+                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — ' + (needsRetry ? '2 leituras OCR' : '1 leitura OCR consistente') + ')'
+                : 'Foto (OCR local, ' + (needsRetry ? '2 leituras' : '1 leitura consistente') + ')',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
@@ -1830,15 +1846,12 @@ export default function Home() {
             duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
           }
 
-          window.__ocrReceiptIndex = 0;
           const parsedReceipts = uniqueReceipts.length ? uniqueReceipts : receipts;
           return parsedReceipts;
         } catch (e) {
           throw new Error('Leitura OCR de ' + file.name + ': ' + (e?.message || 'erro desconhecido'));
         } finally {
-          if (worker) await worker.terminate().catch(() => {});
-          delete window.__ocrReceiptIndex;
-
+          // Shared OCR worker is released at the end of uploadFiles().
         }
       }
     }
@@ -1951,6 +1964,9 @@ export default function Home() {
       }
       if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
     } finally {
+      const worker = receiptOcrWorkerRef.current;
+      receiptOcrWorkerRef.current = null;
+      if (worker) await worker.terminate().catch(() => {});
       setBusy(false);
       setOcrProgress(0);
       setUploadBatchProgress(null);
@@ -2561,10 +2577,9 @@ export default function Home() {
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
-          <label style={{display:'flex',alignItems:'center',gap:9,margin:'12px 4px',fontSize:13,cursor:'pointer',flexWrap:'wrap'}}>
-            <input type="checkbox" checked={enableExternalQr} onChange={(e) => setEnableExternalQr(e.target.checked)} disabled={busy}/>
-            <span><b>Usar API externa para tentar ler QR Codes difíceis</b> — somente se a leitura local falhar. Envia um recorte da parte inferior do cupom ao serviço de terceiros baseado em <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>; não envia o documento inteiro nem altera produtos sem conferência.</span>
-          </label>
+          <div className="notice" role="note" style={{margin:'12px 4px'}}>
+            Leitura automática de QR: o sistema usa leitores locais e, quando necessário, envia somente o recorte inferior do cupom à API externa. A conferência fiscal permanece na SEFAZ, com revisão antes de lançar.
+          </div>
           {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
