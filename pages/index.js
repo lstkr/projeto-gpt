@@ -1458,6 +1458,35 @@ export default function Home() {
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
            readingWarning:''} : it)}));
   }
+  async function readCashPdfWithOcr(file){
+    // Shared receipt OCR engine: Tesseract, also used for invoice photos.
+    // PDF.js only renders the page. It does not interpret the register totals.
+    const pdfjs=await import('pdfjs-dist/legacy/build/pdf');
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    const pdf=await pdfjs.getDocument({data:bytes,disableWorker:true,stopAtErrors:false}).promise;
+    let worker;
+    try{
+      const {createWorker}=await import('tesseract.js');
+      worker=await createWorker('por');
+      await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+      const texts=[];
+      for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,5);pageNumber++){
+        const page=await pdf.getPage(pageNumber);
+        const viewport=page.getViewport({scale:2.5});
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+        try{
+          await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+          const recognition=await worker.recognize(canvas);
+          texts.push(recognition.data.text||'');
+        }finally{canvas.width=0;canvas.height=0;page.cleanup();}
+      }
+      return texts.join('\n');
+    }finally{
+      if(worker)await worker.terminate().catch(()=>{});
+      await pdf.destroy();
+    }
+  }
   async function importCashReport(event){
     const file=event.target.files?.[0];
     if(!file)return;
@@ -1476,8 +1505,18 @@ export default function Home() {
           headers:{'content-type':'application/json','x-estoque-session':accessCode},
           body:JSON.stringify({base64:btoa(binary)})});
         const parsed=await response.json();
-        if(!response.ok)throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
-        text=parsed.text;
+        if(response.ok){
+          text=parsed.text;
+        }else if(response.status===422){
+          // The thermal printer may create unusual cross-reference tables.
+          // Fall back to the same image OCR as fiscal receipt photos.
+          try{text=await readCashPdfWithOcr(file);}
+          catch(ocrError){
+            throw new Error((parsed.error||'Falha na leitura do PDF')+
+              '. Leitura OCR alternativa também falhou: '+ocrError.message+
+              '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');
+          }
+        }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
       }else if(file.type.startsWith('image/')||/\.(jpe?g|png|webp)$/i.test(file.name)){
         const {createWorker}=await import('tesseract.js');
         const worker=await createWorker('por');
