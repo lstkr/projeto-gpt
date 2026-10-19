@@ -557,3 +557,13 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-movement-row input,.cash-movement-row select{min-width:0;border:1px solid #d9e4db;border-radius:6px;padding:9px;font:inherit}
 .cash-counted{max-width:360px;display:grid;gap:6px;margin:16px 0}
 @media(max-width:750px){.cash-stats{grid-template-columns:1fr}.cash-movement-row{grid-template-columns:1fr 1fr}.cash-movement-row input[aria-label="Motivo da movimentação"]{grid-column:1 / -1}.cash-movement-row .btn{grid-column:1 / -1}}
+
+.cash-file-import{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px;border:1px dashed #91b398;border-radius:10px;background:#f4faf3;margin:10px 0 15px}
+.cash-file-import b{font-size:13px;color:#355f42}
+.cash-file-import p{font-size:11px;max-width:650px;color:#677b6a;margin:6px 0 0;line-height:1.6}
+.cash-import-review{padding:14px;border-left:4px solid #d4a047;background:#fff8e7;margin:12px 0;border-radius:5px}
+.cash-import-review>b{font-size:13px;color:#705221}
+.cash-import-review p{font-size:11px;margin:8px 0;color:#785c2f}
+.cash-import-review label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;margin:12px 0}
+.cash-import-review details{margin-top:10px}
+.cash-import-review pre{max-height:240px;overflow:auto;font-size:10px;background:#fff;white-space:pre-wrap;padding:12px;border:1px solid #eee3cb}
