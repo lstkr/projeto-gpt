@@ -1,3 +1,4 @@
+import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
 import { load } from 'cheerio';
 
@@ -150,6 +151,7 @@ async function fetchOfficial(url, signal) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
+  if (!await requireInventorySession(req, res)) return;
   const input = typeof req.body?.url === 'string' ? req.body.url : '';
   if (input.length > 1800) return res.status(400).json({ error: 'Endereço de consulta muito longo.' });
   let target;
