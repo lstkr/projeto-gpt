@@ -31,7 +31,7 @@ test('agrupa fechamentos diários do mesmo mês e vários caixas',async()=>{
 test('rejeita movimentações sem motivo e valores inválidos',async()=>{
  const {validateCashClosing}=await utils;
  const base={day:'2026-10-10',register:'003',operator:'ADMIN',cartaoCredito:100};
- assert.deepEqual(validateCashClosing({...base,movements:[{type:'sangria',amount:20,reason:''}]}).length,1);
+ assert.ok(validateCashClosing({...base,movements:[{type:'sangria',amount:20,reason:''}]}).some(message=>message.includes('motivo')));
  assert.ok(validateCashClosing({...base,cartaoCredito:-1,movements:[]}).length);
  assert.ok(validateCashClosing({...base,movements:[{type:'sangria',amount:20,reason:'Retirada'}]}).length);
 });
