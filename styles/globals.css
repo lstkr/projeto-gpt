@@ -674,3 +674,42 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .cash-movement-row{grid-template-columns:1fr}
   .cash-movement-row input[aria-label="Motivo da movimentação"],.cash-movement-row .btn{grid-column:auto}
 }
+
+
+/* Conferência de NF: densidade adequada sem sacrificar legibilidade. */
+.review-table table{min-width:920px}
+.review-table th{font-size:10px;line-height:1.35;letter-spacing:.35px;color:#637369;padding:12px 9px}
+.review-table td{font-size:12px;line-height:1.45;vertical-align:middle;padding-block:12px}
+.review-table .inline-input{font-size:12px;height:38px;max-width:100%;min-width:0;padding-inline:9px}
+.review-table .name-field{min-width:150px;font-size:12px}
+.review-table .review-qty{width:70px;min-width:70px}
+.review-table .review-money{width:86px;min-width:86px}
+.review-table .unit-field{width:56px;min-width:56px}
+.review-table .fiscal-code-note{font-size:11px;line-height:1.4;color:#8c611a;overflow-wrap:anywhere}
+.review-table .manual-invoice-product small{font-size:11px}
+.review-table .receipt-history-match{font-size:12px}
+.review-table .receipt-history-match small{font-size:11px}
+.review-table .review-check-cell{min-width:195px}
+.review-check-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.review-check-label{display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;color:#485d4f;font-size:12.5px;font-weight:650;line-height:1.4}
+.review-check-label input{width:17px;height:17px;flex:0 0 auto;accent-color:#377b4f}
+.review-okay{font-size:12.5px;color:#2f7250;font-weight:650}
+.review-issue-trigger{display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:0 0 auto;min-width:41px;min-height:35px;padding:4px 7px;color:#965813;border:1px solid #e9c77d;border-radius:9px;background:#fff4d8;cursor:help;font-size:12px;font-weight:800}
+.review-issue-trigger:hover,.review-issue-trigger:focus-visible,.review-issue-trigger[aria-expanded="true"]{background:#ffe6ac;border-color:#c98b29;color:#794409}
+.review-issue-trigger.is-reviewed{background:#eef7ed;color:#397048;border-color:#b2d2b4;cursor:pointer}
+.review-issue-trigger span{font-variant-numeric:tabular-nums}
+.review-issue-popup{position:fixed;z-index:120;width:min(360px,calc(100vw - 24px));max-height:65vh;overflow-y:auto;padding:0;border:1px solid #e9d8b4;border-radius:12px;background:#fffefa;box-shadow:0 14px 42px rgba(40,56,42,.20);color:#354a38;font-size:13px;line-height:1.55;text-align:left;white-space:normal;overscroll-behavior:contain}
+.review-issue-popup-title{display:flex;align-items:center;gap:8px;padding:12px 14px;background:#fff3d8;color:#7e531e}
+.review-issue-popup-title b{font-size:13px;flex:1}
+.review-issue-popup-title>button{width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;border-radius:7px;font-size:23px;color:#805829;cursor:pointer}
+.review-issue-popup-title>button:hover{background:#f7e1b2}
+.review-issue-popup ul{list-style:disc outside;margin:0;padding:13px 20px 8px 30px}
+.review-issue-popup li{padding:0 0 9px;overflow-wrap:anywhere}
+.review-issue-popup li+li{padding-top:9px;border-top:1px solid #f0e6d5}
+.review-issue-popup>p{margin:0;padding:10px 14px;border-top:1px solid #f2e9d9;color:#617265;font-size:12px;background:#fcfcf8}
+@media(max-width:760px){
+  .review-table td{padding:10px 8px}
+  .review-table td:first-child{padding-left:12px}
+  .review-issue-trigger{min-width:44px;min-height:44px}
+  .review-issue-popup{font-size:14px}
+}
