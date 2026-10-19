@@ -576,3 +576,101 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-choice-option b{font-size:15px}
 .cash-choice-option span{font-size:12px;color:#687e6c;line-height:1.5}
 @media(max-width:650px){.cash-choice-options{grid-template-columns:1fr}}
+
+
+/* Layout responsivo v2 — mesas menores, tablets e celular. */
+.shell,.main,.content,.panel,.table-wrap,.review-panel,.cash-entry {min-width:0}
+.sidebar {overflow-y:auto;overscroll-behavior:contain}
+.sidebar .navigation {min-height:0}
+.sidebar-close,.sidebar-backdrop,.hamburger{display:none}
+.topbar-start{display:flex;align-items:center;gap:13px;min-width:0}
+.nav-collapse-button{height:34px;width:34px;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--green)}
+.crumb{min-width:0}
+.crumb b{min-width:0;max-width: min(28vw,290px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-menu{position:relative;flex:0 0 auto}
+.account-trigger{display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:white;border-radius:10px;padding:5px 9px;color:var(--green)}
+.account-identity{display:flex;flex-direction:column;text-align:left;gap:3px;min-width:0;max-width:145px}
+.account-identity b{font-size:11px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.account-identity small{font-size:10px;color:#839386}
+.account-menu-dismiss{position:fixed;inset:0;z-index:10;cursor:default;background:transparent;border:0}
+.account-dropdown{position:absolute;right:0;top:calc(100% + 8px);z-index:11;width:min(270px,calc(100vw - 25px));background:white;border:1px solid var(--line);border-radius:12px;padding:7px;box-shadow:0 15px 45px #1a332225}
+.account-dropdown p{display:flex;flex-direction:column;gap:6px;padding:10px;margin:0 0 5px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.account-dropdown p b{font-size:12px}.account-dropdown p small{font-size:10px;color:#859188}
+.account-dropdown button{display:block;width:100%;text-align:left;padding:12px;border:0;background:transparent;border-radius:7px;font-size:12px;color:var(--ink)}
+.account-dropdown button:hover{background:#f3f7f2}
+.account-dropdown .signout-menu-item{color:#a53c37;font-weight:750}
+.nav-collapsed .sidebar{width:78px;padding-inline:10px}
+.nav-collapsed .main{margin-left:78px}
+.nav-collapsed .sidebar .brand{justify-content:center;margin:0 0 22px}
+.nav-collapsed .brand>span:last-child,.nav-collapsed .side-caption,.nav-collapsed .workspace,.nav-collapsed .nav-link span,.nav-collapsed .nav-link i{display:none}
+.nav-collapsed .nav-link{justify-content:center;padding:12px}
+.nav-collapsed .nav-link svg{flex:0 0 auto}
+.nav-collapsed .navigation{gap:9px}
+.table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.table-wrap table{width:100%;border-collapse:collapse}
+.table-wrap :is(th,td){white-space:nowrap}
+.review-table :is(th,td){white-space:normal}
+.page-heading,.panel-head,.document-banner,.history-row{min-width:0}
+.history-copy{min-width:0;overflow:hidden}
+.cash-chart{max-width:100%}
+.meta-fields,.form-grid{min-width:0}
+@media(max-width:1250px){
+  .content{padding-inline:20px}
+  .topbar{padding-inline:20px}
+  .sidebar{width:210px}
+  .main{margin-left:210px}
+  .nav-collapsed .sidebar{width:70px}
+  .nav-collapsed .main{margin-left:70px}
+}
+@media(max-width:1100px){
+  .sidebar{width:72px;padding:16px 9px}
+  .main{margin-left:72px}
+  .sidebar .brand{justify-content:center;margin:0 0 25px}
+  .sidebar .brand>span:last-child,.sidebar .side-caption,.sidebar .workspace,.sidebar .nav-link span,.sidebar .nav-link i{display:none}
+  .sidebar .nav-link{justify-content:center;padding:12px}
+  .nav-collapsed .sidebar{width:72px}
+  .nav-collapsed .main{margin-left:72px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .content{padding-inline:18px}
+}
+@media(max-width:760px){
+  .shell .sidebar,.shell.nav-collapsed .sidebar{position:fixed;top:0;bottom:0;left:0;right:auto;z-index:25;width:min(300px,88vw);padding:22px 16px;transform:translateX(-105%);transition:transform .2s ease;background:white;border-right:1px solid var(--line);border-bottom:0;box-shadow:0 0 35px #173a2c25}
+  .shell.nav-open .sidebar{transform:translateX(0)}
+  .shell .sidebar .brand{justify-content:flex-start;width:auto;margin:0 0 24px}
+  .shell .sidebar .brand>span:last-child,.shell .sidebar .side-caption,.shell .sidebar .workspace,.shell .sidebar .nav-link span,.shell .sidebar .nav-link i{display:block}
+  .shell .sidebar .navigation{display:grid;gap:5px;overflow-x:hidden;padding:0;overflow-y:auto}
+  .shell .sidebar .nav-link{width:100%;justify-content:flex-start;padding:12px}
+  .shell .sidebar .nav-link>span{flex:1;font-size:12px}
+  .shell .sidebar .nav-link>i{display:grid}
+  .sidebar-backdrop{display:block;position:fixed;inset:0;z-index:24;border:0;background:#13271c80}
+  .sidebar-close{display:block;position:absolute;top:18px;right:14px;border:0;background:transparent;color:#627668;font-size:28px;line-height:1}
+  .hamburger{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:36px;height:36px;flex:0 0 auto;border:1px solid var(--line);background:white;border-radius:9px}
+  .hamburger span{width:17px;height:2px;border-radius:2px;background:var(--green)}
+  .nav-collapse-button{display:none}
+  .shell .main,.shell.nav-collapsed .main{margin-left:0}
+  .topbar{position:sticky;top:0;z-index:12;height:60px;padding-inline:12px}
+  .crumb{display:none}
+  .topbar-start{gap:6px}
+  .top-right{gap:8px}
+  .top-right>.local-pill{display:none}
+  .account-identity{max-width:96px}
+  .account-trigger{gap:5px;padding:4px}
+  .account-trigger>.user-avatar{display:grid;width:32px;height:32px}
+  .content{padding:18px 12px}
+  .page-heading{gap:12px}
+  .page-heading h1{font-size:clamp(23px,6vw,30px)}
+  .heading-buttons{flex-wrap:wrap}
+  .panel-head{gap:12px;flex-wrap:wrap}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .document-banner .btn{margin-left:0}
+  .history-row{flex-wrap:wrap;row-gap:10px}
+  .history-copy small{max-width:100%}
+  .cash-movement-row{grid-template-columns:1fr 1fr}
+}
+@media(max-width:420px){
+  .account-identity{max-width:72px}
+  .stats{grid-template-columns:1fr}
+  .stat-value{font-size:25px}
+  .cash-movement-row{grid-template-columns:1fr}
+  .cash-movement-row input[aria-label="Motivo da movimentação"],.cash-movement-row .btn{grid-column:auto}
+}
