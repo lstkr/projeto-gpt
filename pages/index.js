@@ -1475,7 +1475,7 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const readyForFinalReview = Boolean(draft?.items?.length && !officialMissing &&
+  const readyForFinalReview = Boolean(draft?.items?.length &&
     receiptReviewRows.every((row) => row.done) &&
     (!totalsRequireReview || draft.totalsReviewed));
   const cashMonthly=useMemo(()=>{
@@ -1969,6 +1969,26 @@ export default function Home() {
     pendingRevisions.current.set(data.id,data.revision);
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
+  async function cancelPendingReceipt(row) {
+    if (currentUser?.role !== 'admin' || !supabase || !accessCode) {
+      setError('Somente o Gestor pode cancelar notas pendentes.'); return;
+    }
+    if (!window.confirm('Cancelar definitivamente a nota "' +
+      (row.draft?.supplier || row.fileName) +
+      '"? Ela sairá da lista de conferência sem movimentar o estoque.')) return;
+    try {
+      const {data,error:cancelError}=await supabase.rpc('pending_receipt_cancel',{
+        p_token:accessCode,p_id:row.id
+      });
+      if(cancelError||!data?.ok)throw new Error(cancelError?.message||'Falha ao cancelar.');
+      pendingFingerprints.current.delete(row.id);
+      pendingRevisions.current.delete(row.id);
+      setPendingReceipts((rows)=>rows.filter((item)=>item.id!==row.id));
+      setDraft((current)=>current?.pendingId===row.id?null:current);
+      setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
+      setToast('Nota cancelada pelo Gestor.');
+    }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
+  }
   async function openPendingReceipt(row){
     if(draft && draft.pendingId!==row.id &&
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
@@ -2168,7 +2188,15 @@ export default function Home() {
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
-              officialStatus: 'Consulta automática concluída. Compare as linhas antes de lançar.' } : d);
+              officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
+              items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
+              officialApplied: true, finalReviewed:false, officialVerified:true,
+              subtotal: totals.subtotal ?? d.subtotal,
+              discount: totals.discount ?? d.discount,
+              total: totals.total ?? d.total,
+              totalsSource:'SEFAZ (consulta automática)',
+              source:String(d.source||'').includes('consulta pública')?d.source:String(d.source||'')+' + consulta pública'
+            } : d);
       } catch (err) {
         if (controller.signal.aborted) return;
         setDraft((d) => d && d.consultaUrl === url
@@ -2215,7 +2243,7 @@ export default function Home() {
         const match = compareInvoiceItems(d.items, d.officialItems).find((r) =>
           r.official === item && r.ocr && normalizeProductCode(r.ocr.code) === normalizeProductCode(item.code) &&
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
-        return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
+        return { ...item, itemDiscount: Number(item.itemDiscount ?? match?.ocr?.itemDiscount ?? 0) };
       }),
       reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
       officialApplied: true,
@@ -2236,10 +2264,6 @@ export default function Home() {
       setError(pendingSaveError||'Aguarde a conferência ser salva no servidor antes de lançar.');
       return;
     }
-    if (officialMissing) {
-      setError('Há ' + officialMissing + ' item(ns) da consulta ainda ausentes. Inclua-os ou use os itens oficiais antes de lançar.');
-      return;
-    }
     if (receiptReviewRows.some((row) => !row.done)) {
       setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
       return;
@@ -2248,7 +2272,7 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if (draftTotal < -0.01 || totalsFinalMismatch) {setError('O total líquido não confere com o documento. Corrija os valores antes de lançar.');return;}
+    if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
     if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
       setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
     }
@@ -2298,6 +2322,18 @@ export default function Home() {
       setError('Todas as linhas devem conter produto, quantidade, unidade e preço válidos.');
       return;
     }
+    const financialWarnings = [
+      totalsItemsMismatch && 'A soma dos itens difere do subtotal.',
+      totalsFinalMismatch && 'O total calculado difere do valor capturado.',
+      officialTotalsMismatch && 'Os totais diferem da consulta oficial.',
+      officialMissing > 0 && 'Há itens da consulta pública não correspondentes à conferência.',
+      discountUnattributed && 'Há desconto distribuído entre os itens.'
+    ].filter(Boolean);
+    if (financialWarnings.length && !window.confirm(
+      'ATENÇÃO — divergências na nota:\\n\\n' + financialWarnings.join('\\n') +
+      '\\n\\nConferido por: ' + draft.checkedBy +
+      '\\nDeseja lançar a nota com os valores revisados manualmente?'
+    )) return;
     // The unique fiscal access key is the primary deduplication key.
     const duplicate = documents.some((d) =>
       (validateNfceAccessKey(d.accessKey) && d.accessKey === draft.accessKey) ||
@@ -2654,6 +2690,8 @@ export default function Home() {
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
               <button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>
+              {currentUser?.role==='admin'&&<button className="btn secondary" type="button"
+                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
@@ -2715,20 +2753,20 @@ export default function Home() {
             {draft.keyWarning && !draft.accessKey && <div className="notice" style={{marginTop:12}} role="alert"><b>Chave de NFC-e não validada.</b> {draft.keyWarning}</div>}
             {(draft.accessKey || draft.consultaUrl) && <div className="notice" style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}><span><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave de acesso identificada pelo OCR'}</b>{draft.accessKey ? <span style={{display:'block',marginTop:5,overflowWrap:'anywhere',fontFamily:'monospace'}}>{draft.accessKey}</span> : 'O QR Code contém um endereço de consulta.'}</span>{draft.consultaUrl && <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}<a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a></div>}</div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
-              <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os dados não são substituídos sem sua revisão.</p></div></div>
+              <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os itens oficiais são adotados por padrão e exigem conferência antes do lançamento.</p></div></div>
               <div className="notice" role="status" style={{marginTop:10}}>{draft.officialStatus || 'Aguardando consulta automática…'}</div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
                 <button type="button" className="btn primary" onClick={() => void consultOfficialAutomatically(draft.consultaUrl, draft.accessKey)}>Consultar e comparar novamente</button>
                 <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>Abrir consulta oficial ↗</a>
                 {draft.officialItems?.length > 0 && <button type="button" className="btn secondary" onClick={applyOfficialItems}>Usar itens da consulta pública</button>}
               </div>
-              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Revise as diferenças antes de usar os dados oficiais.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
+              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <b>Conferência do encarregado</b> — campos em amarelo precisam ser confrontados com a nota antes do lançamento.
-              {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Use os itens oficiais ou inclua-os manualmente.</span>}
+              {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Revise-os: o lançamento exigirá confirmação adicional.</span>}
             </div>
             <div className="table-wrap review-table">
               <table>
