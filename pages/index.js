@@ -1048,6 +1048,8 @@ export default function Home() {
   const [pendingSaveError,setPendingSaveError]=useState('');
   const pendingSaveSerial=useRef(Promise.resolve());
   const pendingMarking=useRef(new Set());
+  const pendingFingerprints=useRef(new Map());
+  const pendingRevisions=useRef(new Map());
 
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
@@ -1793,11 +1795,15 @@ export default function Home() {
       p_base64:base64,p_draft:cleanPendingDraft(receipt)
     });
     if(uploadError||!data?.ok)throw new Error(uploadError?.message||'Não foi possível arquivar a nota.');
+    pendingFingerprints.current.set(data.id,JSON.stringify(cleanPendingDraft(receipt)));
+    pendingRevisions.current.set(data.id,data.revision);
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
   async function openPendingReceipt(row){
     if(draft && draft.pendingId!==row.id &&
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
+    pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
+    pendingRevisions.current.set(row.id,row.revision);
     setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
@@ -1875,16 +1881,18 @@ export default function Home() {
   }
   useEffect(()=>{
     if(!draft?.pendingId||!supabase||!accessCode||!dataReady)return;
-    const snapshot=cleanPendingDraft(draft),id=draft.pendingId,rev=draft.pendingRevision;
+    const snapshot=cleanPendingDraft(draft),id=draft.pendingId;
+    const fingerprint=JSON.stringify(snapshot);
+    if(pendingFingerprints.current.get(id)===fingerprint)return;
     const timer=setTimeout(()=>{
       pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
         setPendingBusy(true);setPendingSaveError('');
         const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
-          p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:rev
+          p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
         });
         if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
-        setDraft(old=>old?.pendingId===id&&old.pendingRevision===rev
-          ? {...old,pendingRevision:data.revision}:old);
+        pendingFingerprints.current.set(id,fingerprint);
+        pendingRevisions.current.set(id,data.revision);
         setPendingReceipts(old=>old.map(row=>row.id===id
           ? {...row,draft:snapshot,revision:data.revision}:row));
       }).catch(e=>setPendingSaveError(e.message)).finally(()=>setPendingBusy(false));
@@ -2063,7 +2071,8 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
-    if(draft?.pendingId && (pendingBusy||pendingSaveError)){
+    if(draft?.pendingId && (pendingBusy||pendingSaveError||
+      pendingFingerprints.current.get(draft.pendingId)!==JSON.stringify(cleanPendingDraft(draft)))){
       setError(pendingSaveError||'Aguarde a conferência ser salva no servidor antes de lançar.');
       return;
     }
