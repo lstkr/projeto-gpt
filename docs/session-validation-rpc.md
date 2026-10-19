@@ -65,7 +65,8 @@ Nenhum banco de produção foi alterado por esta implementação.
    Registrar a versão aplicada conforme o processo de migração do ambiente.
 3. Conferir owner, ACLs, RLS, schemas expostos (somente público, não `private`) e advisors
    do Supabase. Testar a RPC pelo PostgREST com a chave pública e sessão de teste;
-   validar respostas 401/503 e ambos endpoints fiscais com o Back-end.
+   validar respostas 401/503 pelo helper e ambos endpoints fiscais com o Back-end
+   (PostgREST direto pode responder 404 para RPC ausente; o helper converte para 503).
 4. Após homologação e autorização de produção: aplicar migração primeiro, confirmar
    schema cache do PostgREST e só então publicar o helper novo. Não fazer merge/deploy
    automático deste PR antes de confirmar a migração no ambiente de destino.

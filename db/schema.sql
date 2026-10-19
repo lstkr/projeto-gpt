@@ -501,7 +501,7 @@ begin
 
   return anchor_date + least(365,greatest(1,coalesce((cfg->>'intervalDays')::int,7)));
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.inventory_count_settings(p_token text, p_config jsonb, p_rev bigint)
  RETURNS jsonb
@@ -735,3 +735,4 @@ end;
 $function$;
 revoke all on function public.inventory_merge_products(text,text,text,bigint) from public;
 grant execute on function public.inventory_merge_products(text,text,text,bigint) to anon, authenticated;
+
