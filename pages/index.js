@@ -1315,13 +1315,16 @@ export default function Home() {
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
   const draftDiscount = draft ? Number(draft.discount || 0) : 0;
-  const draftTotal = draft?.manualInvoice ? Math.round((draftSubtotal - draftDiscount + Number(draft.additionalCharges||0))*100)/100 : draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
+  // The net payable amount is derived from the gross subtotal and discounts, never typed manually.
+  const draftTotal = Math.round((draftSubtotal - draftDiscount + Number(draft?.additionalCharges || 0)) * 100) / 100;
+  const reportedFiscalTotal = draft?.total != null && draft?.total !== '' && Number.isFinite(Number(draft.total)) ? Number(draft.total) : null;
+  const reportedTotalMismatch = Boolean(draft && reportedFiscalTotal != null && Math.abs(reportedFiscalTotal - draftTotal) > 0.05);
   const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
   const draftExtras = draft ? Number(draft.additionalCharges || 0) : 0;
   const draftIdentifiedItemDiscounts = (draft?.items || []).reduce((sum,it) => sum + Number(it.itemDiscount || 0), 0);
   const discountUnattributed = Boolean(draft && draft.items.length > 1 &&
     draftDiscount - draftIdentifiedItemDiscounts > 0.02);
-  const totalsFinalMismatch = Boolean(draft && Math.abs(draftTotal - (draftSubtotal - draftDiscount + draftExtras)) > 0.05);
+  const totalsFinalMismatch = Boolean(draft && (draftTotal < -0.01 || reportedTotalMismatch));
   const officialComparison = draft?.officialItems?.length ? compareInvoiceItems(draft.items, draft.officialItems) : [];
   const officialMissing = officialComparison.filter((r) => !r.ocr).length;
   const officialTotalsMismatch = Boolean(draft && draft.officialOrigin === 'sefaz' && (
@@ -2141,6 +2144,7 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
+    if (draftTotal < -0.01 || totalsFinalMismatch) {setError('O total líquido não confere com o documento. Corrija os valores antes de lançar.');return;}
     if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
       setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
     }
@@ -2259,7 +2263,7 @@ export default function Home() {
     setMovements(nextMovements);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
-      ...(draft.manualInvoice ? {subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras} : {}),
+      subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
       pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
@@ -2682,7 +2686,7 @@ export default function Home() {
               <label><span>Subtotal fiscal (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftSubtotal} onChange={(e) => changeInvoiceAmount('subtotal', e.target.value)}/></label>
               <label><span>Desconto total (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftDiscount} onChange={(e) => changeInvoiceAmount('discount', e.target.value)}/></label>
               <label><span>Acréscimos / frete (R$)</span><input type="number" min="0" step="0.01" value={draftExtras} onChange={(e) => changeInvoiceAmount('additionalCharges', e.target.value)}/></label>
-              <label><span>Total final (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftTotal} onChange={(e) => changeInvoiceAmount('total', e.target.value)}/></label>
+              <label><span>Total final líquido (R$) — automático</span><input aria-label="Total líquido calculado automaticamente" type="number" readOnly value={draftTotal.toFixed(2)} style={{background:'#edf8ec',fontWeight:700}}/><small style={{display:'block',fontSize:11,marginTop:5}}>Subtotal − descontos + acréscimos. Confira com o total impresso na nota.</small></label>
             </div>
             {draft.totalsWarning && <div className="notice" style={{marginTop:10}}>{draft.totalsWarning}</div>}
             {discountUnattributed && <div className="notice" style={{marginTop:10}}>
@@ -2690,7 +2694,7 @@ export default function Home() {
               Esse valor será distribuído proporcionalmente no custo de estoque; confirme o rateio com o encarregado.
             </div>}
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
-            {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>Total final ({money(draftTotal)}) diferente de subtotal − desconto + acréscimos ({money(draftSubtotal - draftDiscount + draftExtras)}).</div>}
+            {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>{draftTotal < 0 ? 'O desconto não pode ultrapassar o subtotal acrescido dos encargos.' : 'O total líquido calculado ('+money(draftTotal)+') difere do valor extraído do documento ('+money(reportedFiscalTotal)+'). Confira subtotal, desconto e acréscimos antes de confirmar.'}</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
             {totalsRequireReview && <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
@@ -2705,7 +2709,7 @@ export default function Home() {
               <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
                 <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
-                <label className="field review-final-person"><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável"/></label>
+                <label className="field review-final-person"><span>Quem conferiu todos os itens *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável pela conferência"/></label>
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
