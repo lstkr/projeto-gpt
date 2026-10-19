@@ -1273,9 +1273,9 @@ export default function Home() {
   const page = view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
-  const draftSubtotal = draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
+  const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
   const draftDiscount = draft ? Number(draft.discount || 0) : 0;
-  const draftTotal = draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
+  const draftTotal = draft?.manualInvoice ? Math.round((draftSubtotal - draftDiscount + Number(draft.additionalCharges||0))*100)/100 : draft && Number.isFinite(Number(draft.total)) ? Number(draft.total) : Math.round((draftSubtotal - draftDiscount) * 100) / 100;
   const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
   const draftExtras = draft ? Number(draft.additionalCharges || 0) : 0;
   const draftIdentifiedItemDiscounts = (draft?.items || []).reduce((sum,it) => sum + Number(it.itemDiscount || 0), 0);
@@ -1394,7 +1394,7 @@ export default function Home() {
       supplier:'', supplierCnpj:'', invoiceNumber:'',
       date:new Date().toLocaleDateString('pt-BR'),
       checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
-      items:[], subtotal:0, discount:0, total:0, additionalCharges:0,
+      items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
     });
     setError('');setView('documents');
@@ -1800,7 +1800,12 @@ export default function Home() {
         // Printed fiscal line totals are independent facts: do not overwrite them
         // when a reviewer fixes the quantity or unit price.
         if (key === 'quantity' || key === 'unitPrice') {
-          next.readingWarning = 'Quantidade ou preço alterado; confira também o total da linha.';
+          if (d.manualInvoice) {
+            next.lineTotal = Math.round(Number(next.quantity||0)*Number(next.unitPrice||0)*100)/100;
+            next.readingWarning = '';
+          } else {
+            next.readingWarning = 'Quantidade ou preço alterado; confira também o total da linha.';
+          }
         }
         return next;
       })
@@ -2340,7 +2345,7 @@ export default function Home() {
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.manualInvoice && <label><span>CNPJ do fornecedor (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/\D/g,'').slice(0,14))} placeholder="14 dígitos"/></label>}<label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.ocrText && <label className="field full"><span>Corrigir chave da NFC-e</span><input value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave de acesso"/></label>}
             {draft.qrReaderWarning && <div className="notice" role="status" style={{marginTop:12}}>Leitura QR complementar: {draft.qrReaderWarning} O OCR continua disponível para revisão manual.</div>}
@@ -2380,13 +2385,13 @@ export default function Home() {
                       <select className="inline-input" aria-label={'Selecionar produto da linha '+(i+1)} value={it.productId||''}
                         onChange={(e)=>selectManualInvoiceProduct(i,e.target.value)}>
                         <option value="">Selecione um produto existente</option>
-                        {products.filter((p)=>[p.name,p.sku].some((v)=>norm(v).includes(norm(it.search||'')))).slice(0,100).map((p)=><option key={p.id} value={p.id}>{p.name} — {p.sku||'sem código'} ({p.unit})</option>)}
+                        {products.filter((p)=>[p.name,p.sku].some((v)=>norm(v).includes(norm(it.search||''))) || p.id===it.productId).slice(0,100).map((p)=><option key={p.id} value={p.id}>{p.name} — {p.sku||'sem código'} ({p.unit})</option>)}
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
                     </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td><input className="inline-input small-field" style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
-                    <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
+                    <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
                     <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:225}}>
@@ -2399,14 +2404,14 @@ export default function Home() {
                           <option value="expense">Despesa/serviço — não movimentar</option>
                         </select>
                       </label>
-                      <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
+                      {!draft.manualInvoice && <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
                         aria-label={'Associar ' + it.name + ' ao estoque'}
                         value={it.productId || ''}
                         onChange={(e) => changeItem(i,'productId',e.target.value)}>
                         <option value="">Automático por nome/código (ou novo cadastro)</option>
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
                         <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
-                      </select>
+                      </select>}
                       {currentHistoryMatches[i] && <div className="receipt-history-match" role="status">
                         <b>Compra anterior do mesmo fornecedor</b>
                         <span>{currentHistoryMatches[i].historicalName} · {currentHistoryMatches[i].invoiceNumber ? 'NF nº ' + currentHistoryMatches[i].invoiceNumber : 'sem nº'} · descrição {currentHistoryMatches[i].similarity}% semelhante.</span>
