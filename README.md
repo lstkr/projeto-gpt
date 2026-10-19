@@ -122,3 +122,15 @@ Na conferência fiscal, se um código já existe mas a descrição está muito d
 - **Reset de dados:** limpar estado do inventário e encerrar sessões, sem alterar **nenhum registro de `private.app_users`**, senha, login ou papel. O reset de produção exige operação separada, com incremento da revisão de estoque para impedir ressurreição de snapshots obsoletos.
 
 Testes: `npm test` e `npm run build`.
+
+## Relatórios de fechamento de caixa
+
+A tela **Fechamento de caixa** permite registrar o relatório da maquininha/sistema de vendas sem confundir faturamento com movimentações de dinheiro. Campos de faturamento: Cartão crédito POS, Cartão débito POS, Crédito, Débito, Outras e Dinheiro (vendas). Cadastre sangrias e suprimentos individualmente com valor e motivo. O painel calcula faturamento, POS, entradas/saídas de numerário, saldo após movimentações e diferença opcional do numerário contado.
+
+Uma tabela separada `public.cash_closings` preserva os fechamentos, sem alterar estoque, documentos fiscais, contas ou senhas. Os RPCs `cash_closings_list` e `cash_closing_save` exigem sessão de usuário válida; colaboradores podem incluir novos caixas, mas somente o **Gestor** pode substituir um fechamento existente. Evita duplicação do mesmo caixa/data.
+
+A visualização gráfica mostra os faturamentos **diários** do mês escolhido, somando diferentes caixas do mesmo dia, e a visão mensal apresenta faturamento acumulado, quantidade de fechamentos e média por fechamento. Sem dados anteriores o gráfico começa vazio, sem valores fictícios.
+
+**Importante:** o modelo corresponde às rubricas do PDF de 10/10/2026, mas não presume que suprimentos sejam vendas ou que a diferença do caixa digital do PDF represente uma perda financeira. O relatório original indica R$ 569,00 na seção NFC-e, R$ 151,00 em cartões POS e R$ 241,50 tanto em suprimentos quanto em sangrias. O saldo físico depende do momento em que o numerário foi contado.
+
+**Migração necessária:** aplicar `db/cash-closing.sql` no projeto Supabase existente antes da publicação da interface. Nenhum reset de dados ou usuários é necessário.

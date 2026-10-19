@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -1042,6 +1043,16 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [closings,setClosings]=useState([]);
+  const [cashEditId,setCashEditId]=useState('');
+  const [cashSaving,setCashSaving]=useState(false);
+  const [cashError,setCashError]=useState('');
+  const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
+  const [cashForm,setCashForm]=useState({
+    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
+    cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
+    dinheiroVendas:'0',cashCounted:'',movements:[]
+  });
   const [stockCounts,setStockCounts]=useState([]);
   const [countSettings,setCountSettings]=useState(COUNT_DEFAULTS);
   const [settingsForm,setSettingsForm]=useState(COUNT_DEFAULTS);
@@ -1111,6 +1122,8 @@ export default function Home() {
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
+    if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
@@ -1270,7 +1283,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1354,6 +1367,11 @@ export default function Home() {
   const readyForFinalReview = Boolean(draft?.items?.length && !officialMissing &&
     receiptReviewRows.every((row) => row.done) &&
     (!totalsRequireReview || draft.totalsReviewed));
+  const cashMonthly=useMemo(()=>{
+    const [year,month]=cashMonth.split('-').map(Number);
+    return aggregateCashMonthly(closings,year,month);
+  },[closings,cashMonth]);
+  const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
   const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
@@ -1408,6 +1426,43 @@ export default function Home() {
            unit:product.unit,unitPrice:Number(product.cost)||0,
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
            readingWarning:''} : it)}));
+  }
+  function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
+  function newCashClosing(){
+    setCashEditId('');
+    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
+      operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
+      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]});
+    setCashError('');
+  }
+  function editCashClosing(entry){
+    setCashEditId(entry.id);
+    setCashForm({...entry,day:String(entry.day).slice(0,10),
+      movements:entry.movements||[]});
+    setCashError('');setView('cash');
+  }
+  async function saveCashClosing(event){
+    event.preventDefault();
+    const invalid=validateCashClosing(cashForm);
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
+    setCashSaving(true);setCashError('');
+    try{
+      const clean={...cashForm,day:cashForm.day,register:cashForm.register.trim(),
+        operator:cashForm.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(cashForm[key]||0).toFixed(2)])),
+        cashCounted:cashForm.cashCounted===''?'':Number(cashForm.cashCounted).toFixed(2),
+        movements:cashForm.movements.map(m=>({
+          type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
+        }))};
+      const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
+      if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(listError||!Array.isArray(updated))throw new Error('Fechamento salvo, mas a atualização da lista falhou');
+      setClosings(updated);setCashEditId('');
+      setToast('Fechamento de caixa registrado com sucesso.');
+    }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
+    finally{setCashSaving(false);}
   }
   function openManualEntry() {
     if (draft || draftQueue.length) {
@@ -2186,6 +2241,7 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
+        <button className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
@@ -2486,6 +2542,58 @@ export default function Home() {
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR é executado no navegador e o documento original não é salvo no histórico. Ao ativar a opção de QR externo, um recorte da imagem é enviado ao servidor do Estoque+ e ao serviço de leitura de terceiros. Sem essa opção, a leitura permanece local.</span></div>
+        </>}
+
+        {view === 'cash' && <>
+          <section className="panel cash-summary">
+            <div className="panel-head"><div><h2>Faturamento do mês</h2><p>O total de vendas exclui sangrias e suprimentos. As modalidades seguem o relatório de caixa enviado.</p></div>
+              <label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>setCashMonth(e.target.value)}/></label>
+            </div>
+            <div className="cash-stats">
+              <div><small>Faturamento mensal</small><strong>{money(cashMonthly.revenue)}</strong></div>
+              <div><small>Fechamentos</small><strong>{cashMonthly.count}</strong></div>
+              <div><small>Média por fechamento</small><strong>{money(cashMonthly.count?cashMonthly.revenue/cashMonthly.count:0)}</strong></div>
+            </div>
+            <h3>Faturamento diário — {cashMonth}</h3>
+            <div className="cash-chart" aria-label="Gráfico de faturamento por dia">
+              {cashMonthly.daily.length ? cashMonthly.daily.map(p=><div className="cash-bar-column" key={p.day}>
+                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashMonthly.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
+                <small>{p.day.slice(-2)}</small>
+              </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
+            </div>
+          </section>
+          <section className="panel cash-entry">
+            <div className="panel-head"><div><h2>{cashEditId?'Corrigir fechamento':'Registrar fechamento'}</h2><p>Valores financeiros por forma de pagamento e movimentações de dinheiro.</p></div><button type="button" className="btn secondary" onClick={newCashClosing}>Novo fechamento</button></div>
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+            <form onSubmit={saveCashClosing}>
+              <div className="meta-fields">
+                <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
+                <label><span>Nº do caixa</span><input required value={cashForm.register} onChange={e=>changeCashField('register',e.target.value)}/></label>
+                <label><span>Operador</span><input required value={cashForm.operator} onChange={e=>changeCashField('operator',e.target.value)}/></label>
+              </div>
+              <h3>Faturamento por modalidade</h3>
+              <div className="meta-fields">{CASH_CHANNELS.map(([key,label])=><label key={key}><span>{label}</span><input type="number" min="0" step="0.01" value={cashForm[key]} onChange={e=>changeCashField(key,e.target.value)}/></label>)}</div>
+              <div className="cash-overview"><b>Faturamento: {money(cashPreview.revenue)}</b><span>Cartões POS: {money(cashPreview.pos)}</span></div>
+              <div className="cash-movements-head"><h3>Movimentações — sangria e suprimento</h3>
+                <button className="btn secondary" type="button" onClick={()=>changeCashField('movements',[...cashForm.movements,{type:'suprimento',amount:'0',reason:''}])}><Icon type="plus" size={15}/>Adicionar</button></div>
+              {cashForm.movements.map((m,i)=><div className="cash-movement-row" key={i}>
+                <select aria-label="Tipo da movimentação" value={m.type} onChange={e=>changeCashField('movements',cashForm.movements.map((r,j)=>i===j?{...r,type:e.target.value}:r))}><option value="suprimento">Suprimento (+)</option><option value="sangria">Sangria (−)</option></select>
+                <input type="number" min="0" step="0.01" aria-label="Valor da movimentação" value={m.amount} onChange={e=>changeCashField('movements',cashForm.movements.map((r,j)=>i===j?{...r,amount:e.target.value}:r))}/>
+                <input aria-label="Motivo da movimentação" placeholder="Motivo (ex.: abertura, troco, retirada)" value={m.reason} onChange={e=>changeCashField('movements',cashForm.movements.map((r,j)=>i===j?{...r,reason:e.target.value}:r))}/>
+                <button type="button" className="btn secondary" onClick={()=>changeCashField('movements',cashForm.movements.filter((_,j)=>i!==j))}>Remover</button>
+              </div>)}
+              <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
+              <label className="field cash-counted"><span>Dinheiro contado no fechamento (opcional)</span><input type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
+              {cashForm.cashCounted!==''&&<p>Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
+              <div className="modal-actions"><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+            </form>
+          </section>
+          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
+            <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>SUPRIMENTOS</th><th>SANGRIAS</th><th></th></tr></thead><tbody>
+            {closings.map(entry=>{const totals=cashTotals(entry);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td>{money(totals.inflow)}</td><td>{money(totals.outflow)}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
+            {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
+            </tbody></table></div>
+          </section>
         </>}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}

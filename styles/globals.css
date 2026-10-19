@@ -538,3 +538,22 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .manual-invoice-product{display:grid;gap:7px;min-width:190px;}
 .manual-invoice-product select{max-width:100%;}
 .manual-invoice-product small{font-size:10px;color:#647768;line-height:1.45;}
+
+.cash-summary,.cash-entry,.cash-history{padding:19px;margin:0 0 16px}
+.cash-summary .panel-head,.cash-entry .panel-head,.cash-history .panel-head{padding:0 0 15px}
+.cash-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 24px}
+.cash-stats>div{border-radius:10px;border:1px solid #e3eadd;background:#f5f9f2;padding:14px;display:grid;gap:8px}
+.cash-stats small{color:#697a69;font-size:11px}
+.cash-stats strong{font-size:22px;color:#2e6647}
+.cash-chart{display:flex;align-items:end;gap:9px;min-height:215px;overflow-x:auto;padding:12px 5px;border-bottom:1px solid #dce8dd}
+.cash-bar-column{min-width:58px;flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:9px;color:#6b806e}
+.cash-bar-track{height:155px;width:100%;max-width:44px;display:flex;align-items:end}
+.cash-bar-fill{width:100%;background:#60866c;border-radius:5px 5px 0 0}
+.cash-entry h3{font-size:14px;color:#3e6149;margin:19px 0 12px}
+.cash-overview{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:13px;background:#eff6ed;border-radius:8px;margin:12px 0;color:#385f42;font-size:12px}
+.cash-overview b{font-size:15px}
+.cash-movements-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cash-movement-row{display:grid;grid-template-columns:145px 120px minmax(170px,1fr) auto;gap:9px;margin:10px 0}
+.cash-movement-row input,.cash-movement-row select{min-width:0;border:1px solid #d9e4db;border-radius:6px;padding:9px;font:inherit}
+.cash-counted{max-width:360px;display:grid;gap:6px;margin:16px 0}
+@media(max-width:750px){.cash-stats{grid-template-columns:1fr}.cash-movement-row{grid-template-columns:1fr 1fr}.cash-movement-row input[aria-label="Motivo da movimentação"]{grid-column:1 / -1}.cash-movement-row .btn{grid-column:1 / -1}}
