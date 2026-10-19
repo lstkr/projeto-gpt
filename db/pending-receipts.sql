@@ -125,3 +125,44 @@ grant execute on function public.pending_receipt_create(text,text,text,text,json
 grant execute on function public.pending_receipt_save(text,uuid,jsonb,bigint) to anon,authenticated;
 grant execute on function public.pending_receipt_file(text,uuid) to anon,authenticated;
 grant execute on function public.pending_receipt_mark_posted(text,uuid) to anon,authenticated;
+
+-- Migration: cancelled notes remain auditable, but cannot be reopened or posted.
+alter table public.pending_receipts drop constraint if exists pending_receipts_state_check;
+alter table public.pending_receipts add constraint pending_receipts_state_check
+  check (state in ('pending','posted','cancelled'));
+alter table public.pending_receipts add column if not exists cancelled_at timestamptz;
+alter table public.pending_receipts add column if not exists cancelled_by uuid references private.app_users(id);
+
+create or replace function public.pending_receipt_cancel(p_token text, p_id uuid)
+returns jsonb language plpgsql security definer set search_path to ''
+as $function$
+declare actor_id uuid; actor_role text; existing public.pending_receipts%rowtype;
+begin
+  select u.id,u.role into actor_id,actor_role
+  from private.app_sessions s join private.app_users u on u.id=s.user_id
+  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
+    and s.expires_at>now() and s.revoked_at is null and u.active;
+  if actor_role is distinct from 'admin' then
+    raise exception 'Somente o Gestor pode cancelar notas pendentes.' using errcode='42501';
+  end if;
+  select * into existing from public.pending_receipts where id=p_id for update;
+  if not found or existing.state <> 'pending' then
+    raise exception 'Nota não está mais pendente.' using errcode='22023';
+  end if;
+  -- Prevent cancellation if another session has already committed its stock entry.
+  if exists (
+    select 1 from public.shared_inventory inventory,
+      lateral jsonb_array_elements(coalesce(inventory.state->'documents','[]'::jsonb)) doc
+    where inventory.id=true and doc->>'pendingReceiptId'=p_id::text
+  ) then
+    raise exception 'Esta nota já foi lançada no estoque.' using errcode='22023';
+  end if;
+  update public.pending_receipts
+    set state='cancelled',cancelled_at=now(),cancelled_by=actor_id,
+        file_bytes=null,updated_at=now(),revision=revision+1
+    where id=p_id;
+  return jsonb_build_object('ok',true,'id',p_id);
+end;
+$function$;
+revoke all on function public.pending_receipt_cancel(text,uuid) from public;
+grant execute on function public.pending_receipt_cancel(text,uuid) to anon,authenticated;
