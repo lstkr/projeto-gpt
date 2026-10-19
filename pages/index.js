@@ -2725,6 +2725,11 @@ export default function Home() {
         </>}
 
         {view === 'cash' && <>
+          {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
+            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+          </section>}
+
           <section className="panel cash-summary">
             <div className="panel-head"><div><h2>Faturamento do mês</h2><p>O total de vendas exclui sangrias e suprimentos. As modalidades seguem o relatório de caixa enviado.</p></div>
               <label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>setCashMonth(e.target.value)}/></label>
@@ -2742,10 +2747,6 @@ export default function Home() {
               </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
             </div>
           </section>
-          {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
-            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
-            {cashError&&<div className="error" role="alert">{cashError}</div>}
-          </section>}
           {cashEntryMode === 'choose' && <section className="panel cash-entry cash-choice-panel">
             <div className="panel-head"><div><h2>Registrar novo fechamento</h2><p>Como deseja preencher os dados?</p></div><button className="btn secondary" type="button" onClick={()=>setCashEntryMode('')}>Cancelar</button></div>
             <div className="cash-choice-options">
