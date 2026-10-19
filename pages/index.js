@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@supabase/supabase-js';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
@@ -50,6 +51,99 @@ function Icon({ type, size = 20 }) {
     spark: <><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{p[type] || p.box}</svg>;
+}
+
+
+/** Avisos da conferência: popup fora da tabela para não ser cortado pelo scroll horizontal. */
+function ReviewIssuePopover({ issues, productName, index, reviewed }) {
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [position, setPosition] = useState({ top: -9999, left: -9999 });
+  const buttonRef = useRef(null);
+  const popupRef = useRef(null);
+  const closeTimer = useRef(null);
+  const tooltipId = 'receipt-line-alert-' + index;
+
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const closeSoon = () => {
+    cancelClose();
+    if (!pinned) closeTimer.current = setTimeout(() => setOpen(false), 180);
+  };
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = buttonRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const width = Math.min(360, window.innerWidth - 24);
+      const height = popupRef.current?.offsetHeight || 190;
+      const left = Math.max(12, Math.min(anchor.left, window.innerWidth - width - 12));
+      const top = anchor.bottom + height + 10 <= window.innerHeight
+        ? anchor.bottom + 8 : Math.max(12, anchor.top - height - 8);
+      setPosition(old => old.top === top && old.left === left ? old : { top, left });
+    };
+    place();
+    const dismissOutside = e => {
+      if (!buttonRef.current?.contains(e.target) && !popupRef.current?.contains(e.target)) {
+        setPinned(false);
+        setOpen(false);
+      }
+    };
+    const dismissEscape = e => {
+      if (e.key === 'Escape') {
+        setPinned(false);
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', dismissOutside);
+    document.addEventListener('keydown', dismissEscape);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside);
+      document.removeEventListener('keydown', dismissEscape);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, issues.length]);
+
+  return <>
+    <button ref={buttonRef} type="button"
+      className={'review-issue-trigger' + (reviewed ? ' is-reviewed' : '')}
+      aria-label={issues.length + ' aviso(s) para ' + (productName || 'este produto') + '. Passe o mouse ou clique para ler.'}
+      aria-describedby={open ? tooltipId : undefined}
+      aria-expanded={open}
+      onPointerEnter={e => { if (e.pointerType === 'mouse') { cancelClose(); setOpen(true); } }}
+      onPointerLeave={closeSoon}
+      onFocus={() => { cancelClose(); setOpen(true); }}
+      onBlur={closeSoon}
+      onClick={() => {
+        cancelClose();
+        if (pinned) { setPinned(false); setOpen(false); }
+        else { setPinned(true); setOpen(true); }
+      }}>
+      <Icon type="alert" size={18}/>
+      <span>{issues.length}</span>
+    </button>
+    {open && typeof document !== 'undefined' && createPortal(
+      <div ref={popupRef} id={tooltipId} role="tooltip"
+        className="review-issue-popup" style={{ top: position.top, left: position.left }}
+        onPointerEnter={cancelClose} onPointerLeave={closeSoon}>
+        <div className="review-issue-popup-title"><Icon type="alert" size={18}/>
+          <b>{reviewed ? 'Avisos já conferidos' : 'Pontos para conferir'}</b>
+          <button type="button" aria-label="Fechar avisos" onClick={() => {setPinned(false);setOpen(false);}}>×</button>
+        </div>
+        <ul>{issues.map((message, warningIndex) => <li key={warningIndex}>{message}</li>)}</ul>
+        <p>Compare com a nota antes de confirmar esta linha.</p>
+      </div>, document.body
+    )}
+  </>;
 }
 
 function parseNfeXml(text) {
@@ -2672,10 +2766,10 @@ export default function Home() {
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
                     </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
-                    <td><input className="inline-input small-field" style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
+                    <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
-                    <td><input className="inline-input small-field" style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
+                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:225}}>
                       <label style={{display:'block',fontSize:11,marginBottom:6}}>
                         Classificação fiscal
@@ -2712,15 +2806,15 @@ export default function Home() {
                           : null;
                       })()}
                     </td>
-                    <td style={{minWidth:195}}>
-                      {review.requiresReview ? <>
-                        <label style={{display:'flex',gap:6,alignItems:'center',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                    <td className="review-check-cell">
+                      {review.requiresReview ? <div className="review-check-row">
+                        <label className="review-check-label">
                           <input type="checkbox" checked={Boolean(draft.reviewedItems?.[i])}
                             onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
-                          Conferido pelo encarregado
+                          <span>Conferido pelo encarregado</span>
                         </label>
-                        {!review.done && <small style={{display:'block',marginTop:6,color:'#92400e'}}>{review.issues.join(' ')}</small>}
-                      </> : <span style={{fontSize:12,color:'#386549'}}>✓ Dados consistentes</span>}
+                        <ReviewIssuePopover issues={review.issues} productName={it.name} index={i} reviewed={review.done}/>
+                      </div> : <span className="review-okay">✓ Dados consistentes</span>}
                     </td>
                     <td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: {},
