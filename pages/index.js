@@ -2044,7 +2044,10 @@ export default function Home() {
     setProducts(nextProducts);
     setMovements(nextMovements);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
-    setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries, status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
+    setDocuments((old) => [{ ...documentToSave,
+      ...(draft.manualInvoice ? {subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras} : {}),
+      checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
+      status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
     setDraftQueue((old) => old.slice(1));
