@@ -1786,8 +1786,8 @@ export default function Home() {
               qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
               qrReaderWarning: qr.qrReaderWarning || '',
               source: multiple
-                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — ' + (needsRetry ? '2 leituras OCR' : '1 leitura OCR validada') + ')'
-                : 'Foto (OCR local, ' + (needsRetry ? '2 leituras' : '1 leitura validada') + ')',
+                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — ' + (needsRetry ? '2 leituras OCR' : '1 leitura OCR consistente') + ')'
+                : 'Foto (OCR local, ' + (needsRetry ? '2 leituras' : '1 leitura consistente') + ')',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
@@ -1851,7 +1851,7 @@ export default function Home() {
         } catch (e) {
           throw new Error('Leitura OCR de ' + file.name + ': ' + (e?.message || 'erro desconhecido'));
         } finally {
-          // The worker remains available for the next image in this import batch.
+          // Shared OCR worker is released at the end of uploadFiles().
         }
       }
     }
