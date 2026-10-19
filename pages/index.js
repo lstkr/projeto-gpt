@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
+import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -1054,6 +1055,10 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
+  const [cashImporting,setCashImporting]=useState(false);
+  const [cashImportText,setCashImportText]=useState('');
+  const [cashImportWarnings,setCashImportWarnings]=useState([]);
+  const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
   const [cashForm,setCashForm]=useState({
@@ -1449,8 +1454,56 @@ export default function Home() {
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
            readingWarning:''} : it)}));
   }
+  async function importCashReport(event){
+    const file=event.target.files?.[0];
+    if(!file)return;
+    event.target.value='';
+    if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
+    if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
+    setCashImporting(true);setCashError('');setCashImportWarnings([]);
+    try{
+      let text='';
+      if(/\.pdf$/i.test(file.name)||file.type==='application/pdf'){
+        const bytes=new Uint8Array(await file.arrayBuffer());
+        let binary='';
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        const response=await fetch('/api/cash-extract',{method:'POST',
+          headers:{'content-type':'application/json','x-estoque-session':accessCode},
+          body:JSON.stringify({base64:btoa(binary)})});
+        const parsed=await response.json();
+        if(!response.ok)throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
+        text=parsed.text;
+      }else if(file.type.startsWith('image/')||/\.(jpe?g|png|webp)$/i.test(file.name)){
+        const {createWorker}=await import('tesseract.js');
+        const worker=await createWorker('por');
+        try{
+          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+          const result=await worker.recognize(file);
+          text=result.data.text||'';
+        }finally{await worker.terminate();}
+      }else throw new Error('Use PDF, JPG, PNG ou WEBP.');
+      const result=parseCashReport(text);
+      if(!result.day||!result.register||!result.operator)
+        throw new Error('Não foi possível identificar data, caixa e operador. Confira a qualidade do arquivo.');
+      const duplicated=closings.some(d=>d.day===result.day&&d.register===result.register);
+      setCashEditId('');
+      setCashForm(prev=>({...prev,...result,
+        sourceFileName:file.name,sourceText:text.slice(0,30000),
+        reviewedImport:false,
+        // Never assume the PDF has a trustworthy physical closing count.
+        cashCounted:''
+      }));
+      setCashImportText(text);
+      setCashImportWarnings([...result.importWarnings,
+        ...(duplicated?['Já existe fechamento deste caixa e data. Somente o Gestor pode corrigi-lo.']:[])]);
+      setCashMonth(result.day.slice(0,7));
+      setToast('Relatório lido. Confira os dados antes de salvar.');
+    }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
+    finally{setCashImporting(false);}
+  }
   function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
   function newCashClosing(){
+    setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
     setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
@@ -1458,6 +1511,7 @@ export default function Home() {
     setCashError('');
   }
   function editCashClosing(entry){
+    setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEditId(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),
       movements:entry.movements||[]});
@@ -1466,6 +1520,7 @@ export default function Home() {
   async function saveCashClosing(event){
     event.preventDefault();
     const invalid=validateCashClosing(cashForm);
+    if(cashForm.sourceFileName&&!cashForm.reviewedImport) invalid.push('Confirme a revisão dos dados importados antes de salvar.');
     if(invalid.length){setCashError(invalid.join(' · '));return;}
     if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
     setCashSaving(true);setCashError('');
@@ -2681,6 +2736,18 @@ export default function Home() {
           <section className="panel cash-entry">
             <div className="panel-head"><div><h2>{cashEditId?'Corrigir fechamento':'Registrar fechamento'}</h2><p>Valores financeiros por forma de pagamento e movimentações de dinheiro.</p></div><button type="button" className="btn secondary" onClick={newCashClosing}>Novo fechamento</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
+            <div className="cash-file-import">
+              <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
+              <input ref={cashFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)}/>
+              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
+            </div>
+            {!!cashForm.sourceFileName&&<div className="cash-import-review">
+              <b>Arquivo importado: {cashForm.sourceFileName}</b>
+              {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
+              <p>Valores extraídos automaticamente. Confirme no comprovante, especialmente sangrias e suprimentos.</p>
+              <label><input type="checkbox" checked={Boolean(cashForm.reviewedImport)} onChange={e=>changeCashField('reviewedImport',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações com o arquivo.</label>
+              {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
+            </div>}
             <form onSubmit={saveCashClosing}>
               <div className="meta-fields">
                 <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
