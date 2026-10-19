@@ -1055,6 +1055,7 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
+  const [cashEntryMode,setCashEntryMode]=useState(''); // '', choose, upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
   const [cashImportWarnings,setCashImportWarnings]=useState([]);
@@ -1463,6 +1464,7 @@ export default function Home() {
     event.target.value='';
     if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
     if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
+    newCashClosing('upload');
     setCashImporting(true);setCashError('');setCashImportWarnings([]);
     try{
       let text='';
@@ -1500,12 +1502,14 @@ export default function Home() {
       setCashImportWarnings([...result.importWarnings,
         ...(duplicated?['Já existe fechamento deste caixa e data. Somente o Gestor pode corrigi-lo.']:[])]);
       setCashMonth(result.day.slice(0,7));
+      setCashEntryMode('upload');
       setToast('Relatório lido. Confira os dados antes de salvar.');
     }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
     finally{setCashImporting(false);}
   }
   function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
-  function newCashClosing(){
+  function newCashClosing(mode='manual'){
+    setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
     setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
@@ -1515,6 +1519,7 @@ export default function Home() {
   }
   function editCashClosing(entry){
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
+    setCashEntryMode('edit');
     setCashEditId(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),
       movements:entry.movements||[]});
@@ -1539,7 +1544,7 @@ export default function Home() {
       if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
       const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
       if(listError||!Array.isArray(updated))throw new Error('Fechamento salvo, mas a atualização da lista falhou');
-      setClosings(updated);setCashEditId('');
+      setClosings(updated);setCashEditId('');setCashEntryMode('');
       setToast('Fechamento de caixa registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
     finally{setCashSaving(false);}
@@ -2737,12 +2742,24 @@ export default function Home() {
               </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
             </div>
           </section>
-          <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEditId?'Corrigir fechamento':'Registrar fechamento'}</h2><p>Valores financeiros por forma de pagamento e movimentações de dinheiro.</p></div><button type="button" className="btn secondary" onClick={newCashClosing}>Novo fechamento</button></div>
+          {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
+            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+          </section>}
+          {cashEntryMode === 'choose' && <section className="panel cash-entry cash-choice-panel">
+            <div className="panel-head"><div><h2>Registrar novo fechamento</h2><p>Como deseja preencher os dados?</p></div><button className="btn secondary" type="button" onClick={()=>setCashEntryMode('')}>Cancelar</button></div>
+            <div className="cash-choice-options">
+              <button className="cash-choice-option" type="button" onClick={()=>cashFileRef.current?.click()}><Icon type="upload" size={23}/><b>Enviar PDF ou foto</b><span>Preencher faturamento e movimentações a partir do comprovante.</span></button>
+              <button className="cash-choice-option" type="button" onClick={()=>newCashClosing('manual')}><Icon type="edit" size={23}/><b>Inserir manualmente</b><span>Digitar os valores e as sangrias e suprimentos.</span></button>
+            </div>
+            <input ref={cashFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)}/>
+          </section>}
+          {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
               <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
-              <input ref={cashFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)}/>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)} ref={cashEntryMode==='choose'?undefined:cashFileRef}/>
               <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
             </div>
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
@@ -2774,7 +2791,7 @@ export default function Home() {
               {cashForm.cashCounted!==''&&<p>Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
               <div className="modal-actions"><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
             </form>
-          </section>
+          </section>}
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>SUPRIMENTOS</th><th>SANGRIAS</th><th></th></tr></thead><tbody>
             {closings.map(entry=>{const totals=cashTotals(entry);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td>{money(totals.inflow)}</td><td>{money(totals.outflow)}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}

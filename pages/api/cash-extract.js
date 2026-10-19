@@ -5,9 +5,9 @@ export const config={api:{bodyParser:{sizeLimit:'6mb'}}};
 export default async function handler(req,res){
  if(req.method!=='POST'){res.setHeader('Allow','POST');return res.status(405).json({error:'Método não permitido'});}
  const token=String(req.headers['x-estoque-session']||'');
- const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
- const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
- if(!url||!key||!token){return res.status(401).json({error:'Entre no sistema para importar um fechamento.'});}
+ const url=process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
+ const key=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
+ if(!token){return res.status(401).json({error:'Sessão não encontrada. Atualize a página e entre novamente.'});}
  try{
   const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const {data:user,error:authError}=await client.rpc('inventory_get',{p_session_token:token});
