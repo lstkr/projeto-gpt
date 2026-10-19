@@ -109,3 +109,16 @@ A operação mantém o histórico original de contagens físicas (fotografia do 
 Na conferência fiscal, se um código já existe mas a descrição está muito diferente, o sistema exige vincular um produto existente ou marcar explicitamente que o cadastro é distinto; não cria mais outro registro silenciosamente por essa divergência.
 
 **Implantação:** aplicar a nova definição SQL do arquivo `db/schema.sql` ao banco já existente (especificamente a atualização de `private.inventory_save_impl` e a criação de `public.inventory_merge_products`) antes de usar o botão de consolidação. Nunca execute um reset do banco, que apagaria o estoque e pode comprometer os vínculos.
+
+
+## Conferência final, compras por categoria e histórico de fornecedores
+
+- Na conferência de uma nota, **Quem conferiu** foi movido para o último quadro, ao lado de **Conferi todo o documento**, habilitado depois de revisar todas as linhas e os totais destacados. Alterações posteriores desmarcam a confirmação.
+- A lista de compras fica agrupada por categoria com fornecedor habitual, estoque atual/mínimo, quantidade sugerida, preço médio pago em entradas anteriores (ponderado pelas quantidades), custo de referência e previsão de gasto por item, categoria e total. Quando ainda não há histórico, recorre ao custo cadastrado e identifica essa origem. Se faltar preço, a previsão é parcial, sem inventar valores.
+- O campo **Fornecedor habitual** pode ser configurado pelo Gestor no cadastro, sugerindo nomes já encontrados nas notas. Sem escolha manual, aparece o fornecedor com maior frequência no histórico daquele produto.
+- Nova aba **Fornecedores** reúne compras já realizadas por estabelecimento (CNPJ quando conhecido), com total gasto, notas e relação dos itens comprados.
+- No upload de notas, os itens são cruzados com notas anteriores do mesmo fornecedor por descrição e código. Correspondências inequívocas com um produto cadastrado pré-selecionam o vínculo; conflitos ou OCR imperfeito são destacados e exigem decisão humana.
+- Histórico e preços usam os documentos e `stockEntries` já registrados. Sem compras anteriores, não há preço médio calculável.
+- **Reset de dados:** limpar estado do inventário e encerrar sessões, sem alterar **nenhum registro de `private.app_users`**, senha, login ou papel. O reset de produção exige operação separada, com incremento da revisão de estoque para impedir ressurreição de snapshots obsoletos.
+
+Testes: `npm test` e `npm run build`.

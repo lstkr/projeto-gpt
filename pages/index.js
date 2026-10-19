@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
+import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
 const initialProducts = [
   { id: '1', name: 'Café em grãos', sku: 'CAF-001', category: 'Cafés', unit: 'kg', stock: 8.5, min: 3, cost: 42.9 },
@@ -1052,11 +1053,12 @@ export default function Home() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
   const [filter, setFilter] = useState('Todos');
+  const [supplierFilter, setSupplierFilter] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState('');
   const [editing, setEditing] = useState(null);
-  const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0' });
+  const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
   const [draft, setDraft] = useState(null);
   const [draftQueue, setDraftQueue] = useState([]);
@@ -1260,7 +1262,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1279,11 +1281,21 @@ export default function Home() {
     (draft.officialSubtotal != null && Math.abs(draftSubtotal - Number(draft.officialSubtotal)) > 0.05) ||
     (draft.officialDiscount != null && Math.abs(draftDiscount - Number(draft.officialDiscount)) > 0.02)
   ));
+  const currentHistoryMatches = useMemo(() =>
+    draft ? findHistoricalMatches(draft, documents, products) : [],
+    [draft, documents, products]);
   const receiptReviewRows = (draft?.items || []).map((it, index) => {
     const issues = [];
     if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
     const targetProduct = products.find((p) => p.id === it.productId);
     const mappedProduct = targetProduct || findReceiptCatalogProduct(it, products, draft.supplierCnpj);
+    const previousPurchase = currentHistoryMatches[index];
+    if (previousPurchase && (!previousPurchase.confident || !previousPurchase.productId ||
+        (it.productId && it.productId !== '__new__' && it.productId !== previousPurchase.productId))) {
+      issues.push('Compra anterior deste fornecedor: "' + previousPurchase.historicalName +
+        '" (NF ' + (previousPurchase.invoiceNumber || 'sem número') +
+        '). Revise o vínculo para evitar duplicatas.');
+    }
     if (!mappedProduct && shouldPostReceiptItem(it) && it.productId !== '__new__')
       issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
     if (it.productId === '__new__') issues.push('Novo cadastro solicitado: confirme se não existe um item equivalente antes de lançar.');
@@ -1331,11 +1343,25 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const purchaseList = products.filter((p) => Number(p.min || 0) > Number(p.stock || 0)).map((p) => ({ ...p, buy: Math.round((Number(p.min || 0) - Number(p.stock || 0)) * 1000) / 1000 })).sort((a, b) => norm(a.name).localeCompare(b.name, 'pt-BR'));
+  const readyForFinalReview = Boolean(draft?.items?.length && !officialMissing &&
+    receiptReviewRows.every((row) => row.done) &&
+    (!totalsRequireReview || draft.totalsReviewed));
+  const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
+  const purchaseList = purchaseData.items;
+  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
+  const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
 
   function downloadPurchaseList() {
     if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
-    const rows = [['Produto','Categoria','Estoque atual','Estoque mínimo','Comprar','Unidade','Custo unitário estimado','Subtotal estimado'], ...purchaseList.map((p) => [p.name,p.category || '',Number(p.stock || 0),Number(p.min || 0),p.buy,p.unit || 'un',Number(p.cost || 0),Math.round(p.buy * Number(p.cost || 0) * 100) / 100])];
+    const rows = [['Categoria','Produto','Fornecedor habitual','Estoque atual','Estoque mínimo','Quantidade a comprar','Unidade','Preço médio pago (R$)','Preço de referência (R$)','Origem do preço','Total estimado (R$)']];
+    for (const group of purchaseData.categories) {
+      rows.push([group.name,'','','','','','','','','','']);
+      for (const p of group.items) rows.push([group.name,p.name,p.usualSupplier || 'A definir',p.stock,p.min,p.buy,p.unit,
+        p.averagePaid ?? '',p.unitEstimate ?? '',p.priceSource,p.estimate ?? '']);
+      rows.push([group.name,'SUBTOTAL','','','','','','','','',group.subtotal]);
+    }
+    rows.push(['TOTAL GERAL','','','','','','','','','',purchaseData.total]);
+    if (purchaseData.missingPrices) rows.push(['AVISO',purchaseData.missingPrices + ' produto(s) sem preço de referência; orçamento parcial','','','','','','','','','']);
     const csv = '\uFEFF' + rows.map((row) => row.map((value) => '"' + String(value ?? '').replace(/"/g, '""') + '"').join(';')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'lista-de-compras-cafeteria-' + new Date().toISOString().slice(0,10) + '.csv';
@@ -1344,7 +1370,7 @@ export default function Home() {
 
   function openProduct(product) {
     setEditing(product || null);
-    setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost) } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0' });
+    setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost), preferredSupplier: product.preferredSupplier || '' } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
     setModal('product');
   }
   function saveProduct(event) {
@@ -1595,7 +1621,8 @@ export default function Home() {
         setOcrProgress(0);
         try {
           const receipts = await parseUploadedFile(file);
-          parsed.push(...receipts);
+          parsed.push(...receipts.map((receipt) =>
+            attachPreviousPurchases(receipt, [...parsed, ...documents], products)));
         } catch (e) {
           issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
           parsed.push({
@@ -1621,7 +1648,8 @@ export default function Home() {
   }
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
-    setDraft((d) => d ? ({ ...d, [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
+    setDraft((d) => d ? ({ ...d, finalReviewed: key === 'checkedBy' ? d.finalReviewed : false,
+      [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
   }
   function changeNfceAccessKey(value) {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
@@ -1644,13 +1672,13 @@ export default function Home() {
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
     setDraft((d) => d ? ({ ...d, [key]: number, totalsReviewed: false,
-      officialVerified: false }) : d);
+      finalReviewed: false, officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
       reviewedItems: { ...(d.reviewedItems || {}), [index]: false },
-      totalsReviewed: false,
+      finalReviewed: false, totalsReviewed: false,
       officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
@@ -1755,7 +1783,7 @@ export default function Home() {
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
         return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
       }),
-      reviewedItems: {}, totalsReviewed: false,
+      reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
       officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
       discount: d.officialDiscount ?? d.discount,
@@ -1781,7 +1809,19 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if (!draft?.checkedBy?.trim()) { setError('Informe quem conferiu a nota antes de registrar a entrada.'); return; }
+    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
+      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    }
+    const missingHistoricalLinks = draft.items.some((item, index) => {
+      if (!shouldPostReceiptItem(item) || item.productId) return false;
+      const matched = findHistoricalMatches(draft, documents, products)[index];
+      return Boolean(matched && matched.productId &&
+        !findReceiptCatalogProduct(item, products, draft.supplierCnpj));
+    });
+    if (missingHistoricalLinks) {
+      setError('Já existe uma compra deste item com o mesmo fornecedor. Selecione o produto do estoque indicado no histórico ou confirme expressamente que é um cadastro distinto.');
+      return;
+    }
     const unresolvedCodes = draft.items.filter(shouldPostReceiptItem).filter((it) =>
       !it.productId && !findReceiptCatalogProduct(it, products, draft.supplierCnpj) &&
       findReceiptCodeConflicts(it, products, draft.supplierCnpj).length > 0);
@@ -1871,7 +1911,7 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave, checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries, status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
     setDraft(nextDraft);
@@ -2012,6 +2052,7 @@ export default function Home() {
         <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>
         <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
         {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
       <div className="sidebar-bottom"><div className="tip-card"><span className="tip-icon"><Icon type="spark" size={18}/></span><b>Menos planilhas.<br/>Mais controle.</b><p>Importe o XML de uma NF-e e confira os produtos antes de lançar as entradas.</p></div><div className="user-row"><span className="user-avatar">{currentUser?.role === 'admin' ? 'GE' : currentUser ? 'EQ' : 'LG'}</span><span><b>{currentUser?.role === 'admin' && /^(administrador|admin|dono)$/i.test(currentUser?.display_name || '') ? 'Gestor' : (currentUser?.display_name || 'Equipe da cafeteria')}</b><small>{supabase ? (currentUser?.role === 'admin' ? 'Gestor' : 'Funcionário') + ' · ' + (saveStatus || 'Sessão ativa') : 'Protótipo local'}</small></span><button title="Sobre os dados" onClick={() => setToast(supabase ? 'Os dados são sincronizados no banco compartilhado da equipe.' : 'Os dados ficam no armazenamento local deste navegador; não há sincronização entre dispositivos.')}><Icon type="sliders" size={17}/></button></div></div>
     </aside>
@@ -2079,11 +2120,44 @@ export default function Home() {
           <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')}>Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section>
         </>}
 
-        {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel">
-          <div className="panel-head"><div><h2>Reposição recomendada</h2><p>Quantidade sugerida = estoque mínimo menos saldo atual. Ajuste o mínimo no cadastro dos produtos.</p></div><span className="history-count">{purchaseList.length} itens</span></div>
-          {purchaseList.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>ESTOQUE ATUAL</th><th>ESTOQUE MÍNIMO</th><th>SUGESTÃO DE COMPRA</th><th>CUSTO UNITÁRIO</th><th>SUBTOTAL ESTIMADO</th></tr></thead><tbody>{purchaseList.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.category || 'Sem categoria'}</small></span></div></td><td>{qty(p.stock)} {p.unit}</td><td>{qty(p.min)} {p.unit}</td><td><b className="quantity-low">{qty(p.buy)} {p.unit}</b></td><td>{money(p.cost)}</td><td><b>{money(p.buy * Number(p.cost || 0))}</b></td></tr>)}</tbody></table></div>
-          : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma reposição necessária</b><p>Todos os produtos estão no estoque mínimo ou acima dele. Confira se cada produto tem um mínimo cadastrado.</p></div>}
-          {purchaseList.length > 0 && <div className="table-foot"><span>{purchaseList.length} produtos abaixo do mínimo</span><span>Subtotal estimado: <b>{money(purchaseList.reduce((sum,p)=>sum + p.buy * Number(p.cost || 0),0))}</b></span></div>}
+        {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
+          <div className="panel-head"><div><h2>Lista de compras por categoria</h2><p>Compras sugeridas = mínimo − saldo. O preço médio é ponderado pelas quantidades de entradas fiscais anteriores.</p></div><span className="history-count">{purchaseList.length} itens</span></div>
+          {purchaseList.length ? <>
+            <div className="purchase-overview">
+              <div><small>Estimativa total</small><strong>{money(purchaseData.total)}</strong><small>{purchaseData.missingPrices ? 'Parcial: ' + purchaseData.missingPrices + ' item(ns) sem referência de preço' : 'Todos os itens têm preço de referência'}</small></div>
+              <div><small>Categorias com reposição</small><strong>{purchaseData.categories.length}</strong><small>Organizadas para facilitar a compra</small></div>
+            </div>
+            {purchaseData.categories.map((group) => <section className="purchase-category" key={group.name}>
+              <div className="purchase-category-head"><h3>{group.name}</h3><span>{group.items.length} produto(s) · subtotal {money(group.subtotal)}{group.missingPrices ? ' (parcial)' : ''}</span></div>
+              <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>FORNECEDOR HABITUAL</th><th>ATUAL / MÍNIMO</th><th>COMPRAR</th><th>MÉDIA PAGA</th><th>PREÇO BASE</th><th>TOTAL PREVISTO</th></tr></thead>
+                <tbody>{group.items.map((p) => <tr key={p.id}>
+                  <td><b>{p.name}</b><small className="purchase-detail">{p.sku || 'Sem código'}</small></td>
+                  <td><span>{p.usualSupplier || 'A definir'}</span><small className="purchase-detail">{p.supplierSource === 'manual' ? 'Definido pelo Gestor' : p.supplierSource === 'histórico' ? 'Mais frequente no histórico' : 'Sem compras anteriores'}</small><button className="text-btn purchase-inline-edit" type="button" onClick={() => openProduct(p)}>Alterar fornecedor</button></td>
+                  <td>{qty(p.stock)} / {qty(p.min)} {p.unit}</td>
+                  <td><b className="quantity-low">{qty(p.buy)} {p.unit}</b></td>
+                  <td>{p.averagePaid == null ? 'Sem histórico' : money(p.averagePaid)}</td>
+                  <td>{p.unitEstimate == null ? 'Sem referência' : money(p.unitEstimate)}<small className="purchase-detail">{p.priceSource === 'histórico' ? 'Média das NFs' : p.priceSource === 'cadastro' ? 'Custo cadastrado' : 'Preço pendente'}</small></td>
+                  <td><b>{p.estimate == null ? 'A cotar' : money(p.estimate)}</b></td>
+                </tr>)}</tbody>
+              </table></div>
+            </section>)}
+            <div className="purchase-grand-total"><span>Valor estimado da compra {purchaseData.missingPrices ? '(parcial)' : ''}</span><strong>{money(purchaseData.total)}</strong></div>
+            {purchaseData.missingPrices > 0 && <p className="duplicate-guidance">⚠ {purchaseData.missingPrices} produto(s) sem preço de referência não entram na soma. Informe o custo no cadastro ou importe uma compra anterior para completar a previsão.</p>}
+          </> : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma reposição necessária</b><p>Todos os produtos estão no mínimo ou acima dele. Ajuste os mínimos no cadastro quando necessário.</p></div>}
+        </section>}
+
+        {view === 'suppliers' && currentUser?.role === 'admin' && <section className="panel suppliers-panel">
+          <div className="panel-head"><div><h2>Compras realizadas por fornecedor</h2><p>Histórico das notas lançadas, organizado por fornecedor e CNPJ quando disponível.</p></div><span className="history-count">{supplierGroups.length} fornecedor(es)</span></div>
+          <div className="filters supplier-filters"><label className="search"><Icon type="search" size={17}/><input value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} placeholder="Filtrar fornecedor ou CNPJ"/></label></div>
+          {supplierGroups.filter((s) => norm(s.name + ' ' + s.cnpj).includes(norm(supplierFilter))).map((s) => <details className="supplier-summary" key={s.key}>
+            <summary><span><b>{s.name}</b><small>{s.cnpj ? 'CNPJ ' + s.cnpj : 'Sem CNPJ identificado'} · {s.documents.length} nota(s) · {s.items} linha(s) de produtos</small></span><strong>{money(s.total)}</strong></summary>
+            <div className="supplier-documents">{s.documents.map((d, i) => <div className="supplier-document" key={d.id || i}>
+              <div className="supplier-document-head"><b>{d.invoiceNumber ? 'Nota nº ' + d.invoiceNumber : d.fileName || 'Documento fiscal'}</b><span>{d.date || d.importedAt || 'Sem data'} · {money(d.total ?? (d.items || []).reduce((sum,item)=>sum + Number(item.lineTotal || item.unitPrice*item.quantity || 0),0))}</span></div>
+              <ul>{(d.items || []).map((it,j) => <li key={j}><span>{it.name} <small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><b>{money(it.lineTotal ?? Number(it.quantity)*Number(it.unitPrice))}</b></li>)}</ul>
+            </div>)}</div>
+          </details>)}
+          {!supplierGroups.length && <div className="empty-docs">Ainda não há compras registradas. Os fornecedores aparecerão após lançar notas fiscais.</div>}
+          {supplierGroups.length > 0 && !supplierGroups.some((s)=>norm(s.name+' '+s.cnpj).includes(norm(supplierFilter))) && <div className="empty-docs">Nenhum fornecedor encontrado para esta busca.</div>}
         </section>}
 
         {view === 'documents' && <>
@@ -2097,7 +2171,7 @@ export default function Home() {
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label><label><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do funcionário"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.ocrText && <label className="field full"><span>Corrigir chave da NFC-e</span><input value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave de acesso"/></label>}
             {draft.qrReaderWarning && <div className="notice" role="status" style={{marginTop:12}}>Leitura QR complementar: {draft.qrReaderWarning} O OCR continua disponível para revisão manual.</div>}
@@ -2154,6 +2228,12 @@ export default function Home() {
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
                         <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
                       </select>
+                      {currentHistoryMatches[i] && <div className="receipt-history-match" role="status">
+                        <b>Compra anterior do mesmo fornecedor</b>
+                        <span>{currentHistoryMatches[i].historicalName} · {currentHistoryMatches[i].invoiceNumber ? 'NF nº ' + currentHistoryMatches[i].invoiceNumber : 'sem nº'} · descrição {currentHistoryMatches[i].similarity}% semelhante.</span>
+                        {currentHistoryMatches[i].productId && !it.productId && <button className="text-btn" type="button" onClick={() => changeItem(i,'productId',currentHistoryMatches[i].productId)}>Vincular ao produto anterior</button>}
+                        {!currentHistoryMatches[i].confident && <small>⚠ Confira a descrição, o código e a unidade antes de lançar.</small>}
+                      </div>}
                       {(() => {
                         const target = products.find((p) => p.id === it.productId);
                         return target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit)
@@ -2170,7 +2250,7 @@ export default function Home() {
                       {review.requiresReview ? <>
                         <label style={{display:'flex',gap:6,alignItems:'center',fontSize:12,fontWeight:600,cursor:'pointer'}}>
                           <input type="checkbox" checked={Boolean(draft.reviewedItems?.[i])}
-                            onChange={(e) => setDraft((d) => ({ ...d, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
+                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
                           Conferido pelo encarregado
                         </label>
                         {!review.done && <small style={{display:'block',marginTop:6,color:'#92400e'}}>{review.issues.join(' ')}</small>}
@@ -2178,7 +2258,7 @@ export default function Home() {
                     </td>
                     <td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: {},
-                      totalsReviewed: false, officialVerified: false
+                      totalsReviewed: false, finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
                 })}</tbody>
@@ -2201,12 +2281,19 @@ export default function Home() {
             {totalsRequireReview && <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
                 <input type="checkbox" checked={Boolean(draft.totalsReviewed)}
-                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked }))}/>
+                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked, finalReviewed:false }))}/>
                 <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
               </label>
               <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0 }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+              <div className="review-final-fields">
+                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
+                <label className="field review-final-person"><span>Quem conferiu *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável"/></label>
+              </div>
+            </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
@@ -2219,7 +2306,7 @@ export default function Home() {
       </div>
     </main>
 
-    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
+    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label><label className="field"><span>Fornecedor habitual (opcional)</span><input list="estq-known-suppliers" value={productForm.preferredSupplier || ''} onChange={(e) => setProductForm({ ...productForm, preferredSupplier: e.target.value })} placeholder="Ex.: Atacadista Centro"/><datalist id="estq-known-suppliers">{knownSuppliers.map((name) => <option key={name} value={name}/>)}</datalist><small>Se não escolher, usamos o fornecedor mais frequente das notas fiscais.</small></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
     {mergePair && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !mergeBusy) setMergePair(null); }}>
       <section className="modal duplicate-merge-modal" role="dialog" aria-modal="true" aria-label="Consolidar cadastros duplicados">
         <div className="modal-heading"><div><div className="eyebrow">AÇÃO EXCLUSIVA DO GESTOR</div><h2>Consolidar produtos</h2><p>Escolha o cadastro principal e confira as quantidades.</p></div><button className="close-btn" disabled={mergeBusy} onClick={() => setMergePair(null)}><Icon type="close"/></button></div>

@@ -193,14 +193,15 @@ begin
           select 1 from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product
           where old_product->>'id' = incoming.product->>'id'
         ) then
-          (incoming.product - 'cost' - 'min' - 'name' - 'sku' - 'category' - 'unit') ||
+          (incoming.product - 'cost' - 'min' - 'name' - 'sku' - 'category' - 'unit' - 'preferredSupplier') ||
           jsonb_build_object(
             'name', (select old_product->'name' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
             'sku', (select old_product->'sku' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
             'category', (select old_product->'category' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
             'unit', (select old_product->'unit' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1),
             'cost', coalesce((select old_product->'cost' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '0'::jsonb),
-            'min', coalesce((select old_product->'min' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '0'::jsonb)
+            'min', coalesce((select old_product->'min' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '0'::jsonb),
+            'preferredSupplier', coalesce((select old_product->'preferredSupplier' from jsonb_array_elements(coalesce(existing_state->'products','[]'::jsonb)) old_product where old_product->>'id' = incoming.product->>'id' limit 1), '""'::jsonb)
           )
         else (incoming.product - 'cost' - 'min') || jsonb_build_object('cost', 0, 'min', 0)
       end order by incoming.ord
