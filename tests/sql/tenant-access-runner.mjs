@@ -15,7 +15,7 @@ for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-rece
  'supabase/migrations/20261019201520_inventory_validate_session.sql',
  'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
  'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
- 'supabase/migrations/20261021221435_tenant_access.sql']) {
+ 'supabase/migrations/20261021232050_tenant_access.sql']) {
  try {
   const source=await fs.readFile(file,'utf8');
   if(file.endsWith('_tenant_access.sql')) {
@@ -97,6 +97,17 @@ assert.equal(JSON.stringify((await db.query('select tenant_id,state from private
 assert.equal(JSON.stringify((await db.query('select id,password_hash from private.app_users order by id')).rows),credentialsBefore);
 assert.equal((await db.query('select count(*)::integer count from private.app_sessions where revoked_at is null')).rows[0].count,0);
 console.log('PASS private backup, operational reset and restore rehearsal; credentials preserved; sessions revoked');
+await db.exec(await fs.readFile('db/operations/reset-test-environment.sql','utf8'));
+for (const table of ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts','tenant_inventory','cash_closings','pending_receipts','user_permissions','permission_audit','external_fiscal_rate_limits']) {
+ assert.equal((await db.query(`select count(*)::integer count from private.${table}`)).rows[0].count,0,`${table} reset`);
+}
+await db.exec(`select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'));`);
+const freshDba=await scalar('select public.inventory_login($1,$2) result',['admin.master','synthetic-fresh-dba']);
+assert.equal(freshDba.must_change_password,true);
+const freshDbaTenants=await scalar('select public.inventory_tenants($1) result',[freshDba.session_token]);
+assert.deepEqual(freshDbaTenants.tenants,[]);
+console.log('PASS full test reset clears custom accounts/data, preserves Supabase-managed schemas, and allows fresh DBA bootstrap');
 console.log('PASS tenant inventory/cash/pending isolation, token revocation, first-password gate, role escalation, employee isolation, private grants, identity collisions');
 await db.close();
+
 

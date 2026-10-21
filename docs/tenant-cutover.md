@@ -1,12 +1,12 @@
 # Migração multinegócio e recuperação
 
-Estado: implementação submetida a testes PostgreSQL em memória (PGlite); não aplicada remotamente por este trabalho. A aplicação em Supabase e o reset continuam condicionados à homologação e ao backup recuperável.
+Estado: migração aplicada e reset concluído no Supabase de testes confirmado pelo usuário. As tabelas próprias do app estão vazias e `auth.users` continua vazio. O bootstrap do DBA `admin.master` ainda depende da URL PostgreSQL protegida, que não está disponível no ambiente local. A produção Vercel continua na versão anterior. O usuário autorizou o reset deste banco de testes sem backup externo nesta rodada.
 
 O ensaio local também executou `db/operations/backup-test-reset.sql`, `reset-test-data.sql` e `restore-test-data.sql` após o cutover: restaurou o estado operacional, preservou credenciais e manteve sessões revogadas. A falha injetada antes do commit da migração reverteu DDL e preservou a credencial sintética. Esses ensaios **não equivalem** a restauração de um dump de produção nem a rollback do cutover após seu commit.
 
 ## Modelo e compatibilidade
 
-`supabase/migrations/20261021221435_tenant_access.sql` deve ser aplicada após todas as migrações anteriores e os SQLs de permissões, pendências e caixa. É transacional. Não reaplicar `db/schema.sql` em banco existente. A migração preserva contas, hashes, documentos, produtos, IDs e sessões existentes, vinculando-os à unidade inicial. A autenticação continua própria; `auth.users` não participa.
+`supabase/migrations/20261021232050_tenant_access.sql` deve ser aplicada após todas as migrações anteriores e os SQLs de permissões, pendências e caixa. É transacional. Não reaplicar `db/schema.sql` em banco existente. A migração preserva contas, hashes, documentos, produtos, IDs e sessões existentes, vinculando-os à unidade inicial. A autenticação continua própria; `auth.users` não participa.
 
 O estoque, as pendências e o caixa passam ao schema `private`; views atualizáveis em `public` limitam as operações à unidade autenticada. Cada RPC de dados sobrescreve o contexto transacional com a unidade da sessão validada e seu vínculo; DBA não acessa estoque. As tabelas privadas e implementações deixam de ser executáveis pelos papéis API. As funções públicas de encaminhamento executam como proprietário confiável, com `search_path` vazio.
 
@@ -32,10 +32,13 @@ O login serializa tentativas por usuário com bloqueio transacional e limita oit
 
 O nome de uma tabela `estq_backup_*` não prova recuperação. Registrar referência do projeto, ambiente, horário, escopo, tamanho/contagens, permissões, mecanismo de criptografia e responsável pela restauração. Exportar esquema e dados de todos os objetos afetados, inclusive contas, sessões, ACLs, pendências/anexos e caixa para armazenamento protegido; ensaiar a restauração em ambiente isolado e comparar contagens e integridade. Não enviar esse material ao Git.
 
-Somente após comprovar que o alvo é de testes e que backup/restauração funcionam, executar reset em janela sem gravações. Preservar `private.app_users`, hashes e vínculos; revogar sessões explicitamente. Não apagar Supabase Auth nem presumir que reset de estoque implica reset de identidade. A autorização de reset não dispensa a identificação do ambiente e a análise das dependências. Não há SQL destrutivo automatizado nesta entrega.
+O dono confirmou em 2026-10-21 que o projeto Supabase vinculado contém somente testes e autorizou reset no banco atual sem backup externo nesta rodada. `db/operations/reset-test-environment.sql` limpou as contas customizadas, vínculos, unidades, sessões, tentativas, limites fiscais, permissões, pendências, caixa e estoque. As contagens remotas confirmaram zero linhas depois do reset. A operação deixou `auth.*` e `storage.*` intocados; `auth.users`, buckets e objetos estavam vazios. Os snapshots antigos no mesmo banco, que continham dados e hashes de teste e não eram um backup externo, foram removidos. Não executar esse reset em produção.
 
-Os scripts operacionais preparados têm escopo explícito e exigem execução manual pelo proprietário. O backup pós-cutover cria `estoque_recovery_20261021`, recusa sobrescrever backup anterior e copia dados sem imprimi-los. Contém material sensível, deve permanecer fora dos schemas expostos, sem concessões aos papéis API. O reset confere fingerprints das tabelas críticas e recusa drift; limpa apenas estoque, caixa e pendências. O restore foi ensaiado no mesmo schema e não recria identidades nem reativa sessões. Os backups antigos com prefixo `estq_backup_*` não são copiados novamente; permanecem intactos. Cópia no mesmo projeto protege esse reset, não perda do projeto ou da infraestrutura.
+O procedimento geral para produção continua exigindo dump completo protegido e restauração ensaiada. O reset autorizado no banco de testes não substitui essa etapa para uma futura publicação em produção.
+
+Os scripts operacionais de backup e restauração continuam disponíveis para uma eventual recuperação futura. Os snapshots antigos `estq_backup_*` foram removidos pelo reset integral autorizado. Cópias dentro do mesmo projeto não protegem contra perda do projeto ou da infraestrutura.
 
 Falha durante migração causa rollback transacional. Depois de uso multinegócio, reverter para singleton descarta isolamento; portanto **não existe down migration automática**. Recuperação exige manutenção, backup novo, restauração integral ensaiada no projeto isolado e aplicação conjunta da versão de aplicativo compatível. Não voltar apenas o front-end para versão sem seleção de unidade ou troca obrigatória.
 
 Referências: [funções e privilégios Supabase](https://supabase.com/docs/guides/database/functions), [Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+

@@ -335,4 +335,6 @@ do $$ declare fn record; begin
  execute format('grant execute on function %s to anon,authenticated',fn.signature);
  end loop;
 end $$;
+notify pgrst, 'reload schema';
 commit;
+

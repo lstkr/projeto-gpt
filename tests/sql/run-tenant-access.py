@@ -125,4 +125,24 @@ finally:
         writer.kill()
 assert sql(f"select count(*) from private.tenant_inventory where tenant_id in ('{tenant_a}','{tenant_b}') and state->>'revision'='2'") == '2'
 print('PASS concurrent different-tenant saves with equal revisions finish independently')
+
+# The authorized environment reset keeps Supabase-managed schemas outside its scope
+# and leaves exactly one fresh DBA bootstrap path.
+sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
+for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
+              'tenant_inventory','cash_closings','pending_receipts','user_permissions',
+              'permission_audit','external_fiscal_rate_limits']:
+    assert sql(f'select count(*) from private.{table}') == '0', f'{table} reset'
+assert sql("select count(*) from pg_class where relnamespace='auth'::regnamespace and relname='users'") == '1'
+sql("select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'))")
+fresh = sql("with login as (select public.inventory_login('admin.master','synthetic-fresh-dba') result) "
+            "select (result->>'must_change_password') || '|' || "
+            "jsonb_array_length(public.inventory_tenants(result->>'session_token')->'tenants') from login")
+assert fresh == 'true|0', f'fresh DBA first-login gate and empty directory: {fresh}'
+for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_20261021',
+                      'estq_backup_shared_inventory_20261021','estq_backup_pending_receipts_20261021',
+                      'estq_backup_function_defs_20261021']:
+    assert sql(f"select to_regclass('private.{old_snapshot}') is null") == 't', f'{old_snapshot} removed'
+print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
 print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
+
