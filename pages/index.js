@@ -289,12 +289,25 @@ function parseReceiptOcr(text) {
       flush();
       row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '', itemDiscount: 0, inlineTotal: null };
       if (suffix) {
-        // A right-aligned line total can be recognized on the description row,
-        // while the quantity and unit price are printed on the following row.
-        const printedTotal = suffix.match(/(?:^|\s)(\d+(?:\.\d{3})*,\d{2})\s*$/);
-        if (printedTotal) row.inlineTotal = localizedValue(printedTotal[1]);
-        const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
-        if (nameOnly) row.names.push(nameOnly);
+        // PSM 6 sometimes merges the whole fiscal row into one OCR line.
+        // Anchor quantity to its unit so neither the item index nor package size
+        // ("20UN" in a description) becomes a quantity.
+        const inlineSale = suffix.match(/^(.*?)\s+(\d+(?:[.,]\d{1,4})?)\s+(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD|PT)\s*(?:[X×*]\s*)?(\d+(?:[.,]\d{2,4}))(?:\s+(\d+(?:[.,]\d{2,4})))?\s*$/i);
+        if (inlineSale) {
+          const nameOnly = cleanDescription(inlineSale[1]);
+          if (nameOnly) row.names.push(nameOnly);
+          const rawUnit = inlineSale[3].toLowerCase();
+          row.unit = ({und:'un',unidade:'un',in:'un',kgs:'kg',gr:'g'}[rawUnit] || rawUnit);
+          row.amounts.push(localizedValue(inlineSale[2]), localizedValue(inlineSale[4]));
+          if (inlineSale[5]) row.amounts.push(localizedValue(inlineSale[5]));
+        } else {
+          // A right-aligned total can be recognized on the description row,
+          // while quantity and unit price are printed on the next row.
+          const printedTotal = suffix.match(/(?:^|\s)(\d+(?:\.\d{3})*,\d{2})\s*$/);
+          if (printedTotal) row.inlineTotal = localizedValue(printedTotal[1]);
+          const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
+          if (nameOnly) row.names.push(nameOnly);
+        }
       }
       continue;
     }
