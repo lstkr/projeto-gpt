@@ -1,0 +1,31 @@
+name: Main provenance audit (detect only)
+# GitHub Free private repositories do not enforce PR/branch protections.
+# This job DETECTS direct pushes after they happen; Vercel can deploy first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - '.github/workflows/main-provenance.yml'
+      - 'scripts/check-main-provenance.cjs'
+      - 'tests/main-provenance.test.cjs'
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate provenance check negative cases
+        run: node --test tests/main-provenance.test.cjs
+      - name: Verify main's committed SHA originated from a merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ESTOQUE_VERIFY_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+        run: node scripts/check-main-provenance.cjs
