@@ -49,4 +49,4 @@ jobs:
         with:
           node-version: '22'
       - name: Install and build (includes npm test)
-        run: npm install && npm run build
+        run: npm ci && npm test && npm run build
