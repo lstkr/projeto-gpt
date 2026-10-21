@@ -39,3 +39,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: SQL permissions, concurrency, revisions and rollback
         run: python3 tests/sql/run-fiscal-integrity.py
+
+  application-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install and build (includes npm test)
+        run: npm install && npm run build
