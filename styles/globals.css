@@ -286,10 +286,10 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .stat-foot { align-items: flex-start; flex-wrap: wrap; margin-top: 7px; font-size: 9px; }
   .alert-strip { align-items: flex-start; gap: 9px; padding: 12px; }
   .alert-strip p { white-space: normal; line-height: 1.4; }
-  .alert-strip > button { align-self: center; font-size: 0; }
+  .alert-strip > button { align-self: center; min-height: 44px; padding: 8px 10px; font-size: 12px; white-space: normal; text-align: right; }
   .alert-strip > button svg { width: 17px; height: 17px; }
   .panel-head { padding: 16px 14px 13px; }
-  .panel-head p { font-size: 9px; }
+  .panel-head p { font-size: 12px; }
   .filters { flex-wrap: wrap; padding: 0 14px 14px; }
   .search { flex: 1 1 100%; }
   .select-filter { flex: 1; min-width: 0; }
@@ -300,7 +300,7 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   th:first-child, td:first-child { padding-left: 14px; }
   th:last-child, td:last-child { padding-right: 11px; }
   th { font-size: 8px; }
-  .table-foot { padding: 11px 14px; font-size: 8px; }
+  .table-foot { padding: 11px 14px; font-size: 11px; }
   .lower-grid { gap: 12px; margin-top: 12px; }
   .low-row, .recent-row { padding-right: 12px; padding-left: 12px; }
   .footer { flex-direction: column; gap: 7px; padding-top: 20px; }
@@ -330,9 +330,9 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .modal-heading { padding: 18px 16px 15px; }
   .modal form { padding: 0 16px; }
   .form-grid { gap: 11px; }
-  .field > span { font-size: 9px; }
+  .field > span { font-size: 12px; }
   .modal .modal-actions { padding-top: 16px; }
-  .modal-actions .btn { min-height: 37px; padding: 0 10px; font-size: 10px; }
+  .modal-actions .btn { min-height: 44px; padding: 0 10px; font-size: 12px; }
   .toast { right: 12px; bottom: 12px; left: 12px; max-width: none; }
 }
 @media (max-width: 390px) {
