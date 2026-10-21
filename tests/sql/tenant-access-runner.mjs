@@ -19,7 +19,8 @@ for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-rece
  'supabase/migrations/20261019201520_inventory_validate_session.sql',
  'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
  'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
- 'supabase/migrations/20261021232050_tenant_access.sql']) {
+ 'supabase/migrations/20261021232050_tenant_access.sql',
+ 'supabase/migrations/20261021233206_count_guard_search_path.sql']) {
  try {
   const source=await fs.readFile(file,'utf8');
   if(file.endsWith('_tenant_access.sql')) {
@@ -36,6 +37,8 @@ for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-rece
  }
  catch(error) { console.error('FAILED',file,error.message,error.detail??'',error.where??'');process.exit(1); }
 }
+const guardPath=(await db.query("select coalesce((select array_to_string(proconfig,',') from pg_proc where oid=to_regprocedure('private.count_guard()')),'absent') config")).rows[0].config;
+assert(guardPath==='absent'||guardPath.includes('search_path=""'));
 const scalar = async (sql, args=[]) => (await db.query(sql,args)).rows[0].result;
 await db.exec(`insert into private.app_users(username,password_hash,role,display_name) values
  ('test.manager',extensions.crypt('test-only-manager-password',extensions.gen_salt('bf',4)),'admin','Test Manager');

@@ -14,6 +14,12 @@ Funcionário possui um vínculo único; gestor possui vários. A escolha de unid
 
 Permissões fiscais legadas são globais por usuário. Para não modificar outra unidade indiretamente, o gestor só altera permissões de funcionários vinculados à unidade corrente; alterações em outros gestores são recusadas. O diretório devolve apenas usuários e vínculos visíveis ao solicitante.
 
+## Revisão dos advisors Supabase
+
+Após o cutover, o advisor de segurança sinaliza 27 funções RPC `SECURITY DEFINER` públicas como executáveis por `anon` e `authenticated`. Isso acompanha a autenticação própria do app: o cliente chama as RPCs com a chave pública e fornece um token de sessão aleatório, validado no servidor em cada operação. As funções privadas de implementação e as tabelas privadas não concedem leitura ou execução aos papéis API; o bootstrap também é negado a `anon`. Os testes PostgreSQL verificam negação de leitura direta e isolamento por token. Não remover `SECURITY DEFINER` dessas fachadas sem migrar a arquitetura de autenticação e grants.
+
+O advisor também apontou `private.count_guard()` com `search_path` mutável. A migração `20261021233206_count_guard_search_path.sql` corrigiu o caminho para vazio quando a função existe. As quatro tabelas privadas marcadas como RLS sem policy não são expostas diretamente à Data API; o acesso ocorre pelas fachadas verificadas. Esses avisos devem ser reavaliados se a aplicação passar a usar Supabase Auth ou se o schema `private` for exposto.
+
 ## Bootstrap protegido
 
 Não há senha nem hash provisionado na migração. `private.bootstrap_superadmin(username, password_hash)` é função privada sem privilégio API, destinada exclusivamente ao proprietário do banco em conexão TLS parametrizada. Aceita apenas o login solicitado e hash bcrypt com custo 12–15. Recusa sobrescrever qualquer conta existente ou criar um segundo DBA. O hash deve ser calculado fora de logs a partir de entrada protegida; não usar SQL Editor, comandos com argumentos contendo segredos, PR, issue ou logs como transporte. Confirmar configuração de registro de parâmetros antes de executar. A senha provisória serve apenas para entrar e trocar a senha: todas as demais operações são bloqueadas até a troca por 12–72 caracteres. Bcrypt limita senhas a 72 bytes; o cliente deve respeitar esse limite.
