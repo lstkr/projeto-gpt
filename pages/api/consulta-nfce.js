@@ -153,8 +153,6 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido.' });
   if (!await requireInventorySession(req, res)) return;
-  // Limit upstream calls per user and globally, consistently across deployments.
-  if (!await enforceFiscalRateLimit(req, res, 'nfce')) return;
   const input = typeof req.body?.url === 'string' ? req.body.url : '';
   if (input.length > 1800) return res.status(400).json({ error: 'Endereço de consulta muito longo.' });
   let target;
@@ -178,6 +176,8 @@ export default async function handler(req, res) {
       error: 'Chave fiscal rejeitada: modelo diferente de 65 ou dígito verificador incorreto. O OCR pode ter trocado ou acrescentado números.'
     });
   }
+  // Limit upstream calls per user and globally, consistently across deployments.
+  if (!await enforceFiscalRateLimit(req, res, 'nfce')) return;
   // One deadline covers redirects, reading the HTML body and parsing the page.
   // Clearing the timer + aborting the fetch releases resources on timeout or error.
   const controller = new AbortController();
