@@ -79,6 +79,7 @@ test('legacy index flags and duplicate line identifiers cannot unlock confirmati
     row('A',10,'same-id'), row('B',10,'same-id')
   ], { 0:true,1:true,'same-id':true }, { finalReviewed:true }), null, f);
   assert.notEqual(result.items[0].lineId,result.items[1].lineId);
+  assert.equal(result.reviewedItems[result.items[0].lineId],undefined);
   assert.equal(result.reviewedItems[result.items[1].lineId],undefined);
   assert.equal(result.reviewedItems['0'],undefined);
   assert.equal(result.finalReviewed,false);
