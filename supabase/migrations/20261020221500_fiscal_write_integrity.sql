@@ -96,6 +96,19 @@ begin
     raise exception using errcode='42501', message='Sem permissão para registrar documentos fiscais.';
   end if;
 
+  -- Refuse duplicate IDs among new fiscal documents before changing
+  -- products or notes. Existing legacy documents are left untouched.
+  if exists (
+    select doc.value->>'id' from jsonb_array_elements(p_state->'documents') doc(value)
+    where not exists (
+      select 1 from jsonb_array_elements(coalesce(existing_state->'documents','[]'::jsonb)) old(value)
+      where old.value->>'id'=doc.value->>'id'
+    )
+    group by doc.value->>'id' having count(*) > 1
+  ) then
+    raise exception 'Documento fiscal duplicado no envio.' using errcode='23505';
+  end if;
+
   -- Shared_inventory is locked first; pending_receipt_cancel uses the SAME
   -- lock order. A committed posting is therefore never cancellable, and
   -- duplicate posting of the same pending receipt is rejected.
