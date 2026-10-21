@@ -45,7 +45,7 @@ begin
     raise exception 'Sessão inválida' using errcode = '28000';
   end if;
 
-  v_epoch := pg_catalog.extract(epoch from pg_catalog.clock_timestamp())::bigint;
+  v_epoch := pg_catalog.floor(pg_catalog.date_part('epoch', pg_catalog.clock_timestamp()))::bigint;
   v_bucket := v_epoch / 60;
   v_retry := greatest(1, 60 - (v_epoch % 60)::int);
   v_user_max := case when p_endpoint='qr' then 18 else 30 end;
