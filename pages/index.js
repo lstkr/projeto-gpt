@@ -7,6 +7,7 @@ import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
+import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
@@ -1181,7 +1182,7 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
-  const [cashEntryMode,setCashEntryMode]=useState(''); // '', choose, upload, manual, edit
+  const [cashEntryMode,setCashEntryMode]=useState(''); // '', upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
   const [cashImportWarnings,setCashImportWarnings]=useState([]);
@@ -1656,7 +1657,8 @@ export default function Home() {
     setCashImporting(true);setCashError('');setCashImportWarnings([]);
     try{
       let text='';
-      if(/\.pdf$/i.test(file.name)||file.type==='application/pdf'){
+      const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
+      if(fileKind==='pdf'){
         const bytes=new Uint8Array(await file.arrayBuffer());
         let binary='';
         for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
@@ -1671,7 +1673,7 @@ export default function Home() {
             '. Leitura OCR alternativa também falhou: '+ocrError.message+
             '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
         }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
-      }else if(file.type.startsWith('image/')||/\.(jpe?g|png|webp)$/i.test(file.name)){
+      }else if(fileKind==='image'){
         const {createWorker}=await import('tesseract.js');
         const worker=await createWorker('por');
         try{
@@ -1681,11 +1683,11 @@ export default function Home() {
         }finally{await worker.terminate();}
       }else throw new Error('Use PDF, JPG, PNG ou WEBP.');
       const result=parseCashReport(text);
-      if(!result.day||!result.register||!result.operator)
-        throw new Error('Não foi possível identificar data, caixa e operador. Confira a qualidade do arquivo.');
+      // Missing metadata must remain editable instead of discarding recognized revenue.
+      // Empty register/operator are deliberately not silently replaced by guesses.
       const duplicated=closings.some(d=>d.day===result.day&&d.register===result.register);
       setCashEditId('');
-      setCashForm(prev=>({...prev,...result,
+      setCashForm(prev=>({...prev,...result,day:result.day||prev.day,
         sourceFileName:file.name,sourceText:text.slice(0,30000),
         reviewedImport:false,
         // Never assume the PDF has a trustworthy physical closing count.
@@ -2131,23 +2133,22 @@ export default function Home() {
       return;
     }
     if (manualMode) {setError('Feche a entrada manual antes de importar notas fiscais.');return;}
-    if ((draft || draftQueue.length > 0) &&
-        !window.confirm('Já existem notas aguardando revisão. Deseja descartar essa conferência e começar um novo lote de arquivos?')) {
-      if (uploadRef.current) uploadRef.current.value = '';
-      return;
-    }
+    // Pending review never blocks a new upload; imported drafts remain isolated.
     setView('documents');
     setBusy(true);
     setError('');
     setOcrProgress(0);
-    setUploadBatchProgress({current: 0, total: files.length, fileName: ''});
+    setUploadBatchProgress({current:0,total:files.length,completed:0,failed:0,fileName:'',
+      files:files.map(file=>({name:file.name,status:'Aguardando'}))});
     if (uploadRef.current) uploadRef.current.value = '';
     const parsed = [];
     const issues = [];
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        setUploadBatchProgress({current: i + 1, total: files.length, fileName: file.name});
+        setUploadBatchProgress(prev=>prev&&({...prev,current:i+1,fileName:file.name,
+          files:prev.files.map((item,j)=>j===i?{...item,status:'Lendo'}:item)}));
+        let fileStatus='Concluído';
         setProcessingType(/\.xml$/i.test(file.name) ? 'xml' : 'ocr');
         setOcrProgress(0);
         try {
@@ -2157,6 +2158,7 @@ export default function Home() {
             parsed.push(await storePendingReceipt(file,mapped));
           }
         } catch (e) {
+          fileStatus='Conferência manual';
           issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
           const fallback={supplier:'',invoiceNumber:'',date:'',
             source:'Arquivo (conferência manual)',checkedBy:'',fileName:file.name,
@@ -2164,15 +2166,31 @@ export default function Home() {
             importWarning:e?.message||'Não foi possível interpretar automaticamente.',
             items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
           try{parsed.push(await storePendingReceipt(file,fallback));}
-          catch(saveError){issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);}
+          catch(saveError){
+            fileStatus='Falhou';
+            issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);
+          }
 
+        } finally {
+          // Completed means that parsing and persistence (or a recorded failure) finished.
+          setUploadBatchProgress(prev=>prev&&({...prev,completed:i+1,
+            failed:prev.failed+(fileStatus==='Falhou'?1:0),
+            files:prev.files.map((item,j)=>j===i?{...item,status:fileStatus}:item)}));
         }
       }
       if (parsed.length) {
-        await refreshPending();
-        setDraft(parsed[0]);
-        setDraftQueue(parsed.slice(1));
-        setDraftBatch(parsed.length > 1 ? {current: 1, total: parsed.length} : null);
+        try{await refreshPending();}catch(refreshError){
+          issues.push('Notas salvas, mas não foi possível atualizar a lista: '+refreshError.message);
+        }
+        if (!draft && !draftQueue.length) {
+          setDraft(parsed[0]);
+          setDraftQueue(parsed.slice(1));
+          setDraftBatch(parsed.length > 1 ? {current: 1, total: parsed.length} : null);
+        } else {
+          // Never overwrite the note the operator is already reviewing.
+          setDraftQueue(previous=>[...previous,...parsed]);
+          setDraftBatch(previous=>previous?{...previous,total:previous.total+parsed.length}:null);
+        }
         setToast(parsed.length + (parsed.length === 1 ? ' cupom pronto' : ' cupons prontos') + ' para conferência. Nada foi lançado automaticamente.');
       }
       if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
@@ -2684,7 +2702,9 @@ export default function Home() {
       </nav>
 
     </aside>
-    <main className="main"><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+    <main className="main"><input ref={cashFileRef} type="file"
+      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden
+      onChange={e=>void importCashReport(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
       <header className="topbar">
         <div className="topbar-start">
           <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
@@ -2839,12 +2859,20 @@ export default function Home() {
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" disabled={busy} onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
               {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
+          {busy && uploadBatchProgress && <div className="notice" role="status" aria-live="polite">
+            <b>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos processados</b>
+            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total}
+              aria-label="Progresso dos arquivos fiscais" style={{display:'block',width:'100%',marginTop:8}}/>
+            <p>{uploadBatchProgress.fileName
+              ? 'Em processamento: '+uploadBatchProgress.fileName
+              : 'Preparando arquivos…'} · {uploadBatchProgress.failed} falha(s)</p>
+            <ul>{uploadBatchProgress.files.map((file,i)=><li key={i}>{file.name}: {file.status}</li>)}</ul>
+          </div>}
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
@@ -3045,7 +3073,7 @@ export default function Home() {
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
-            <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
+            <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy} onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
@@ -3053,7 +3081,9 @@ export default function Home() {
 
         {view === 'cash' && <>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
-            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
+            <button className="btn primary" type="button" disabled={cashImporting}
+              onClick={()=>cashFileRef.current?.click()}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
+            <button className="btn secondary" type="button" onClick={()=>newCashClosing('manual')}>Inserir manualmente</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
           <section className="panel cash-summary">
@@ -3073,20 +3103,11 @@ export default function Home() {
               </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
             </div>
           </section>
-          {cashEntryMode === 'choose' && <section className="panel cash-entry cash-choice-panel">
-            <div className="panel-head"><div><h2>Registrar novo fechamento</h2><p>Como deseja preencher os dados?</p></div><button className="btn secondary" type="button" onClick={()=>setCashEntryMode('')}>Cancelar</button></div>
-            <div className="cash-choice-options">
-              <button className="cash-choice-option" type="button" onClick={()=>cashFileRef.current?.click()}><Icon type="upload" size={23}/><b>Enviar PDF ou foto</b><span>Preencher faturamento e movimentações a partir do comprovante.</span></button>
-              <button className="cash-choice-option" type="button" onClick={()=>newCashClosing('manual')}><Icon type="edit" size={23}/><b>Inserir manualmente</b><span>Digitar os valores e as sangrias e suprimentos.</span></button>
-            </div>
-            <input ref={cashFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)}/>
-          </section>}
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
             <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
               <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
-              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onChange={e=>void importCashReport(e)} ref={cashEntryMode==='choose'?undefined:cashFileRef}/>
               <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
             </div>
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
