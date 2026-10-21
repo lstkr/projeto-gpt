@@ -1,6 +1,6 @@
 # Estoque+ — Checklist de homologação / release candidate
 
-Atualizado: 2026-10-21. PR de integração: #40 (draft). **Não publicar em produção** com esta checklist incompleta.
+Atualizado: 2026-10-21. PRs #40, #47, #48 e #49 **integrados**. A aplicação já está publicada para testes de homologação; **não declarar uso comercial homologado** enquanto a verificação manual permanecer incompleta.
 
 ## Banco existente autorizado para testes manuais (decisão do gestor)
 - **Autorização 20/10/2026:** reutilizar o Supabase atual `dpauqdihvhbbaellwjav`, SEM alterar contas existentes. Não criar novo banco agora.
@@ -17,11 +17,11 @@ Atualizado: 2026-10-21. PR de integração: #40 (draft). **Não publicar em prod
 - Na Vercel, definir **apenas para Preview dessa branch**: `NEXT_PUBLIC_SUPABASE_URL` (URL HTTPS do projeto atual), `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave publishable/anon, **nunca** service_role) e `ESTOQUE_ALLOW_SHARED_DB_PREVIEW=true`.
 - `VERCEL_GIT_COMMIT_REF` é fornecido pela Vercel; o código verifica a branch no servidor e no navegador. Se não for informado, a Preview falha fechada. Não criar login/senha nos arquivos de configuração.
 - Não ativar o opt-in para outras branches ou ambientes Production. A proteção não substitui login por sessão própria e permissões PostgreSQL.
-- As variáveis e o redeploy ainda precisam ser configurados pelo gestor na Vercel, pois o conector atual retorna 403 para o time `lstkr`. O status de build bem-sucedido não confirma conexão ao banco.
+- Em 21/10/2026 a reconexão da Vercel permitiu verificar por HTTP a página pública e o worker PDF.js 6.4.299 (200). A consulta de variáveis de ambiente e logs por escopo do time `lstkr` continua 403. **Não presumir** quais variáveis estão configuradas nem permitir compartilhamento de dados do Preview sem checar esse escopo.
 
 ## Gates automatizados
-- [x] CI PR #40 pré-migração: npm test, build, PostgreSQL 15 e 17 sessão/fiscal aprovados no SHA `553c2c1`. Revalidar no SHA final após documentação.
-- [ ] Rodar cenários HTTP reais para 401 sem sessão, 401 expirada, 403 permissão negada, 429 limite de chamadas (pendente implementar limite compartilhado), 503 RPC indisponível, 502/504 terceiro, payload inválido e máximo.
+- [x] CI SHA de produção `dce41d4` decorrente de PRs #47/#48/#49: `npm ci`, `npm audit --audit-level=high`, `npm test`, testes PDF/worker e SQL de sessão/fiscal PostgreSQL 15 e 17 aprovados nos HEADs finais dos PRs. O lockfile foi integrado.
+- [ ] Rodar cenários HTTP reais para 401 com sessão expirada, 403 permissão negada, 429 limite de chamadas (limite distribuído já implementado na #41), 503 RPC indisponível, 502/504 terceiro, payload inválido e máximo. A etapa automatizada `Production read-only smoke` valida 401 sem sessão, 405 método inválido, homepage e worker público sem utilizar contas reais; só marcar como aprovada após workflow verde.
 - [ ] SQL com 2 conexões: cancelamento × lançamento, lançamento × lançamento, revisão nula/obsoleta, retry e falha parcial. Sem duplicar saldo, nota ou movimento.
 - [x] Consultar Supabase Advisors após migração: existem alertas de SECURITY DEFINER públicos com sessão própria (requer auditoria) e `private.count_guard` sem search_path fixo; FKs sem índice. Não suprimir ou alterar as RPCs sem testar o modelo de autenticação.
 
@@ -42,15 +42,15 @@ Atualizado: 2026-10-21. PR de integração: #40 (draft). **Não publicar em prod
 | Mobile 375px, teclado e mensagens de erro de sessão | pendente | |
 
 ## Condições de bloqueio
-- PR #40 deve manter status draft enquanto faltarem homologação real, revisão de segurança e opt-in Preview confirmado. As RPCs foram instaladas em 21/10/2026.
+- PR #40 já foi integrado, e a publicação ocorreu com autorização do gestor para iniciar testes manuais. A homologação real e a confirmação de variáveis de Preview continuam **pendentes**. As RPCs foram instaladas em 21/10/2026.
 - PRs dependentes **não são equivalentes** a PR integrado: seus checks isolados não comprovam o candidato.
 - Repo privado não significa docs no GitHub Pages privados; notas operacionais ficam em governance/.
 - Vercel Git integration pode criar preview automaticamente ao fazer push; **não confiar no preview sem verificar o banco ao qual está conectado**.
 - Exposição fiscal de terceiros: fallback envia automaticamente um recorte do QR; dados próximos ao rodapé podem incluir informações sensíveis.
 - O cancelamento existente apaga file_bytes; rollback SQL NÃO restaura o original. Definir retenção e backup antes de produção.
-- `npm install` sem lockfile torna builds não inteiramente reproduzíveis; criar lockfile validado em PR separado.
+- O `package-lock.json` está versionado desde o PR #47, e os checks usam `npm ci` desde então.
 
 ## Retomada em uma única execução
-1. Ler esta checklist e issues #30/#31/#32; consultar checks do PR #40.
+1. Ler esta checklist, consultar os checks da `main` atual e a issue de homologação #50; não tratar o PR #40 como pendente.
 2. Identificar **um** bloqueador reprodutível, corrigir com teste direcionado.
 3. Atualizar issue com branch/SHA, comandos, resultado, pendências e próximo passo.
