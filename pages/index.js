@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import TenantAdministration from '../components/TenantAdministration';
 import { createPortal } from 'react-dom';
+import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
@@ -478,12 +481,7 @@ function normalizeReceiptName(value) {
 // Fiscal item codes belong to their issuer. Within one issuer, padding such as
 // 00123/123 is equivalent, but a second signal (description) is still checked.
 function findSupplierAliasProduct(item, catalog, supplierCnpj) {
-  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
-  const code = normalizeProductCode(item?.code);
-  if (!issuer || !code) return null;
-  return catalog.find((product) => (product.supplierCodes || []).some((alias) =>
-    String(alias.cnpj || '').replace(/\D/g, '') === issuer &&
-    normalizeProductCode(alias.code) === code)) || null;
+  return supplierAliasProduct(item, catalog, supplierCnpj);
 }
 function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
   const fiscalCode = normalizeProductCode(item?.code);
@@ -498,16 +496,13 @@ function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
   });
 }
 function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
+  if (supplierAliasProducts(item, catalog, supplierCnpj).length > 1) return null;
   const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
   if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
     return bySupplier;
-  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
-  const candidate = { id: '__novo_item_fiscal__', name: item.name, sku: item.code,
-    supplierCodes: issuer && item.code ? [{ cnpj: issuer, code: item.code }] : [],
-    unit: item.unit };
-  return catalog.find((product) => checkDuplicatePair(product, candidate)?.confidence === 'alta') ||
-    catalog.find((product) => normalizeReceiptName(product.name) === normalizeReceiptName(item.name) &&
-      normalizeReceiptUnit(product.unit) === normalizeReceiptUnit(item.unit)) || null;
+  // Internal SKUs and descriptions are only review hints. Fiscal codes are
+  // issuer-scoped text; padding is not proof of equivalence.
+  return null;
 }
 
 function mergeReceiptCandidates(primary, alternate) {
@@ -847,9 +842,7 @@ function detectReceiptSupplier(text) {
 }
 
 function detectSupplierCnpj(text) {
-  const match = String(text || '').match(/CNPJ\s*[:.-]?\s*([\d.\/-]{14,20})/i);
-  const digits = String(match?.[1] || '').replace(/\D/g, '');
-  return digits.length === 14 ? digits : '';
+  return extractIssuerCnpj(text);
 }
 
 function detectReceiptMetadata(text) {
@@ -1161,6 +1154,7 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [fiscalPermissions,setFiscalPermissions]=useState(null);
   const [permissionUsers,setPermissionUsers]=useState([]);
   const [permissionBusy,setPermissionBusy]=useState(false);
@@ -1202,6 +1196,7 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
   const [pendingSaveError,setPendingSaveError]=useState('');
@@ -1248,7 +1243,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      typeof updater === 'function' ? updater(previous) : updater,
+      prepareFiscalIdentity(typeof updater === 'function' ? updater(previous) : updater, previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1300,6 +1295,23 @@ export default function Home() {
 
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
+    const membership = await supabase.rpc('inventory_tenants', { p_token: token });
+    if (membership.error || !membership.data?.user) {
+      setAccessGranted(false); setDataReady(false); setAccessCode(''); setCurrentUser(null);
+      setAccessMessage('Não foi possível validar os acessos da conta. Entre novamente.');
+      try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
+      return false;
+    }
+    const identity = membership.data.user;
+    const passwordRequired = Boolean(membership.data.mustChangePassword);
+    setMustChangePassword(passwordRequired);
+    setCurrentUser(identity);
+    if (passwordRequired || identity.role === 'superadmin') {
+      setProducts([]); setDocuments([]); setMovements([]); setPendingReceipts([]); setClosings([]);
+      setAccessCode(token); setAccessGranted(true); setDataReady(true); setLoaded(true);
+      try { sessionStorage.setItem('projeto-gpt-session', token); } catch (_) {}
+      return true;
+    }
     const { data, error: loadError } = await supabase.rpc('inventory_get', { p_session_token: token });
     if (loadError || !data) {
       setAccessMessage('Sua sessão expirou ou não é válida. Entre novamente com seu login e senha.');
@@ -1318,6 +1330,7 @@ export default function Home() {
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
     const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
@@ -1397,6 +1410,7 @@ export default function Home() {
         if (Array.isArray(state.products)) setProducts(state.products);
         if (Array.isArray(state.movements)) setMovements(state.movements);
         if (Array.isArray(state.documents)) setDocuments(state.documents);
+        if (Array.isArray(state.suppliers)) setSuppliers(state.suppliers);
         if (Array.isArray(state.stockCounts)) setStockCounts(state.stockCounts);
         if (state.countSettings){setCountSettings(state.countSettings);setSettingsForm(state.countSettings);}
       }
@@ -1407,11 +1421,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded || supabase) return;
-    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, stockCounts, countSettings })); } catch (_) {}
-  }, [loaded, products, movements, documents, stockCounts, countSettings, supabase]);
+    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
+  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
-    if (!supabase || !accessGranted || !dataReady || !accessCode) return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin') return;
     if (skipNextSyncRef.current) {
       skipNextSyncRef.current = false;
       return;
@@ -1423,7 +1437,7 @@ export default function Home() {
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
         const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
           p_session_token: accessCode,
-          p_state: { products, movements, documents, revision: revisionRef.current }
+          p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
         });
         if (saveError || !saved?.ok) {
           setSaveStatus('Falha ao salvar');
@@ -1448,7 +1462,56 @@ export default function Home() {
       });
     }, 650);
     return () => clearTimeout(timer);
-  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents]);
+  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents, suppliers, mustChangePassword, currentUser?.role]);
+
+  const administrationGuardRef = useRef(null);
+  administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
+  const invokeAdministration = useCallback(async (name, args) => {
+    if (!supabase || !accessCode) throw new Error('Sessão necessária.');
+    if (name === 'inventory_select_tenant') {
+      // Only a stable view can switch. Token rotation at the database prevents
+      // delayed requests from the previous unit from crossing this boundary.
+      const guard = administrationGuardRef.current;
+      if (guard.saveStatus !== 'Sincronizado' || guard.busy || guard.cashSaving || guard.cashImporting || guard.countBusy || guard.mergeBusy || guard.deletingDocId || guard.pendingBusy || guard.draft || guard.draftQueueLength || guard.manualMode || guard.modal) {
+        throw new Error('Conclua as operações da unidade atual antes de trocar.');
+      }
+      setDataReady(false);
+      try { await saveQueueRef.current; await pendingSaveSerial.current; }
+      catch { setDataReady(true); throw new Error('Falha ao concluir gravações pendentes.'); }
+    }
+    try {
+      const { data, error: rpcError } = await supabase.rpc(name, { ...args, p_token: accessCode });
+      if (rpcError || !data || data.ok === false) throw new Error('Operação recusada.');
+      if (name === 'inventory_select_tenant') {
+        if (!data.session_token || data.session_token === accessCode) throw new Error('Rotação de sessão necessária.');
+        // Never put a token for the new tenant into state containing old stock.
+        try { sessionStorage.setItem('projeto-gpt-session', data.session_token); }
+        catch {
+          // The old token is revoked. A fresh login is safer than rendering
+          // state from the previous unit when browser storage is unavailable.
+          window.location.replace(window.location.pathname + window.location.search);
+          throw new Error('Entre novamente para acessar a unidade.');
+        }
+      }
+      return data;
+    } catch (failure) {
+      if (name === 'inventory_select_tenant') {
+        setDataReady(true);
+        setToast('Troca de estabelecimento não concluída. Entre novamente se a sessão expirou.');
+      }
+      throw failure;
+    }
+  }, [supabase, accessCode]);
+
+  const reloadSelectedTenant = useCallback(async () => {
+    window.location.replace(window.location.pathname + window.location.search);
+  }, []);
+
+  const finishPasswordChange = useCallback(async () => {
+    if (supabase && accessCode) await supabase.rpc('inventory_logout', { p_session_token: accessCode });
+    try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
+    window.location.replace(window.location.pathname + window.location.search);
+  }, [supabase, accessCode]);
 
   function handleLock() {
     const token = accessCode;
@@ -1461,6 +1524,7 @@ export default function Home() {
     } catch (_) {}
     setAccessCode('');
     setCurrentUser(null);
+    setMustChangePassword(false);
     setLoginPassword('');
     setAccessGranted(false);
     setDataReady(false);
@@ -1502,7 +1566,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1552,7 +1616,7 @@ export default function Home() {
       'Possível duplicidade com "' + candidateDuplicates[0].left.name +
       '". Confira e selecione o produto existente antes de criar outro.');
     if (aliasProduct && !targetProduct &&
-        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.name))
+        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.originalName ?? it.name))
       issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
         '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
     if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
@@ -2322,6 +2386,7 @@ export default function Home() {
         if (i !== index) return it;
         const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
         const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
+        if (key === 'name') next.manualName = true;
         // Printed fiscal line totals are independent facts: do not overwrite them
         // when a reviewer fixes the quantity or unit price.
         if (key === 'quantity' || key === 'unitPrice') {
@@ -2455,6 +2520,12 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
+    if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
+      setError(/[A-Za-z]/.test(draft.supplierCnpj)
+        ? 'CNPJ alfanumérico preservado. Esta versão ainda não valida esse formato; solicite a atualização antes de lançar esta nota.'
+        : 'CNPJ do fornecedor inválido. Confira os dígitos com o emitente da nota antes de lançar.');
+      return;
+    }
     if(draft?.pendingId){
       const id=draft.pendingId;
       const fingerprint=JSON.stringify(cleanPendingDraft(draft));
@@ -2571,8 +2642,8 @@ export default function Home() {
       const netLine = Math.max(0, base - remainingDiscount * ratio +
         draftExtras * serviceRatio + expenseTotal * serviceRatio -
         (discountBase > 0 ? expenseTotal * remainingDiscount / discountBase * serviceRatio : 0));
-      const fiscalCode = normalizeProductCode(it.code);
-      const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
+      const fiscalCode = fiscalCodeIdentity(it.code);
+      const issuer = cnpjDigits(draft.supplierCnpj);
       const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
       const index = nextProducts.findIndex((p) => it.productId
         ? p.id === it.productId : p.id === automaticProduct?.id);
@@ -2584,7 +2655,7 @@ export default function Home() {
         const old = nextProducts[index];
         productId = old.id;
         const supplierCodes = [...(old.supplierCodes || [])];
-        if (issuer && fiscalCode && !supplierCodes.some((alias) => alias.cnpj === issuer && normalizeProductCode(alias.code) === fiscalCode))
+        if (issuer && fiscalCode && !supplierCodes.some((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode))
           supplierCodes.push({ cnpj: issuer, code: it.code });
         nextProducts[index] = { ...old, supplierCodes,
           stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
@@ -2603,6 +2674,9 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
+    if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
+      registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
+        ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
@@ -2747,6 +2821,10 @@ export default function Home() {
     return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
+  if (supabase && accessGranted && (mustChangePassword || currentUser?.role === 'superadmin')) {
+    return <main className="tenant-admin-screen"><header><h1>Estoque+ · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
+  }
+
   return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
     <aside className="sidebar" id="primary-navigation">
@@ -2762,6 +2840,7 @@ export default function Home() {
         <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Gestor · Permissões" aria-current={view === 'permissions' ? 'page' : undefined} className={view === 'permissions' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('permissions')}><Icon type="check"/><span>Gestor · Permissões</span></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Estabelecimentos e equipe" aria-current={view === 'administration' ? 'page' : undefined} className={view === 'administration' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('administration')}><Icon type="box"/><span>Estabelecimentos e equipe</span></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
@@ -2820,6 +2899,7 @@ export default function Home() {
           {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
           {/* COUNT HISTORY */}
         </section>}
+        {view === 'administration' && currentUser?.role === 'admin' && <TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={false} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/>}
         {view === 'duplicates' && currentUser?.role === 'admin' && <section className="panel duplicates-panel">
           <div className="panel-head"><div><h2>Auditoria automática do catálogo</h2><p>Executada sempre que o estoque é atualizado. O código é comparado sem zeros iniciais e a descrição é verificada separadamente.</p></div><span className="history-count">{duplicatePairs.length} par(es)</span></div>
           <p className="duplicate-guidance">⚠ Revise estes pares com o documento original. Quando forem o mesmo produto, escolha qual cadastro manter e clique em Consolidar. A operação soma os saldos, preserva os códigos e atualiza os vínculos das notas para manter possíveis estornos. Unidades diferentes exigem correção prévia.</p>
@@ -2856,6 +2936,7 @@ export default function Home() {
         </>}
 
         {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
+          <div className="purchase-print-action"><button className="btn" type="button" disabled={!purchaseList.length} onClick={() => { if (currentUser?.role === 'admin' && purchaseList.length) printPurchasePlan(purchaseData); }}>Imprimir lista de compras</button></div>
           <div className="panel-head"><div><h2>Lista de compras por categoria</h2><p>Compras sugeridas = mínimo − saldo. O preço médio é ponderado pelas quantidades de entradas fiscais anteriores.</p></div><span className="history-count">{purchaseList.length} itens</span></div>
           {purchaseList.length ? <>
             <div className="purchase-overview">
@@ -3019,7 +3100,7 @@ export default function Home() {
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.manualInvoice && <label><span>CNPJ do fornecedor (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/\D/g,'').slice(0,14))} placeholder="14 dígitos"/></label>}<label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
@@ -3047,7 +3128,7 @@ export default function Home() {
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
-                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
+                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -3236,3 +3317,4 @@ export default function Home() {
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }
+
