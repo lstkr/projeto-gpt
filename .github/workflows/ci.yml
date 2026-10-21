@@ -26,6 +26,11 @@ jobs:
       # No committed lockfile yet; move to npm ci after introducing one.
       - name: Install dependencies
         run: npm install
+      # Unit tests must run outside the deployment environment:
+      # Preview deliberately denies access to an unconfigured database (503),
+      # while authentication contract tests exercise 401 with mocked RPCs.
+      - name: Unit and regression tests (no deployment environment)
+        run: npm test
       # Simulate Vercel's Preview environment for pull requests, including
       # build-time ESTOQUE_DEPLOY_ENV in next.config.js.
       # The preview must remain fail-closed until an isolated database is set.
