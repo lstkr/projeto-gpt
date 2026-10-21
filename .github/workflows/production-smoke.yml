@@ -1,0 +1,24 @@
+name: Production read-only smoke
+on:
+  pull_request:
+    paths:
+      - 'scripts/smoke-production.cjs'
+      - '.github/workflows/production-smoke.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 12 * * *'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check public production assets and reject unauthenticated operations
+        env:
+          ESTOQUE_SMOKE_URL: https://projetogpt-estoque.vercel.app
+        run: node scripts/smoke-production.cjs
