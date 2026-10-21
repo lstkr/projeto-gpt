@@ -1,4 +1,5 @@
 import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
+import { enforceFiscalRateLimit } from '../../lib/server/fiscal-rate-limit.mjs';
 // Optional fallback for QR decoding using pcelias-ctrl/nfc-e's published HTTP API.
 // Unlike its NFCE_SP extraction endpoint, the generic QR endpoint accepts RS QR URLs.
 // The current UI invokes this fallback automatically after local QR decoding fails.
@@ -34,6 +35,8 @@ export default async function handler(req, res) {
   } catch (_) {
     return res.status(500).json({ error: 'Serviço de leitura QR externa não configurado corretamente.' });
   }
+  // Limit upstream calls per user and globally, consistently across deployments.
+  if (!await enforceFiscalRateLimit(req, res, 'qr')) return;
   try {
     const response = await fetch(upstream.toString(), {
       method: 'POST',

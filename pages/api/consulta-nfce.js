@@ -1,4 +1,5 @@
 import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
+import { enforceFiscalRateLimit } from '../../lib/server/fiscal-rate-limit.mjs';
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
 import { load } from 'cheerio';
 
@@ -175,6 +176,8 @@ export default async function handler(req, res) {
       error: 'Chave fiscal rejeitada: modelo diferente de 65 ou dígito verificador incorreto. O OCR pode ter trocado ou acrescentado números.'
     });
   }
+  // Limit upstream calls per user and globally, consistently across deployments.
+  if (!await enforceFiscalRateLimit(req, res, 'nfce')) return;
   // One deadline covers redirects, reading the HTML body and parsing the page.
   // Clearing the timer + aborting the fetch releases resources on timeout or error.
   const controller = new AbortController();
