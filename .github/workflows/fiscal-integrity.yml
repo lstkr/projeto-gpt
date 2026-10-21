@@ -1,0 +1,41 @@
+name: Fiscal integrity SQL tests
+on:
+  pull_request:
+permissions:
+  contents: read
+
+concurrency:
+  group: fiscal-integrity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['15', '17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: estoque_rpc_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: local-test-only
+      PGDATABASE: estoque_rpc_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: SQL permissions, concurrency, revisions and rollback
+        run: python3 tests/sql/run-fiscal-integrity.py
