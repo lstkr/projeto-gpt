@@ -216,13 +216,16 @@ function parseReceiptOcr(text) {
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   const amountPattern = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2,4}|\d+\.\d{2,4}/g;
   const codePattern = /^((?:[A-Z]\d{2,12}|\d{3,12}))(?:\s+(.+))?$/i;
+  // Some DANFE NFC-e tables print an item number before the supplier's product code.
+  const numberedCodePattern = /^(\d{1,3})\s+((?:[A-Z]\d{2,12}|\d{3,12}))\s+(.+)$/i;
   const unitPattern = /\b(KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD|PT)\b/i;
   const cents = (number) => Math.round(number * 100) / 100;
   const header = lines.findIndex((line) => {
     const n = normalize(line);
-    return /C[O0]DIGO/.test(n) && /DESCRI[CCT]/.test(n);
+    return /C[O0]D(?:IGO)?\b/.test(n) && /DESCRI[CCT]/.test(n);
   });
   const start = header >= 0 ? header + 1 : 0;
+  const numberedTable = header >= 0 && /(?:^|\s)#\s*C[O0]D(?:IGO)?\b/.test(normalize(lines[header]));
   const endsTable = (value) =>
     /(?:Q(?:TD|TDE|TID)[., ]*TOTAL|Q(?:TD|TDE)[., ]*DE[., ]*ITENS|SUB[\s-]*TOTAL|VALOR[\s-]*TOTAL|FORMA[\s-]*PAGAMENTO|VALOR[\s-]*PAGO|CONSULTE[\s-]*PELA|CAIXA[\s-]*DELTA|TRIBUTOS|PROTOCOLO[\s-]*DE[\s-]*AUTORIZACAO)/.test(normalize(value));
   const cleanDescription = (value) => String(value || '')
@@ -241,7 +244,7 @@ function parseReceiptOcr(text) {
     const quantity = values[0];
     if (!(quantity > 0) || quantity > 100000) { row = null; return; }
     let unitPrice = values[1];
-    let lineTotal = values.length >= 3 ? values[values.length - 1] : null;
+    let lineTotal = values.length >= 3 ? values[values.length - 1] : row.inlineTotal;
     // On a two-number OCR row (quantity + amount), the unit price may have
     // disappeared. Do not treat the second printed number as quantity.
     if (lineTotal === null) lineTotal = quantity * unitPrice;
@@ -250,7 +253,7 @@ function parseReceiptOcr(text) {
     }
     const mismatch = Math.abs(quantity * unitPrice - lineTotal);
     // Never silently overwrite the printed unit price (thermal receipts can round it).
-    const readingWarning = values.length >= 3 && mismatch > 0.055
+    const readingWarning = (values.length >= 3 || row.inlineTotal !== null) && mismatch > 0.055
       ? 'Quantidade × preço difere do total impresso. Confira os três campos.' : '';
     rows.push({
       code: row.code, name: name.slice(0, 120),
@@ -272,14 +275,24 @@ function parseReceiptOcr(text) {
     }
     if (/\b(VALOR LIQUIDO|TROCO|P\.?I\.?X|CARTAO)\b/.test(n)) continue;
     if (/^(?:C[O0]DIGO|DESCRICAO|QTDE|QTD|UN\b|VL\b|V\.UNIT\b|V\.TOTAL\b)/.test(n) && !/^\d/.test(n)) continue;
-    const codeMatch = line.match(codePattern);
+    const numberedMatch = line.match(numberedCodePattern);
+    // Do not mistake the printed item sequence (e.g. 001) for the product code.
+    // An explicit # / Cod header is authoritative; a padded 001 also helps if OCR lost the header.
+    const hasItemIndex = numberedMatch && (numberedTable || /^0\d{2}$/.test(numberedMatch[1]));
+    const codeMatch = hasItemIndex
+      ? [numberedMatch[0], numberedMatch[2], numberedMatch[3]]
+      : line.match(codePattern);
     const suffix = codeMatch?.[2]?.trim() || '';
     const isProductCode = Boolean(codeMatch && (!suffix || (suffix.match(/[A-Za-zÀ-ÿ]/g) || []).length >= 3));
     if (isProductCode) {
       seenProductCode = true;
       flush();
-      row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '', itemDiscount: 0 };
+      row = { code: codeMatch[1].replace(/^B(?=\d{2,})/i, '8'), names: [], amounts: [], unit: '', itemDiscount: 0, inlineTotal: null };
       if (suffix) {
+        // A right-aligned line total can be recognized on the description row,
+        // while the quantity and unit price are printed on the following row.
+        const printedTotal = suffix.match(/(?:^|\s)(\d+(?:\.\d{3})*,\d{2})\s*$/);
+        if (printedTotal) row.inlineTotal = localizedValue(printedTotal[1]);
         const nameOnly = cleanDescription(suffix.replace(amountPattern, ' '));
         if (nameOnly) row.names.push(nameOnly);
       }
@@ -292,6 +305,10 @@ function parseReceiptOcr(text) {
       row.unit = ({und:'un',unidade:'un',in:'un',kgs:'kg',gr:'g'}[rawUnit] || rawUnit);
     }
     const values = [...line.matchAll(amountPattern)].map((match) => localizedValue(match[0]));
+    // Thermal receipts often print an integer quantity: "2 UN X 8,99 17,98".
+    // The money matcher intentionally recognizes decimal amounts, not the integer 2.
+    const integerQuantity = line.match(/^(\d{1,6})\s+(?:KG|KGS|GR|G|ML|LT|L|UND|UNIDADE|UN|IN|CX|PC|PCT|FD|PT)\b/i);
+    if (integerQuantity && values.length) values.unshift(Number(integerQuantity[1]));
     if (values.length) {
       row.amounts.push(...values);
       continue;
