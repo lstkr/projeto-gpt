@@ -15,6 +15,8 @@ fs.mkdirSync(output, { recursive: true });
   try {
     for (const scenario of ['superadmin', 'password', 'admin']) {
       const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+      // Exercise the prepared print document without opening an OS printer dialog.
+      await context.addInitScript(() => { window.print = () => { window.__printCalled = true; }; });
       const page = await context.newPage();
       const calls = [];
       let token = 'mock-session-original';
@@ -70,11 +72,13 @@ fs.mkdirSync(output, { recursive: true });
         await page.evaluate(() => { window.addEventListener('beforeprint', () => {}, { once: true }); });
         await page.getByRole('button', { name: 'Imprimir lista de compras', exact: true }).click();
         const frame = page.frameLocator('iframe[title="Impressão da lista de compras"]');
-        await frame.getByRole('heading', { name: 'Lista de compras', exact: true }).waitFor();
-        await frame.getByText('Produto de homologação', { exact: false }).waitFor();
+        await frame.getByRole('heading', { name: 'Lista de compras', exact: true }).waitFor({ state: 'attached' });
+        await frame.getByText('Produto de homologação', { exact: false }).waitFor({ state: 'attached' });
+        assert.equal(await page.locator('iframe[title="Impressão da lista de compras"]').evaluate((element) => element.contentWindow.__printCalled), true);
         await page.screenshot({ path: path.join(output, 'purchases-desktop.png'), fullPage: true });
         await page.getByRole('button', { name: 'Estabelecimentos e equipe', exact: true }).click();
-        await page.getByLabel('Estabelecimento ativo', { exact: true }).selectOption('unit-two');
+        await page.screenshot({ path: path.join(output, 'administration-desktop.png'), fullPage: true });
+        await page.getByRole('combobox', { name: /Estabelecimento ativo/ }).selectOption('unit-two');
         await page.getByRole('button', { name: 'Acessar estabelecimento', exact: true }).click();
         await page.waitForFunction(() => sessionStorage.getItem('projeto-gpt-session') === 'mock-session-rotated');
         await page.getByRole('button', { name: 'Estabelecimentos e equipe', exact: true }).waitFor();
