@@ -64,7 +64,7 @@ for(const example of dataset.cash){
 
 test('cash-count discrepancy from photographed 2025-10-08 report remains a manual-review reference',()=>{
   const c=dataset.cash.find(x=>x.case_id==='08/10/2025').expected.physical;
-  assert.equal(money(c.operador)-money(c.sistema),money(c.diferenca));
+  assert.equal(Math.round(money(c.operador)*100)-Math.round(money(c.sistema)*100),Math.round(money(c.diferenca)*100));
   assert.equal(money(c.diferenca),3.2);
 });
 test('cash report with S/N physical difference does not invent a numeric discrepancy',()=>{
