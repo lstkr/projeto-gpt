@@ -3,10 +3,18 @@ insert into private.app_users(username,password_hash,role,display_name) values
  ('sql.manager',extensions.crypt('synthetic-manager-only',extensions.gen_salt('bf',4)),'admin','Synthetic Manager');
 insert into private.tenant_memberships select id,'00000000-0000-4000-8000-000000000001','admin'
 from private.app_users where username='sql.manager';
+select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-superadmin-only',extensions.gen_salt('bf',12)),'$2a$','$2b$'));
 set role anon;
 do $$
-declare token text; old_token text; employee_token text; tenant uuid; pending uuid; result jsonb; state jsonb;
+declare token text; old_token text; employee_token text; tenant uuid; pending uuid; result jsonb; state jsonb; dba_token text; i integer;
 begin
+ result:=public.inventory_login('admin.master','synthetic-superadmin-only'); dba_token:=result->>'session_token';
+ assert (result->>'must_change_password')::boolean;
+ begin perform public.inventory_directory(dba_token); raise exception 'DBA password gate bypass'; exception when insufficient_privilege then null; end;
+ begin perform public.inventory_external_rate_limit(dba_token,'qr'); raise exception 'DBA rate access bypass'; exception when insufficient_privilege then null; end;
+ result:=public.inventory_password_change(dba_token,'synthetic-superadmin-only','synthetic-superadmin-changed'); assert (result->>'ok')::boolean;
+ begin perform public.inventory_get(dba_token); raise exception 'DBA inventory bypass'; exception when insufficient_privilege then null; end;
+ assert jsonb_typeof(public.inventory_directory(dba_token)->'users')='array';
  result:=public.inventory_login('sql.manager','synthetic-manager-only'); assert (result->>'ok')::boolean;
  token:=result->>'session_token';
  state:=public.inventory_get(token);
@@ -26,6 +34,12 @@ begin
  assert (result->>'must_change_password')::boolean;
  begin perform public.inventory_get(employee_token); raise exception 'Password gate bypassed'; exception when insufficient_privilege then null; end;
  result:=public.inventory_password_change(employee_token,'synthetic-employee-only','synthetic-new-password'); assert (result->>'ok')::boolean;
+ for i in 1..8 loop
+  result:=public.inventory_password_change(employee_token,'incorrect-password','synthetic-other-new-password');
+  assert not (result->>'ok')::boolean;
+ end loop;
+ result:=public.inventory_password_change(employee_token,'synthetic-new-password','synthetic-other-new-password');
+ assert not (result->>'ok')::boolean and result->>'message' like 'Muitas tentativas%';
  begin perform public.inventory_select_tenant(employee_token,'00000000-0000-4000-8000-000000000001'); raise exception 'Employee tenant bypass'; exception when insufficient_privilege then null; end;
  begin perform public.inventory_directory(employee_token); raise exception 'Employee directory bypass'; exception when insufficient_privilege then null; end;
  begin perform public.inventory_user_create(token,'sql.escalation','Escalation','synthetic-escalation','admin',tenant); raise exception 'Manager escalated role'; exception when insufficient_privilege then null; end;

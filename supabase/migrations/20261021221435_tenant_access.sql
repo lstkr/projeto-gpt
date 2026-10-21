@@ -34,7 +34,7 @@ declare actor private.app_users%rowtype;
 begin
  select u.* into actor from private.app_sessions s join private.app_users u on u.id=s.user_id
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
- and s.revoked_at is null and s.expires_at>now() and u.active;
+ and s.revoked_at is null and s.expires_at>statement_timestamp() and u.active;
  if not found then raise exception 'Sessão inválida' using errcode='28000'; end if;
  if actor.must_change_password and not p_allow_change then
   raise exception 'Troque sua senha antes de continuar' using errcode='42501'; end if;
@@ -90,7 +90,7 @@ declare fn record; definition text; token_arg text;
 begin
  for fn in select p.oid,p.proname,n.nspname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname in ('public','private') and p.prolang=(select oid from pg_language where lanname='plpgsql')
- and (p.prosrc like '%public.shared_inventory%' or p.prosrc like '%public.pending_receipts%' or p.prosrc like '%public.cash_closings%')
+ and (p.prosrc like '%public.shared_inventory%' or p.prosrc like '%public.pending_receipts%' or p.prosrc like '%public.cash_closings%' or p.proname='inventory_external_rate_limit')
  loop
   definition:=pg_get_functiondef(fn.oid);
   token_arg:=case when definition like '%p_session_token text%' then 'p_session_token' else 'p_token' end;
@@ -145,6 +145,7 @@ begin
  if length(coalesce(p_new_password,''))<12 or octet_length(p_new_password)>72 or p_new_password=p_current_password
  then raise exception 'Use uma senha nova com 12 a 72 caracteres' using errcode='22023'; end if;
  perform pg_advisory_xact_lock(hashtextextended(actor.username,0));
+ actor:=private.require_actor(p_token,true);
  if (select count(*) from private.app_login_attempts where username=actor.username and attempted_at>now()-interval '15 minutes')>=8
  then return jsonb_build_object('ok',false,'message','Muitas tentativas. Aguarde 15 minutos.'); end if;
  if actor.password_hash<>extensions.crypt(coalesce(p_current_password,''),actor.password_hash) then
@@ -219,7 +220,9 @@ begin
  if exists(select 1 from private.app_users where username=p_username or role='superadmin')
  then raise exception 'Bootstrap já realizado; preserve as credenciais existentes' using errcode='23505'; end if;
  insert into private.app_users(username,display_name,password_hash,role,must_change_password)
- values(p_username,'DBA',p_password_hash,'superadmin',true) returning id into uid;
+ -- pgcrypto's bcrypt verifier uses the 2a prefix; client bcrypt 2b/2y hashes
+ -- share the algorithm for our <=72-byte input policy. Store its supported tag.
+ values(p_username,'DBA',regexp_replace(p_password_hash,'^\$2[by]\$','$2a$'),'superadmin',true) returning id into uid;
  return uid;
 end $$;
 
