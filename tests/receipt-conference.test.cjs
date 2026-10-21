@@ -45,6 +45,76 @@ test('Rio Sul: preserves line-level discount and fiscal gross/net totals', () =>
   assert.equal(totals.total, 49.48);
 });
 
+
+test('Cia da Fruta: numbered item is not mistaken for product code and integer quantity is read', () => {
+  // Reviewed transcription of the product table in the operator's 21/10/2026 image.
+  // The merchant's own code is 31323; 001 is only the fiscal row index.
+  const receipt = [
+    '# Cód Descrição Qtd Un Vl Unit. Vl Total',
+    '001 31323 OVO 20UN BRANCO',
+    '2 UN X 8,99 17,98',
+    'QTD TOTAL DE ITENS 001',
+    'VALOR TOTAL R$ 17,98'
+  ].join('\n');
+  const items = rules.parseReceiptOcr(receipt);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, '31323');
+  assert.equal(items[0].name, 'OVO 20UN BRANCO');
+  assert.equal(items[0].quantity, 2);
+  assert.equal(items[0].unit, 'un');
+  assert.equal(items[0].unitPrice, 8.99);
+  assert.equal(items[0].lineTotal, 17.98);
+  assert.equal(items[0].readingWarning, '');
+});
+
+test('Cia da Fruta: right-aligned total on description row is reconciled', () => {
+  const receipt = [
+    '# Cód Descrição Qtd Un Vl Unit. Vl Total',
+    '001 31323 OVO 20UN BRANCO 17,98',
+    '2 UN X 8,99',
+    'QTD TOTAL DE ITENS 001',
+    'VALOR TOTAL R$ 17,98'
+  ].join('\n');
+  const items = rules.parseReceiptOcr(receipt);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, '31323');
+  assert.equal(items[0].name, 'OVO 20UN BRANCO');
+  assert.equal(items[0].quantity, 2);
+  assert.equal(items[0].unitPrice, 8.99);
+  assert.equal(items[0].lineTotal, 17.98);
+});
+
+test('Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns', () => {
+  const receipt = [
+    '# Cód Descrição Qtd Un Vl Unit. Vl Total',
+    '001 31323 OVO 20UN BRANCO 2 UN X 8,99 17,98',
+    'QTD TOTAL DE ITENS 001',
+    'VALOR TOTAL R$ 17,98'
+  ].join('\n');
+  const items = rules.parseReceiptOcr(receipt);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, '31323');
+  assert.equal(items[0].name, 'OVO 20UN BRANCO');
+  assert.equal(items[0].quantity, 2);
+  assert.equal(items[0].unit, 'un');
+  assert.equal(items[0].unitPrice, 8.99);
+  assert.equal(items[0].lineTotal, 17.98);
+});
+
+test('Without numbered item column, the first code is still the fiscal product code', () => {
+  const receipt = [
+    'CÓDIGO DESCRIÇÃO',
+    '31323 OVO 20UN BRANCO',
+    '2 UN X 8,99 17,98',
+    'QTD TOTAL DE ITENS 001',
+    'VALOR TOTAL R$ 17,98'
+  ].join('\n');
+  const items = rules.parseReceiptOcr(receipt);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, '31323');
+  assert.equal(items[0].quantity, 2);
+});
+
 test('Rudi Bonow: preserves printed manjericão ML for supervisor review', () => {
   const receipt = [
     'CÓDIGO DESCRIÇÃO',
