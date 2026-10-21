@@ -29,6 +29,8 @@ jobs:
       # Unit tests must run outside the deployment environment:
       # Preview deliberately denies access to an unconfigured database (503),
       # while authentication contract tests exercise 401 with mocked RPCs.
+      - name: Block high and critical npm dependency advisories
+        run: npm audit --audit-level=high
       - name: Unit and regression tests (no deployment environment)
         run: npm test
       - name: PDF extraction and browser worker regression
