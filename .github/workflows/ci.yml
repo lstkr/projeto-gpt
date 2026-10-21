@@ -43,3 +43,5 @@ jobs:
         run: |
           echo "Node $(node --version); npm $(npm --version); VERCEL_ENV=${VERCEL_ENV}"
           npm run build
+      - name: Verify PDF worker in production server and public assets
+        run: node scripts/test-pdf-build.cjs
