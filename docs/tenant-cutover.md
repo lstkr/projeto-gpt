@@ -2,6 +2,8 @@
 
 Estado: implementação submetida a testes PostgreSQL em memória (PGlite); não aplicada remotamente por este trabalho. A aplicação em Supabase e o reset continuam condicionados à homologação e ao backup recuperável.
 
+O ensaio local também executou `db/operations/backup-test-reset.sql`, `reset-test-data.sql` e `restore-test-data.sql` após o cutover: restaurou o estado operacional, preservou credenciais e manteve sessões revogadas. A falha injetada antes do commit da migração reverteu DDL e preservou a credencial sintética. Esses ensaios **não equivalem** a restauração de um dump de produção nem a rollback do cutover após seu commit.
+
 ## Modelo e compatibilidade
 
 `supabase/migrations/20261021221435_tenant_access.sql` deve ser aplicada após todas as migrações anteriores e os SQLs de permissões, pendências e caixa. É transacional. Não reaplicar `db/schema.sql` em banco existente. A migração preserva contas, hashes, documentos, produtos, IDs e sessões existentes, vinculando-os à unidade inicial. A autenticação continua própria; `auth.users` não participa.
@@ -31,6 +33,8 @@ O login serializa tentativas por usuário com bloqueio transacional e limita oit
 O nome de uma tabela `estq_backup_*` não prova recuperação. Registrar referência do projeto, ambiente, horário, escopo, tamanho/contagens, permissões, mecanismo de criptografia e responsável pela restauração. Exportar esquema e dados de todos os objetos afetados, inclusive contas, sessões, ACLs, pendências/anexos e caixa para armazenamento protegido; ensaiar a restauração em ambiente isolado e comparar contagens e integridade. Não enviar esse material ao Git.
 
 Somente após comprovar que o alvo é de testes e que backup/restauração funcionam, executar reset em janela sem gravações. Preservar `private.app_users`, hashes e vínculos; revogar sessões explicitamente. Não apagar Supabase Auth nem presumir que reset de estoque implica reset de identidade. A autorização de reset não dispensa a identificação do ambiente e a análise das dependências. Não há SQL destrutivo automatizado nesta entrega.
+
+Os scripts operacionais preparados têm escopo explícito e exigem execução manual pelo proprietário. O backup pós-cutover cria `estoque_recovery_20261021`, recusa sobrescrever backup anterior e copia dados sem imprimi-los. Contém material sensível, deve permanecer fora dos schemas expostos, sem concessões aos papéis API. O reset confere fingerprints das tabelas críticas e recusa drift; limpa apenas estoque, caixa e pendências. O restore foi ensaiado no mesmo schema e não recria identidades nem reativa sessões. Os backups antigos com prefixo `estq_backup_*` não são copiados novamente; permanecem intactos. Cópia no mesmo projeto protege esse reset, não perda do projeto ou da infraestrutura.
 
 Falha durante migração causa rollback transacional. Depois de uso multinegócio, reverter para singleton descarta isolamento; portanto **não existe down migration automática**. Recuperação exige manutenção, backup novo, restauração integral ensaiada no projeto isolado e aplicação conjunta da versão de aplicativo compatível. Não voltar apenas o front-end para versão sem seleção de unidade ou troca obrigatória.
 

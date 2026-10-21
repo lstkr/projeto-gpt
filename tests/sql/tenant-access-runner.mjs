@@ -87,6 +87,16 @@ await assert.rejects(()=>db.query('select * from public.shared_inventory'),/perm
 assert.equal((await scalar('select public.inventory_get($1) result',[back.session_token])).products.length,1);
 await db.exec('reset role;');
 await db.exec(await fs.readFile('tests/sql/tenant-access.sql','utf8'));
+const operationalBefore=JSON.stringify((await db.query('select tenant_id,state from private.tenant_inventory order by tenant_id')).rows);
+const credentialsBefore=JSON.stringify((await db.query('select id,password_hash from private.app_users order by id')).rows);
+await db.exec(await fs.readFile('db/operations/backup-test-reset.sql','utf8'));
+await db.exec(await fs.readFile('db/operations/reset-test-data.sql','utf8'));
+assert.equal((await db.query("select count(*)::integer count from private.tenant_inventory where jsonb_array_length(state->'products')>0")).rows[0].count,0);
+await db.exec(await fs.readFile('db/operations/restore-test-data.sql','utf8'));
+assert.equal(JSON.stringify((await db.query('select tenant_id,state from private.tenant_inventory order by tenant_id')).rows),operationalBefore);
+assert.equal(JSON.stringify((await db.query('select id,password_hash from private.app_users order by id')).rows),credentialsBefore);
+assert.equal((await db.query('select count(*)::integer count from private.app_sessions where revoked_at is null')).rows[0].count,0);
+console.log('PASS private backup, operational reset and restore rehearsal; credentials preserved; sessions revoked');
 console.log('PASS tenant inventory/cash/pending isolation, token revocation, first-password gate, role escalation, employee isolation, private grants, identity collisions');
 await db.close();
 

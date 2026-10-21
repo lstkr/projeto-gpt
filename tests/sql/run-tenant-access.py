@@ -35,4 +35,12 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         print('PASS failed cutover rolls back schema and preserves credentials')
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
+before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
+credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
+for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
+    sql((ROOT/f'db/operations/{operation}.sql').read_text(encoding='utf8'))
+assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r") == before
+assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r") == credentials
+assert sql('select count(*) from private.app_sessions where revoked_at is null') == '0'
+print('PASS operational backup/reset/restore preserves users and requires fresh login')
 print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
