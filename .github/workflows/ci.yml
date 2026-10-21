@@ -26,6 +26,13 @@ jobs:
       # No committed lockfile yet; move to npm ci after introducing one.
       - name: Install dependencies
         run: npm install
-      # package.json runs tests before next build; retain this gate.
-      - name: Build Next.js app
-        run: npm run build
+      # Simulate Vercel's Preview environment for pull requests, including
+      # build-time ESTOQUE_DEPLOY_ENV in next.config.js.
+      # The preview must remain fail-closed until an isolated database is set.
+      - name: Build Next.js app (Vercel environment parity)
+        env:
+          VERCEL: '1'
+          VERCEL_ENV: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+        run: |
+          echo "Node $(node --version); npm $(npm --version); VERCEL_ENV=${VERCEL_ENV}"
+          npm run build
