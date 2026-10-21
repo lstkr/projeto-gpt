@@ -1,7 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs');
-const vm=require('node:vm');
 
 function fixture() {
   const text='Fechamento de Caixa - Caixa 003 - Operador TESTE - 10/10/2026';
@@ -38,8 +37,6 @@ test('published browser worker is the exact installed version and loads',()=>{
   const {version}=require('pdfjs-dist/package.json');
   const worker=readFileSync('public/vendor/pdf.worker-'+version+'.min.js','utf8');
   assert.equal(worker,readFileSync(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.js'),'utf8'));
-  const context={URL,URLSearchParams,TextEncoder,TextDecoder,ReadableStream,AbortController,
-    structuredClone,setTimeout,clearTimeout,console};
-  vm.runInNewContext(worker,context);
-  assert.equal(typeof context.pdfjsWorker.WorkerMessageHandler.setup,'function');
+  const published=require('../public/vendor/pdf.worker-'+version+'.min.js');
+  assert.equal(typeof published.WorkerMessageHandler.setup,'function');
 });
