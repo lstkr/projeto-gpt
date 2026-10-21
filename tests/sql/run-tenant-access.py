@@ -22,6 +22,12 @@ def sql(statement):
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database must be empty'
 sql('create role anon nologin; create role authenticated nologin; create schema extensions;')
+sql("create schema auth; create table auth.users(id uuid primary key); "
+    "insert into auth.users values ('00000000-0000-4000-8000-0000000000a1'); "
+    "create schema storage; create table storage.buckets(id text primary key); "
+    "create table storage.objects(id uuid primary key); "
+    "insert into storage.buckets values ('fixture-bucket'); "
+    "insert into storage.objects values ('00000000-0000-4000-8000-0000000000a2')")
 for file in ['db/schema.sql','db/access-permissions.sql','db/pending-receipts.sql','db/cash-closing.sql']:
     sql((ROOT/file).read_text(encoding='utf8'))
 for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
@@ -133,7 +139,9 @@ for table in ['app_users','establishments','tenant_memberships','app_sessions','
               'tenant_inventory','cash_closings','pending_receipts','user_permissions',
               'permission_audit','external_fiscal_rate_limits']:
     assert sql(f'select count(*) from private.{table}') == '0', f'{table} reset'
-assert sql("select count(*) from pg_class where relnamespace='auth'::regnamespace and relname='users'") == '1'
+assert sql("select count(*) from auth.users") == '1', 'managed auth data preserved'
+assert sql("select count(*) from storage.buckets") == '1', 'managed storage buckets preserved'
+assert sql("select count(*) from storage.objects") == '1', 'managed storage objects preserved'
 sql("select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'))")
 fresh = sql("with login as (select public.inventory_login('admin.master','synthetic-fresh-dba') result) "
             "select (result->>'must_change_password') || '|' || "

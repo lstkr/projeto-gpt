@@ -11,6 +11,10 @@ const { PGlite } = await import(pathToFileURL(path.join(runtime, 'dist/index.js'
 const { pgcrypto } = await import(pathToFileURL(path.join(runtime, 'dist/contrib/pgcrypto.js')));
 const db = new PGlite({ extensions: { pgcrypto } });
 await db.exec('create role anon; create role authenticated; create schema extensions;');
+await db.exec(`create schema auth; create table auth.users(id uuid primary key);
+ insert into auth.users values ('00000000-0000-4000-8000-0000000000a1');
+ create schema storage; create table storage.buckets(id text primary key); create table storage.objects(id uuid primary key);
+ insert into storage.buckets values ('fixture-bucket'); insert into storage.objects values ('00000000-0000-4000-8000-0000000000a2');`);
 for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-receipts.sql','db/cash-closing.sql',
  'supabase/migrations/20261019201520_inventory_validate_session.sql',
  'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
@@ -101,6 +105,9 @@ await db.exec(await fs.readFile('db/operations/reset-test-environment.sql','utf8
 for (const table of ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts','tenant_inventory','cash_closings','pending_receipts','user_permissions','permission_audit','external_fiscal_rate_limits']) {
  assert.equal((await db.query(`select count(*)::integer count from private.${table}`)).rows[0].count,0,`${table} reset`);
 }
+assert.equal((await db.query('select count(*)::integer count from auth.users')).rows[0].count,1,'managed auth preserved');
+assert.equal((await db.query('select count(*)::integer count from storage.buckets')).rows[0].count,1,'managed buckets preserved');
+assert.equal((await db.query('select count(*)::integer count from storage.objects')).rows[0].count,1,'managed objects preserved');
 await db.exec(`select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'));`);
 const freshDba=await scalar('select public.inventory_login($1,$2) result',['admin.master','synthetic-fresh-dba']);
 assert.equal(freshDba.must_change_password,true);
