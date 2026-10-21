@@ -837,7 +837,7 @@ function parseReceiptTotals(text) {
     const values = amountValues(line);
     if (!values.length) continue;
     if (/\bSUB[\s-]*TOTAL\b/.test(n)) totals.subtotal = values[0];
-    if (/\bDESCONTO\b/.test(n) && (summary || totals.discount === null)) totals.discount = values[0];
+    if (/\bDESCONTO\b/.test(n) && summary) totals.discount = values[0];
     if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
         !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n))
       totals.total = values[0];
@@ -859,6 +859,10 @@ function reconcileReceiptTotals(primaryText, alternateText, items) {
   const warnings = [];
   if (primary.total != null && alternate.total != null && Math.abs(primary.total - alternate.total) > 0.02)
     warnings.push('As duas leituras discordam sobre o total final.');
+  for (const [field, label] of [['subtotal', 'subtotal'], ['discount', 'desconto']]) {
+    if (primary[field] != null && alternate[field] != null && Math.abs(primary[field] - alternate[field]) > 0.02)
+      warnings.push('As duas leituras discordam sobre o ' + label + '.');
+  }
   if (Math.abs(itemSubtotal - subtotal) > 0.05) warnings.push('Soma das linhas diferente do subtotal fiscal.');
   if (Math.abs(expected - total) > 0.05) warnings.push('Subtotal menos desconto difere do total impresso.');
   if (itemDiscount > discount + 0.02) warnings.push('Descontos nas linhas maiores que o desconto total.');
@@ -943,12 +947,13 @@ function compareInvoiceItems(ocrItems, officialItems) {
       const officialName = normalizeReceiptName(official.name);
       if (code && officialCode && code !== officialCode) return null;
       const sameCode = Boolean(code && code === officialCode);
-      const sameName = name === officialName || (Math.min(name.length, officialName.length) >= 7 &&
-        (name.startsWith(officialName) || officialName.startsWith(name)));
+      const sameName = Boolean(name && officialName) && (name === officialName || (Math.min(name.length, officialName.length) >= 7 &&
+        (name.startsWith(officialName) || officialName.startsWith(name))));
       if (!sameCode && !sameName) return null;
       const totalDelta = Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official));
       const qtyDelta = Math.abs(Number(ocr.quantity) - Number(official.quantity));
-      return { index, rank: (sameCode ? 100 : 0) + (sameName ? 30 : 0) -
+      return { index, sameName, rank: (sameCode ? 100 : 0) + (sameName ? 30 : 0) +
+        (normalizeReceiptUnit(ocr.unit) === normalizeReceiptUnit(official.unit) ? 10 : 0) -
         Math.min(70, totalDelta * 4) - Math.min(70, qtyDelta * 10) - Math.abs(ocrIndex - index) };
     }).filter(Boolean).sort((a, b) => b.rank - a.rank);
     const index = matches.length ? matches[0].index : -1;
@@ -957,6 +962,7 @@ function compareInvoiceItems(ocrItems, officialItems) {
     if (!official) return { ocr, official: null, ocrIndex,
       issues: ['Produto não encontrado na consulta.'], status: 'Item ausente na consulta' };
     const issues = [];
+    if (!matches[0].sameName) issues.push('Descrição diferente ou ausente');
     if (normalizeReceiptUnit(ocr.unit) !== normalizeReceiptUnit(official.unit)) issues.push('Unidade diferente');
     if (Math.abs(Number(ocr.quantity) - Number(official.quantity)) > 0.001) issues.push('Quantidade diferente');
     if (Math.abs(Number(ocr.unitPrice) - Number(official.unitPrice)) > 0.02) issues.push('Preço diferente');
