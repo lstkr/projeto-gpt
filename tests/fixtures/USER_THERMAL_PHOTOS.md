@@ -14,8 +14,8 @@ As imagens originais **não estão neste repositório** e não devem ser copiada
 
 | Arquivo privado | Cenário principal | Verificação |
 |---|---|---|
-| fiscal-01-cia-da-fruta.jpeg | 1 item, 2 unidades, troco no rodapé | venda 17,98; troco 32,02 não é desconto |
-| fiscal-02-rudi-tomate.jpeg | tomate por peso, 1 KG | total 14,37 |
+| fiscal-01-ovo.jpeg | 1 item, 2 unidades, troco no rodapé | venda 17,98; troco 32,02 não é desconto |
+| fiscal-02-tomate.jpeg | tomate por peso, 1 KG | total 14,37 |
 | fiscal-03-duas-notas.jpeg | **2 NFC-e em uma fotografia** | dois documentos independentes: 49,48 e 45,05 |
 | caixa-2025-11-26.jpeg | crédito/débito, outros, movimentações | total 1.083,00; POS 721,00 |
 | caixa-2025-11-25.jpeg | sangria, suprimento, físico | total 906,00; POS 744,00 |
