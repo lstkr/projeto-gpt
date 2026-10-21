@@ -531,7 +531,7 @@
   "fiscal": [
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-01-cia-da-fruta.jpeg",
+      "photo": "fiscal-01-ovo.jpeg",
       "case_id": "ovo-duas-unidades",
       "document_index": 0,
       "transcribed_lines": [
@@ -554,7 +554,7 @@
     },
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-02-rudi-tomate.jpeg",
+      "photo": "fiscal-02-tomate.jpeg",
       "case_id": "tomate-quilo",
       "document_index": 0,
       "transcribed_lines": [
