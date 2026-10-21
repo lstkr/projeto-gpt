@@ -6,3 +6,4 @@ out/
 !.env.example
 .DS_Store
 npm-debug.log*
+public/vendor/pdf.worker-*.min.js

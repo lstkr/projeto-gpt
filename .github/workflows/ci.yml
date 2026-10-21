@@ -31,6 +31,8 @@ jobs:
       # while authentication contract tests exercise 401 with mocked RPCs.
       - name: Unit and regression tests (no deployment environment)
         run: npm test
+      - name: PDF extraction and browser worker regression
+        run: node --test scripts/test-cash-pdf.cjs
       # Simulate Vercel's Preview environment for pull requests, including
       # build-time ESTOQUE_DEPLOY_ENV in next.config.js.
       # The preview must remain fail-closed until an isolated database is set.
@@ -41,3 +43,5 @@ jobs:
         run: |
           echo "Node $(node --version); npm $(npm --version); VERCEL_ENV=${VERCEL_ENV}"
           npm run build
+      - name: Verify PDF worker in production server and public assets
+        run: node scripts/test-pdf-build.cjs
