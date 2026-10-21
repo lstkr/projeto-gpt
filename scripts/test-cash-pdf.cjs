@@ -38,7 +38,8 @@ test('published browser worker is the exact installed version and loads',()=>{
   const {version}=require('pdfjs-dist/package.json');
   const worker=readFileSync('public/vendor/pdf.worker-'+version+'.min.js','utf8');
   assert.equal(worker,readFileSync(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.js'),'utf8'));
-  const context={};
+  const context={URL,URLSearchParams,TextEncoder,TextDecoder,ReadableStream,AbortController,
+    structuredClone,setTimeout,clearTimeout,console};
   vm.runInNewContext(worker,context);
   assert.equal(typeof context.pdfjsWorker.WorkerMessageHandler.setup,'function');
 });
