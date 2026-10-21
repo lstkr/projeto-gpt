@@ -136,6 +136,14 @@ test('both fiscal routes enforce session checks before making external requests'
     assert.ok(auth > handler, path + ' must validate session in its handler');
     assert.ok(externalCall > auth, path + ' must validate session before external fetch');
   }
+  const cash = fs.readFileSync('pages/api/cash-extract.js', 'utf8');
+  assert.match(cash, /await requireInventorySession\(req,res\)/,
+    'cash PDF must use native lightweight session');
+  assert.doesNotMatch(cash, /client\.rpc\(['"]inventory_get['"]/,
+    'PDF API must not download inventory just to authorize a request');
+  assert.ok(cash.indexOf('await requireInventorySession(req,res)') <
+    cash.indexOf("const base64=String(req.body?.base64||'')"),
+    'authorization must run before reading PDF body');
   const page = fs.readFileSync('pages/index.js', 'utf8');
   assert.match(page, /decodeQrViaExternalApi\(reference, sessionToken\)/);
   assert.match(page, /detectNfceQrCodes\(canvases, prepared\.qrCanvases, accessCode\)/);
