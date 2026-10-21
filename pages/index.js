@@ -2254,7 +2254,14 @@ export default function Home() {
         });
         const data = await response.json().catch(() => ({}));
         if (controller.signal.aborted) return;
-        if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
+        if (!response.ok) {
+          const fallback = response.status === 401 ? 'Sessão expirada. Faça login novamente para consultar a SEFAZ.' :
+            response.status === 403 ? 'Seu usuário não tem permissão para esta consulta.' :
+            response.status === 429 ? 'Muitas consultas em pouco tempo. Tente novamente em instantes.' :
+            response.status === 503 ? 'Autenticação temporariamente indisponível. Confira a nota manualmente.' :
+            'Consulta oficial indisponível. Confira a nota manualmente.';
+          throw new Error(data.error || fallback);
+        }
         if (data.source !== 'SVRS' || data.accessKey !== expectedKey)
           throw new Error('A resposta fiscal não corresponde à chave deste cupom.');
         const officialItems = Array.isArray(data.items) ? data.items : [];
@@ -2788,7 +2795,7 @@ export default function Home() {
           </section>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            Leitura automática de QR: o sistema usa leitores locais e, quando necessário, envia somente o recorte inferior do cupom à API externa. A conferência fiscal permanece na SEFAZ, com revisão antes de lançar.
+            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
           </div>
           {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
           {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
