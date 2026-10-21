@@ -11,13 +11,17 @@ Fonte da verdade: o SHA atual, verificações do GitHub e o estado real do banco
 - Jamais fazer merge isolado das branches encadeadas #17/#18/#38 ou #26/#29 após #40, sob risco de reaplicar alterações antigas. Verificar diffs de cada PR antes de marcar como supersedido.
 - Validar `npm test`, `npm run build`, workflow `Native session RPC tests` (PG 15/17), `Fiscal integrity SQL tests` (PG 15/17), `Receipt regression tests`, status Vercel **no SHA final**, sem usar resultado de SHA anterior.
 
-## Banco existente — bloqueio distinto de conflitos de Git
-- O gestor optou por usar o **mesmo Supabase** nos testes manuais, mantendo os **logins e senhas**. Esta decisão **não autorizou** migração, redefinição, exclusão nem atualização de usuários, senhas, sessões, arquivos fiscais ou estoque.
-- Consulta **somente de leitura** em 21/10/2026: 2 contas existentes; `inventory_validate_session(text)`, `pending_receipt_cancel(text,uuid)`, `private.has_permission(uuid,text)` e `inventory_permissions_list(text)` ainda não instaladas.
-- O código do #40 requer essas RPCs. Fazer merge que acione um deploy de Production **antes** da compatibilização do banco deixa consultas fiscais/API e permissões indisponíveis, mesmo com CI de código verde.
-- Não executar `db/schema.sql` de instalação limpa no banco existente. Preparar backup/recuperação verificável, examinar diffs/owners/grants/RLS, executar mudanças **incrementais** e transacionais, somente após autorização separada e plano de reversão.
-- Ordem de dependências a validar com Database: instalar a camada de permissões de `db/access-permissions.sql`, reconciliar `db/pending-receipts.sql` com a tabela e registros existentes, instalar `supabase/migrations/20261019201520_inventory_validate_session.sql`, depois `supabase/migrations/20261020221500_fiscal_write_integrity.sql`. Fazer preflight/RLS e testes de POSTGREST reais antes de habilitar gravações; não reaplicar instalação nova.
-- Após eventual instalação, ler somente metadados para conferir contagem de usuários inalterada; nunca consultar ou imprimir hashes/tokens. Conferir login de Gestor e Funcionário manualmente, sem alterar credenciais.
+## Banco existente — migração autorizada e executada (21/10/2026)
+- Gestor autorizou **atualizar o Supabase compartilhado** e preservar logins/senhas. Inspeção e execução conduzidas conforme `docs/agents/database-architect.md` (PR #20), com preflight RLS/ACL e testes.
+- O projeto utiliza o plano Free. A plataforma **não oferece backup automático diário neste plano**; houve criação de cópias privadas **dentro do mesmo banco**, portanto **não são backup externo nem proteção contra perda do projeto**. Exportação off-site com `supabase db dump` continua recomendada antes da homologação intensiva.
+- Migração Supabase `20261021131407_estq_premerge_protected_snapshots_20261021`: preservou registros atuais em `private.estq_backup_app_users_20261021`, `private.estq_backup_app_sessions_20261021`, `private.estq_backup_shared_inventory_20261021`, `private.estq_backup_pending_receipts_20261021` e 8 definições de função em `private.estq_backup_function_defs_20261021`. Todas com RLS e sem acesso de leitura `anon/authenticated`. **Não publicar conteúdo, hashes ou tokens.**
+- Migração Supabase `20261021131601_estq_homologation_acl_session_fiscal_20261021` aplicada em transação: fontes `db/access-permissions.sql`, `db/pending-receipts.sql`, `supabase/migrations/20261019201520_inventory_validate_session.sql` e `supabase/migrations/20261020221500_fiscal_write_integrity.sql`. **Não** executado `db/schema.sql` de instalação limpa. Funções/constraints/RLS transacionais, sem UPDATE/DELETE de contas, sessões ou estoque.
+- **Verificação pós-migração, sem revelar dados pessoais:** 2 contas e seus registros completos (incluindo hashes de senha) **idênticos** ao backup, 16 sessões idênticas, 1 snapshot de estoque idêntico, 5 notas com conteúdo histórico idêntico (3 pendentes, 2 lançadas). Novas colunas de cancelamento permanecem vazias; nenhum cancelamento realizado.
+- RPCs `inventory_validate_session`, `pending_receipt_cancel`, `private.has_permission`, `inventory_permissions_list` e `inventory_permission_set` presentes. Papel `anon` não possui acesso direto às tabelas privadas/fiscais. Testes de token inválido confirmaram erro de autenticação e rejeição de cancelar/alterar permissões. Nenhum funcionário recebe permissão de cancelar NF.
+- Supabase Advisors: avisos `SECURITY DEFINER` para RPCs públicas com **token de sessão próprio** exigem revisão de cada função antes de tornar o serviço público; outras observações incluem `private.count_guard` com `search_path` não fixo, índices de FKs e tabelas de backup sem PK (cópias imutáveis). Referência: https://supabase.com/docs/guides/database/database-linter.
+- **Migrações CLI/ledger:** as duas versões SQL do repositório (`20261019201520` e `20261020221500`) foram instaladas **dentro do bundle `20261021131601`**, não registradas individualmente na tabela remota de versões. Um futuro `supabase db push` precisa reconciliar o histórico com `supabase migration repair` após verificação (não reaplicar SQL sobre a base atual). Este detalhe não altera o funcionamento do aplicativo, mas é dívida operacional antes da automação de migrações.
+- Rollback operacional: versões anteriores das funções estão guardadas na tabela privada; scripts `db/rollback/` servem apenas para emergência com escrita fiscal suspensa, pois restaurar uma função antiga reabre falhas P0. Preferir correção aditiva após teste. Restaurar backups de tabela **substituiria dados novos**; não executar sem plano explícito.
+- Ainda pendente: confirmar HTTP/PostgREST real, login/logout como gestor/funcionário, interfaces e permissões usando as contas existentes, sem solicitar ou divulgar senhas. O banco atualizado **não comprova**, isoladamente, que a Preview está configurada.
 
 ## Portão de homologação funcional
 - Ambiente Preview com banco compartilhado requer opt-in **restrito à branch** e variáveis explícitas na Vercel; não configurar `service_role` como chave pública.
@@ -27,6 +31,7 @@ Fonte da verdade: o SHA atual, verificações do GitHub e o estado real do banco
 - Se o gestor desejar apenas revisão/merge de código, planejar um mecanismo de deploy controlado para não publicar o candidato antes das RPCs.
 
 ## Registro de conclusão por SHA
+- Database: pré/pós verificações aprovadas em 21/10/2026; nenhuma conta, sessão, nota ou quantidade alterada.
 - Branch + SHA final:
 - Git behind/mergeable:
 - Workflows e Vercel:
