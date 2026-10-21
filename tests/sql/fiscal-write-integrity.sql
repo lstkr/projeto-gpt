@@ -108,6 +108,18 @@ begin
    'revision',1));
   raise exception 'duplicate pending document accepted';
  exception when sqlstate '23505' then null; end;
+ -- Two newly supplied documents cannot reuse one document ID even if
+ -- they point to distinct pending receipts.
+ begin
+  perform public.inventory_save(admin_token,
+   jsonb_build_object('products','[]'::jsonb,'movements','[]'::jsonb,
+   'documents',jsonb_build_array(
+     jsonb_build_object('id','initial-doc','pendingReceiptId','00000000-0000-4000-8000-0000000000c1'),
+     jsonb_build_object('id','same-new-id','pendingReceiptId','00000000-0000-4000-8000-0000000000c3'),
+     jsonb_build_object('id','same-new-id','pendingReceiptId','00000000-0000-4000-8000-0000000000c4')),
+   'revision',1));
+  raise exception 'duplicate new document IDs accepted';
+ exception when sqlstate '23505' then null; end;
 end;
 $tests$;
 reset role;
