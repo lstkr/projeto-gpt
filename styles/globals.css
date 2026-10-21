@@ -713,3 +713,46 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
   .review-issue-trigger{min-width:44px;min-height:44px}
   .review-issue-popup{font-size:14px}
 }
+
+
+/* Organização da conferência fiscal: verificação, nota e produtos. */
+.review-panel .qr-identified-card{
+  display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;
+  margin:16px 20px 12px;padding:16px 18px;border:1px solid #d6e6d5;
+  background:#edf5ec;color:#365e43;
+}
+.qr-identified-content{display:flex;flex:1 1 250px;flex-direction:column;align-items:flex-start;gap:7px;min-width:0}
+.qr-identified-title{display:flex;align-items:center;gap:7px;font-size:13px}
+.qr-identified-key{font-size:12px;overflow-wrap:anywhere;word-break:break-word;white-space:normal;color:#315840}
+.qr-identified-content small{color:#597260;font-size:11.5px;line-height:1.5}
+.qr-identified-content a{font-weight:700;color:#235c42;text-underline-offset:2px}
+.qr-identified-content a:hover{color:#143c2b}
+.qr-identified-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.qr-identified-actions a{text-decoration:none}
+.qr-key-correction{width:min(100%,440px);margin-top:5px;font-size:12px;color:#426b4b}
+.qr-key-correction summary{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.qr-key-correction .field{margin-top:12px}
+.qr-key-correction .field>span{font-size:12px}
+.qr-key-warning{flex-direction:column;align-items:stretch;gap:9px;margin-inline:20px}
+.qr-key-invalid-edit{max-width:440px;margin-top:6px}
+.qr-reader-warning{margin-inline:20px}
+.invoice-document-details{margin:18px 20px 10px;padding:18px;border:1px solid #e5ebe3;border-radius:10px;background:#fbfcfa}
+.invoice-document-heading{margin-bottom:15px}
+.invoice-document-heading h3{margin:0;font-size:14px;color:#304c38}
+.invoice-document-heading p{margin:6px 0 0;font-size:12px;line-height:1.5;color:#728476}
+.invoice-document-details .meta-fields{display:grid;grid-template-columns:minmax(200px,1.5fr) repeat(2,minmax(150px,1fr));gap:14px;padding:0}
+.invoice-document-details .meta-fields label>span{font-size:12px}
+.invoice-document-details .meta-fields input{font-size:12px}
+@media(max-width:1000px){
+ .invoice-document-details .meta-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .invoice-document-details .meta-fields label:first-child{grid-column:1 / -1}
+}
+@media(max-width:600px){
+ .review-panel .qr-identified-card{margin-inline:12px;padding:14px}
+ .qr-identified-actions{width:100%;justify-content:flex-start}
+ .qr-identified-actions .btn{flex:1 1 130px;white-space:normal;text-align:center;min-height:42px}
+ .invoice-document-details{margin-inline:12px;padding:14px}
+ .invoice-document-details .meta-fields{grid-template-columns:1fr}
+ .invoice-document-details .meta-fields label:first-child{grid-column:auto}
+ .qr-key-warning,.qr-reader-warning{margin-inline:12px}
+}
