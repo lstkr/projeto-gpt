@@ -1204,6 +1204,8 @@ export default function Home() {
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
   const [pendingSaveError,setPendingSaveError]=useState('');
+  const [pendingSaveErrorById,setPendingSaveErrorById]=useState({});
+  const [pendingConfirmRequested,setPendingConfirmRequested]=useState(null);
   const pendingSaveSerial=useRef(Promise.resolve());
   const pendingMarking=useRef(new Set());
   const pendingFingerprints=useRef(new Map());
@@ -2241,6 +2243,7 @@ export default function Home() {
     const timer=setTimeout(()=>{
       pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
         setPendingBusy(true);setPendingSaveError('');
+        setPendingSaveErrorById(previous=>({...previous,[id]:''}));
         const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
           p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
         });
@@ -2251,10 +2254,37 @@ export default function Home() {
         setDraft(current=>current?.pendingId===id?{...current,pendingRevision:data.revision}:current);
         setPendingReceipts(old=>old.map(row=>row.id===id
           ? {...row,draft:snapshot,revision:data.revision}:row));
-      }).catch(e=>setPendingSaveError(e.message)).finally(()=>setPendingBusy(false));
-    },1200);
+      }).catch(e=>{
+        const message=e?.message||'Falha ao salvar conferência.';
+        setPendingSaveError(message);
+        setPendingSaveErrorById(previous=>({...previous,[id]:message}));
+      }).finally(()=>setPendingBusy(false));
+    },pendingConfirmRequested?.id===id?0:1200);
     return ()=>clearTimeout(timer);
-  },[draft,supabase,accessCode,dataReady]);
+  },[draft,supabase,accessCode,dataReady,pendingConfirmRequested]);
+
+  // A single confirmation click waits for the exact reviewed draft to be acknowledged.
+  // If the operator changes/switches the note while saving, never post an old version.
+  useEffect(()=>{
+    const request=pendingConfirmRequested;
+    if(!request)return;
+    if(draft?.pendingId!==request.id){setPendingConfirmRequested(null);return;}
+    const latestFingerprint=JSON.stringify(cleanPendingDraft(draft));
+    if(latestFingerprint!==request.fingerprint){
+      setPendingConfirmRequested(null);
+      setError('A conferência mudou durante o salvamento. Confira a versão atual e confirme novamente.');
+      return;
+    }
+    const saveError=pendingSaveErrorById[request.id];
+    if(saveError){
+      setPendingConfirmRequested(null);
+      setError('Não foi possível salvar a conferência: '+saveError);
+      return;
+    }
+    if(pendingFingerprints.current.get(request.id)!==request.fingerprint)return;
+    setPendingConfirmRequested(null);
+    confirmDocument();
+  },[pendingConfirmRequested,draft,pendingSaveErrorById]);
 
   function changeDraft(key, value) {
     const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
@@ -2427,10 +2457,16 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
-    if(draft?.pendingId && (pendingBusy||pendingSaveError||
-      pendingFingerprints.current.get(draft.pendingId)!==JSON.stringify(cleanPendingDraft(draft)))){
-      setError(pendingSaveError||'Aguarde a conferência ser salva no servidor antes de lançar.');
-      return;
+    if(draft?.pendingId){
+      const id=draft.pendingId;
+      const fingerprint=JSON.stringify(cleanPendingDraft(draft));
+      // Do not bypass persistence: request an immediate flush and wait for its ACK.
+      if(pendingFingerprints.current.get(id)!==fingerprint||pendingSaveErrorById[id]){
+        setError('');
+        setPendingSaveErrorById(previous=>({...previous,[id]:''}));
+        setPendingConfirmRequested({id,fingerprint});
+        return;
+      }
     }
     if (receiptReviewRows.some((row) => !row.done)) {
       setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
@@ -3103,7 +3139,7 @@ export default function Home() {
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
-            <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy} onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
+            <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument}><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
