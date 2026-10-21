@@ -1,13 +1,15 @@
 # Estoque+ — Checklist de homologação / release candidate
 
-Atualizado: 2026-10-20. PR de integração: #40 (draft). **Não publicar em produção** com esta checklist incompleta.
+Atualizado: 2026-10-21. PR de integração: #40 (draft). **Não publicar em produção** com esta checklist incompleta.
 
 ## Banco existente autorizado para testes manuais (decisão do gestor)
 - **Autorização 20/10/2026:** reutilizar o Supabase atual `dpauqdihvhbbaellwjav`, SEM alterar contas existentes. Não criar novo banco agora.
 - **Regra de preservação:** manter `private.app_users`, `password_hash`, `private.app_sessions` e os dados atuais. Não resetar senhas, reexecutar `db/schema.sql` no banco existente, truncar tabelas, semear usuários de teste por cima dos existentes ou executar SQL destrutivo.
-- Verificação somente de leitura confirmou 2 usuários; contagem não divulga identificadores, senhas nem tokens. A consulta de funções mostrou que faltam `public.inventory_validate_session`, `public.pending_receipt_cancel`, `private.has_permission` e `public.inventory_permissions_list`.
-- **Não considerar o PR #40 homologado no banco atual até revisão de compatibilidade e instalação controlada das RPCs faltantes.** Nesta etapa foram autorizadas verificações de código, **não migrações no banco**.
-- Antes de eventual migração, registrar backup, plano de reversão e quais RPCs/tabelas mudarão; exigir autorização separada. Para migração incremental nunca usar um `schema.sql` de instalação limpa.
+- **Atualização autorizada e executada em 21/10/2026:** migrações remotas `20261021131407` (cópias privadas de recuperação) e `20261021131601` (ACL fiscal + notas + sessão RPC + integridade transacional). Scripts SQL de origem foram conferidos com o PR #40; **não** executado `db/schema.sql` nem SQL para alterar usuários/senhas.
+- Resultado verificado: 2 usuários e 16 sessões **idênticos** aos registros originais; 1 estoque e 5 notas com dados históricos idênticos. `public.inventory_validate_session`, `public.pending_receipt_cancel`, `private.has_permission` e `public.inventory_permissions_list` agora **instaladas**; chamadas RPC com token inválido foram rejeitadas pelo papel `anon`.
+- As cópias são **internas ao próprio projeto Free**, não equivalem a backup externo nem a PITR. Exportação off-site continua recomendada. Não excluir cópias sem plano de retenção e recuperação.
+- Histórico CLI: versões locais de SQL `20261019201520` e `20261020221500` foram aplicadas no bundle remoto `20261021131601` e precisam de reconciliação no fluxo `supabase migration repair` antes de futuros `db push`; nunca reaplicar cegamente.
+- **Banco atualizado não significa homologação concluída**. Ainda faltam o login via interface com contas existentes, testes HTTP/PostgREST e conferência fiscal manual.
 - Ações de conferência/lançamento/cancelamento alteram o estoque compartilhado; usar notas anonimizadas e procedimentos de recuperação. Evitar testes destrutivos com documentos reais.
 
 ### Opt-in de Vercel Preview no banco existente
@@ -18,10 +20,10 @@ Atualizado: 2026-10-20. PR de integração: #40 (draft). **Não publicar em prod
 - As variáveis e o redeploy ainda precisam ser configurados pelo gestor na Vercel, pois o conector atual retorna 403 para o time `lstkr`. O status de build bem-sucedido não confirma conexão ao banco.
 
 ## Gates automatizados
-- [ ] CI PR #40: npm test e npm run build **no SHA final**, PostgreSQL 15 e 17 para sessão e integridade fiscal. Atualizar evidências a cada commit.
+- [x] CI PR #40 pré-migração: npm test, build, PostgreSQL 15 e 17 sessão/fiscal aprovados no SHA `553c2c1`. Revalidar no SHA final após documentação.
 - [ ] Rodar cenários HTTP reais para 401 sem sessão, 401 expirada, 403 permissão negada, 429 limite de chamadas (pendente implementar limite compartilhado), 503 RPC indisponível, 502/504 terceiro, payload inválido e máximo.
 - [ ] SQL com 2 conexões: cancelamento × lançamento, lançamento × lançamento, revisão nula/obsoleta, retry e falha parcial. Sem duplicar saldo, nota ou movimento.
-- [ ] Revisar avisos do Supabase Advisors (segurança e desempenho) no ambiente de teste; SECDEF público com token próprio exige auditoria independente, não suprimir avisos sem justificar.
+- [x] Consultar Supabase Advisors após migração: existem alertas de SECURITY DEFINER públicos com sessão própria (requer auditoria) e `private.count_guard` sem search_path fixo; FKs sem índice. Não suprimir ou alterar as RPCs sem testar o modelo de autenticação.
 
 ## Casos manuais obrigatórios (evidência por SHA)
 | Cenário | Resultado | Evidência |
@@ -40,7 +42,7 @@ Atualizado: 2026-10-20. PR de integração: #40 (draft). **Não publicar em prod
 | Mobile 375px, teclado e mensagens de erro de sessão | pendente | |
 
 ## Condições de bloqueio
-- PR #40 deve manter status draft enquanto falta CI no SHA final, homologação real, revisão de segurança, RPCs compatíveis e opt-in Preview confirmado.
+- PR #40 deve manter status draft enquanto faltarem homologação real, revisão de segurança e opt-in Preview confirmado. As RPCs foram instaladas em 21/10/2026.
 - PRs dependentes **não são equivalentes** a PR integrado: seus checks isolados não comprovam o candidato.
 - Repo privado não significa docs no GitHub Pages privados; notas operacionais ficam em governance/.
 - Vercel Git integration pode criar preview automaticamente ao fazer push; **não confiar no preview sem verificar o banco ao qual está conectado**.
