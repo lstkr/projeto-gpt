@@ -20,8 +20,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido.' });
   }
   if (!await requireInventorySession(req, res)) return;
-  // Limit upstream calls per user and globally, consistently across deployments.
-  if (!await enforceFiscalRateLimit(req, res, 'qr')) return;
   const input = typeof req.body?.image_base64 === 'string' ? req.body.image_base64 : '';
   const matches = input.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
   if (!matches || matches[2].length < 100 || matches[2].length > 1600000) {
@@ -37,6 +35,8 @@ export default async function handler(req, res) {
   } catch (_) {
     return res.status(500).json({ error: 'Serviço de leitura QR externa não configurado corretamente.' });
   }
+  // Limit upstream calls per user and globally, consistently across deployments.
+  if (!await enforceFiscalRateLimit(req, res, 'qr')) return;
   try {
     const response = await fetch(upstream.toString(), {
       method: 'POST',
