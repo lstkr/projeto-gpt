@@ -153,6 +153,10 @@ declare
   deleted_ids jsonb;
   current_revision bigint;
   incoming_revision bigint;
+  fiscal_document jsonb;
+  pending_id uuid;
+  pending_status text;
+  posted_ids uuid[] := array[]::uuid[];
 begin
   select u.* into user_row from private.app_sessions s
     join private.app_users u on u.id = s.user_id
@@ -181,9 +185,69 @@ begin
   exception when invalid_text_representation or numeric_value_out_of_range then
     raise exception using errcode = '22023', message = 'Versão de sincronização inválida.';
   end;
-  if incoming_revision <> current_revision then
+  if incoming_revision is null or incoming_revision < 0 then
+    raise exception using errcode = '22023', message = 'Versão de sincronização inválida.';
+  end if;
+  if incoming_revision is distinct from current_revision then
     raise exception using errcode = '40001', message = 'O estoque foi alterado em outra sessão. Atualize a página antes de salvar novamente.';
   end if;
+
+  -- Any new fiscal document or document-linked movement requires explicit
+  -- fiscal review permission, including direct calls to inventory_save.
+  if (
+    exists (
+      select 1 from jsonb_array_elements(p_state->'documents') doc(value)
+      where not exists (
+        select 1 from jsonb_array_elements(coalesce(existing_state->'documents','[]'::jsonb)) old(value)
+        where old.value->>'id'=doc.value->>'id'
+      )
+    ) or exists (
+      select 1 from jsonb_array_elements(p_state->'movements') movement(value)
+      where nullif(movement.value->>'documentId','') is not null
+        and not exists (
+          select 1 from jsonb_array_elements(coalesce(existing_state->'movements','[]'::jsonb)) old(value)
+          where old.value->>'id'=movement.value->>'id'
+        )
+    )
+  ) and not private.has_permission(user_row.id,'fiscal.pending.review') then
+    raise exception using errcode='42501', message='Sem permissão para registrar documentos fiscais.';
+  end if;
+
+  -- Shared_inventory is locked first; pending_receipt_cancel uses the SAME
+  -- lock order. A committed posting is therefore never cancellable, and
+  -- duplicate posting of the same pending receipt is rejected.
+  for fiscal_document in
+    select doc.value from jsonb_array_elements(p_state->'documents') doc(value)
+    where not exists (
+      select 1 from jsonb_array_elements(coalesce(existing_state->'documents','[]'::jsonb)) old(value)
+      where old.value->>'id'=doc.value->>'id'
+    )
+  loop
+    if coalesce(fiscal_document->>'id','')='' then
+      raise exception 'Documento sem identificador.' using errcode='22023';
+    end if;
+    if nullif(fiscal_document->>'pendingReceiptId','') is not null then
+      begin
+        pending_id := (fiscal_document->>'pendingReceiptId')::uuid;
+      exception when invalid_text_representation then
+        raise exception 'Identificador de nota pendente inválido.' using errcode='22023';
+      end;
+      if exists (
+        select 1 from jsonb_array_elements(coalesce(existing_state->'documents','[]'::jsonb)) old(value)
+        where old.value->>'pendingReceiptId'=pending_id::text
+      ) or (
+        select count(*) from jsonb_array_elements(p_state->'documents') doc(value)
+        where doc.value->>'pendingReceiptId'=pending_id::text
+      ) <> 1 then
+        raise exception 'Nota pendente já vinculada a outro documento.' using errcode='23505';
+      end if;
+      select state into pending_status from public.pending_receipts where id=pending_id for update;
+      if not found or pending_status is distinct from 'pending' then
+        raise exception 'Nota cancelada, lançada ou inexistente; recarregue.' using errcode='40001';
+      end if;
+      posted_ids := array_append(posted_ids,pending_id);
+    end if;
+  end loop;
 
   if user_row.role <> 'admin' then
     -- Staff can adjust quantities and use invoice entry, but cannot modify existing catalog metadata.
@@ -281,6 +345,17 @@ begin
     'revision', current_revision + 1
   );
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;
+
+  -- Inventory and pending receipt state transition are one atomic transaction.
+  -- Failure in either statement rolls back quantities, movements and documents.
+  if cardinality(posted_ids)>0 then
+    update public.pending_receipts
+       set state='posted',updated_at=saved_at
+     where id=any(posted_ids) and state='pending';
+    if not found then
+      raise exception 'Falha ao concluir lançamento fiscal.' using errcode='40001';
+    end if;
+  end if;
   return jsonb_build_object('ok', true, 'updated_at', saved_at, 'role', user_row.role, 'revision', current_revision + 1);
 end;
 $function$;
@@ -501,7 +576,7 @@ begin
 
   return anchor_date + least(365,greatest(1,coalesce((cfg->>'intervalDays')::int,7)));
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION public.inventory_count_settings(p_token text, p_config jsonb, p_rev bigint)
  RETURNS jsonb
@@ -516,7 +591,7 @@ begin
  if p_config->>'mode' not in ('interval','weekly','monthly') or (p_config->>'intervalDays')::int not between 1 and 365 or (p_config->>'weekday')::int not between 1 and 7 or (p_config->>'monthDay')::int not between 1 and 31 then raise exception 'Configuração inválida.' using errcode='22023'; end if;
  select state into s from public.shared_inventory where id=true for update;
  v:=coalesce((s->>'revision')::bigint,0);
- if v<>p_rev then raise exception 'Estoque alterado. Recarregue.' using errcode='40001'; end if;
+ if v is distinct from p_rev then raise exception 'Estoque alterado. Recarregue.' using errcode='40001'; end if;
  cfg:=jsonb_build_object('enabled',coalesce((p_config->>'enabled')::boolean,false),'mode',p_config->>'mode','intervalDays',(p_config->>'intervalDays')::int,'weekday',(p_config->>'weekday')::int,'monthDay',(p_config->>'monthDay')::int,'configuredAt',(now() at time zone 'America/Sao_Paulo')::date);
  update public.shared_inventory set state=s||jsonb_build_object('countSettings',cfg,'revision',v+1),updated_at=now() where id=true;
  return jsonb_build_object('ok',true,'revision',v+1);
@@ -535,7 +610,7 @@ begin
  if jsonb_typeof(p_lines)<>'array' then raise exception 'Contagem inválida.' using errcode='22023'; end if;
  select state into s from public.shared_inventory where id=true for update;
  rev:=coalesce((s->>'revision')::bigint,0);
- if rev<>p_rev then raise exception 'Estoque mudou. Atualize e reconte antes de concluir.' using errcode='40001'; end if;
+ if rev is distinct from p_rev then raise exception 'Estoque mudou. Atualize e reconte antes de concluir.' using errcode='40001'; end if;
  if jsonb_array_length(p_lines)<>jsonb_array_length(s->'products') or jsonb_array_length(p_lines)=0 then raise exception 'Conte todos os produtos cadastrados.' using errcode='22023'; end if;
  for p in select value from jsonb_array_elements(s->'products') loop
    if (select count(*) from jsonb_array_elements(p_lines) x where x->>'productId'=p->>'id')<>1 then raise exception 'Há produto ausente ou repetido.' using errcode='22023'; end if;
