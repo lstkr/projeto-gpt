@@ -4,6 +4,7 @@ import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
@@ -2268,22 +2269,19 @@ export default function Home() {
   useEffect(()=>{
     const request=pendingConfirmRequested;
     if(!request)return;
-    if(draft?.pendingId!==request.id){setPendingConfirmRequested(null);return;}
-    const latestFingerprint=JSON.stringify(cleanPendingDraft(draft));
-    if(latestFingerprint!==request.fingerprint){
-      setPendingConfirmRequested(null);
-      setError('A conferência mudou durante o salvamento. Confira a versão atual e confirme novamente.');
-      return;
-    }
-    const saveError=pendingSaveErrorById[request.id];
-    if(saveError){
-      setPendingConfirmRequested(null);
-      setError('Não foi possível salvar a conferência: '+saveError);
-      return;
-    }
-    if(pendingFingerprints.current.get(request.id)!==request.fingerprint)return;
+    const outcome=pendingConfirmationState(request,draft?{
+      pendingId:draft.pendingId,
+      fingerprint:JSON.stringify(cleanPendingDraft(draft))
+    }:null,pendingFingerprints.current.get(request.id),pendingSaveErrorById[request.id]);
+    if(outcome==='waiting')return;
     setPendingConfirmRequested(null);
-    confirmDocument();
+    if(outcome==='changed'){
+      setError('A conferência mudou durante o salvamento. Confira a versão atual e confirme novamente.');
+    }else if(outcome==='failed'){
+      setError('Não foi possível salvar a conferência: '+pendingSaveErrorById[request.id]);
+    }else if(outcome==='ready'){
+      confirmDocument();
+    }
   },[pendingConfirmRequested,draft,pendingSaveErrorById]);
 
   function changeDraft(key, value) {
