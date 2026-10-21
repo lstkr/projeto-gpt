@@ -29,7 +29,15 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
-const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const PREVIEW_DEPLOY = process.env.ESTOQUE_DEPLOY_ENV === 'preview';
+// Fail closed if Preview uses the production project or lacks dedicated credentials.
+// The URL and key are public/publishable client configuration, never a service-role key.
+const PREVIEW_UNSAFE = PREVIEW_DEPLOY && (
+  !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL.includes('dpauqdihvhbbaellwjav')
+);
+const HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE && Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 function Icon({ type, size = 20 }) {
   const p = {
@@ -2605,6 +2613,15 @@ export default function Home() {
     }
   }
 
+  if (PREVIEW_UNSAFE) {
+    return <div className="auth-screen"><section className="auth-card" role="alert">
+      <h1>Ambiente de homologação bloqueado</h1>
+      <p>Esta prévia não está configurada para um banco de testes isolado.
+        Por segurança, ela não permite acesso ao estoque nem gravações locais.</p>
+      <p>Configure NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY
+        exclusivamente para Preview, usando outro projeto Supabase, e gere uma nova implantação.</p>
+    </section></div>;
+  }
   if (supabase && !accessLoaded) {
     return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
   }
