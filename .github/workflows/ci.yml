@@ -23,9 +23,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # No committed lockfile yet; move to npm ci after introducing one.
-      - name: Install dependencies
-        run: npm install
+      # package-lock.json is committed so CI mirrors the exact Vercel dependency tree.
+      - name: Install locked dependencies
+        run: npm ci
       # Unit tests must run outside the deployment environment:
       # Preview deliberately denies access to an unconfigured database (503),
       # while authentication contract tests exercise 401 with mocked RPCs.
