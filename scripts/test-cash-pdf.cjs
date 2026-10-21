@@ -1,6 +1,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {readFileSync}=require('node:fs');
+const path=require('node:path');
+const {pathToFileURL}=require('node:url');
 
 function fixture() {
   const text='Fechamento de Caixa - Caixa 003 - Operador TESTE - 10/10/2026';
@@ -32,11 +34,11 @@ test('malformed PDF rejects, then a subsequent valid PDF still loads',async()=>{
   await assert.rejects(extractCashPdfText(Buffer.from('%PDF-1.4 invalid')));
   assert.match(await extractCashPdfText(fixture()),/Operador TESTE/);
 });
-test('published browser worker is the exact installed version and loads',()=>{
+test('published browser worker is the exact installed version and loads',async()=>{
   require('./prepare-pdf-worker.cjs');
   const {version}=require('pdfjs-dist/package.json');
-  const worker=readFileSync('public/vendor/pdf.worker-'+version+'.min.js','utf8');
-  assert.equal(worker,readFileSync(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.js'),'utf8'));
+  const worker=readFileSync('public/vendor/pdf.worker-'+version+'.min.mjs','utf8');
+  assert.equal(worker,readFileSync(require.resolve('pdfjs-dist/legacy/build/pdf.worker.min.mjs'),'utf8'));
   const published=require('../public/vendor/pdf.worker-'+version+'.min.js');
   assert.equal(typeof published.WorkerMessageHandler.setup,'function');
 });
