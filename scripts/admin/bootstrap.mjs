@@ -30,7 +30,14 @@ try {
   if (target.protocol !== 'postgresql:' && target.protocol !== 'postgres:') throw new Error('Invalid database URL');
   if (target.hostname !== `db.${expectedProject}.supabase.co` &&
       !(target.hostname.endsWith('.pooler.supabase.com') && decodeURIComponent(target.username).endsWith(`.${expectedProject}`))) throw new Error('Project mismatch');
-  client = new pg.Client({ connectionString, ssl: { rejectUnauthorized: true }, connectionTimeoutMillis: 10000 });
+  // Parse explicitly: connection-string sslmode parameters must never override
+  // certificate verification or downgrade the protected connection.
+  client = new pg.Client({
+    host: target.hostname, port: Number(target.port || 5432),
+    database: decodeURIComponent(target.pathname.slice(1)),
+    user: decodeURIComponent(target.username), password: decodeURIComponent(target.password),
+    ssl: { rejectUnauthorized: true }, connectionTimeoutMillis: 10000
+  });
   connectionString = '';
   let password = await hidden('Provisional DBA password (hidden): ');
   let confirmation = await hidden('Repeat provisional password (hidden): ');
