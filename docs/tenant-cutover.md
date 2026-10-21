@@ -20,6 +20,8 @@ Após o cutover, o advisor de segurança sinaliza 27 funções RPC `SECURITY DEF
 
 O advisor também apontou `private.count_guard()` com `search_path` mutável. A migração `20261021233206_count_guard_search_path.sql` corrigiu o caminho para vazio quando a função existe. As quatro tabelas privadas marcadas como RLS sem policy não são expostas diretamente à Data API; o acesso ocorre pelas fachadas verificadas. Esses avisos devem ser reavaliados se a aplicação passar a usar Supabase Auth ou se o schema `private` for exposto.
 
+A política de Preview limita a autorização compartilhada à branch `feat/tenant-fiscal-purchases-20261021`. O acesso continua fechado enquanto `ESTOQUE_ALLOW_SHARED_DB_PREVIEW=true` não estiver configurada no ambiente Preview dessa branch; a produção não usa essa variável. A configuração Vercel não foi criada nesta rodada, então a homologação autenticada pela prévia ainda depende desse ajuste.
+
 ## Bootstrap protegido
 
 Não há senha nem hash provisionado na migração. `private.bootstrap_superadmin(username, password_hash)` é função privada sem privilégio API, destinada exclusivamente ao proprietário do banco em conexão TLS parametrizada. Aceita apenas o login solicitado e hash bcrypt com custo 12–15. Recusa sobrescrever qualquer conta existente ou criar um segundo DBA. O hash deve ser calculado fora de logs a partir de entrada protegida; não usar SQL Editor, comandos com argumentos contendo segredos, PR, issue ou logs como transporte. Confirmar configuração de registro de parâmetros antes de executar. A senha provisória serve apenas para entrar e trocar a senha: todas as demais operações são bloqueadas até a troca por 12–72 caracteres. Bcrypt limita senhas a 72 bytes; o cliente deve respeitar esse limite.
