@@ -1,0 +1,32 @@
+name: Temporary PDF.js v6 lockfile bootstrap
+# Runs only in the isolated security branch; remove from final PR.
+on:
+  push:
+    branches:
+      - fix/pdfjs-v6-security-20261021
+permissions:
+  contents: write
+jobs:
+  update-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'lstkr/projeto-gpt'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate package-lock.json
+        run: npm install --package-lock-only --ignore-scripts --no-fund --no-audit
+      - name: Validate lockfile installation
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Check ESM exports and installed worker artifact
+        run: |
+          node -e "const fs=require('node:fs');const p=require('pdfjs-dist/package.json');console.log('pdfjs version',p.version,'worker exists',fs.existsSync(require('node:path').join(process.cwd(),'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs')))"
+          node --input-type=module -e "import * as p from 'pdfjs-dist/legacy/build/pdf.mjs'; import * as w from 'pdfjs-dist/legacy/build/pdf.worker.mjs'; console.log('ESM',p.version,typeof p.getDocument,typeof w.WorkerMessageHandler?.setup)"
+      - name: Commit lockfile only
+        run: |
+          test "$GITHUB_REF_NAME" = "fix/pdfjs-v6-security-20261021"
+          git add package-lock.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "build: lock secure pdfjs-dist v6" 
+          git push origin HEAD:"$GITHUB_REF_NAME"
