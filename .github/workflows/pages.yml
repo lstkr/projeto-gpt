@@ -1,17 +1,18 @@
 name: Publish inventory preview
 
+# Optional legacy static preview. The application is deployed by Vercel.
+# Enable Pages in repository settings before explicitly running this workflow.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the legacy static preview to an already configured Pages site'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -19,6 +20,11 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -26,14 +32,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Configure GitHub Pages
+      - name: Configure existing GitHub Pages site
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
+      - name: Stage only the public static preview
+        run: |
+          mkdir -p _pages
+          cp docs/index.html _pages/index.html
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: _pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
