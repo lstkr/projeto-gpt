@@ -1,6 +1,8 @@
+import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
 // Optional fallback for QR decoding using pcelias-ctrl/nfc-e's published HTTP API.
 // Unlike its NFCE_SP extraction endpoint, the generic QR endpoint accepts RS QR URLs.
-// Receipt images are transmitted to a third party ONLY after the user opts in.
+// The current UI invokes this fallback automatically after local QR decoding fails.
+// The image crop can contain fiscal data: review the privacy notice before production use.
 const QR_DECODER_URL = process.env.NFCE_QR_DECODER_URL ||
   'https://nfc.kopilot.food/api/v1/qrcode/decode';
 
@@ -16,6 +18,7 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Método não permitido.' });
   }
+  if (!await requireInventorySession(req, res)) return;
   const input = typeof req.body?.image_base64 === 'string' ? req.body.image_base64 : '';
   const matches = input.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
   if (!matches || matches[2].length < 100 || matches[2].length > 1600000) {
