@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
+import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
+import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
@@ -28,7 +31,17 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
-const HAS_SUPABASE_CONFIG = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const PREVIEW_DEPLOY = process.env.ESTOQUE_DEPLOY_ENV === 'preview';
+// Fail closed unless Preview uses a separate database or explicitly allows
+// the existing one on this homologation branch. This is not an auth bypass.
+const PREVIEW_UNSAFE = PREVIEW_DEPLOY && previewDatabaseIsBlocked({
+  deploymentEnv: process.env.ESTOQUE_DEPLOY_ENV,
+  databaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  allowSharedDatabase: process.env.ESTOQUE_SHARED_DB_PREVIEW === 'true',
+  branch: process.env.ESTOQUE_PREVIEW_BRANCH
+});
+const HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE && Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 function Icon({ type, size = 20 }) {
   const p = {
@@ -666,7 +679,7 @@ function createQrFooterCrop(canvas, rotation = 0) {
   return out;
 }
 
-async function decodeQrViaExternalApi(canvas) {
+async function decodeQrViaExternalApi(canvas, sessionToken) {
   const crop = createQrFooterCrop(canvas);
   const image = crop.toDataURL('image/jpeg', 0.82);
   const controller = new AbortController();
@@ -674,7 +687,7 @@ async function decodeQrViaExternalApi(canvas) {
   try {
     const response = await fetch('/api/qr-externo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-estoque-session': sessionToken },
       body: JSON.stringify({ image_base64: image }),
       signal: controller.signal
     });
@@ -690,7 +703,7 @@ async function decodeQrViaExternalApi(canvas) {
   }
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = []) {
+async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -739,7 +752,7 @@ async function detectNfceQrCodes(canvases, rawCanvases = []) {
     // a fallback. Only the footer crop is transmitted, not the full note.
     if (!found.qrUrlPreserved) {
       try {
-        found = await decodeQrViaExternalApi(reference);
+        found = await decodeQrViaExternalApi(reference, sessionToken);
       } catch (error) {
         const warning = error?.message || 'Leitor QR complementar indisponível.';
         // Keep an offline recovery path when the external API times out.
@@ -837,7 +850,7 @@ function parseReceiptTotals(text) {
     const values = amountValues(line);
     if (!values.length) continue;
     if (/\bSUB[\s-]*TOTAL\b/.test(n)) totals.subtotal = values[0];
-    if (/\bDESCONTO\b/.test(n) && (summary || totals.discount === null)) totals.discount = values[0];
+    if (/\bDESCONTO\b/.test(n) && summary) totals.discount = values[0];
     if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
         !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n))
       totals.total = values[0];
@@ -859,6 +872,10 @@ function reconcileReceiptTotals(primaryText, alternateText, items) {
   const warnings = [];
   if (primary.total != null && alternate.total != null && Math.abs(primary.total - alternate.total) > 0.02)
     warnings.push('As duas leituras discordam sobre o total final.');
+  for (const [field, label] of [['subtotal', 'subtotal'], ['discount', 'desconto']]) {
+    if (primary[field] != null && alternate[field] != null && Math.abs(primary[field] - alternate[field]) > 0.02)
+      warnings.push('As duas leituras discordam sobre o ' + label + '.');
+  }
   if (Math.abs(itemSubtotal - subtotal) > 0.05) warnings.push('Soma das linhas diferente do subtotal fiscal.');
   if (Math.abs(expected - total) > 0.05) warnings.push('Subtotal menos desconto difere do total impresso.');
   if (itemDiscount > discount + 0.02) warnings.push('Descontos nas linhas maiores que o desconto total.');
@@ -943,12 +960,13 @@ function compareInvoiceItems(ocrItems, officialItems) {
       const officialName = normalizeReceiptName(official.name);
       if (code && officialCode && code !== officialCode) return null;
       const sameCode = Boolean(code && code === officialCode);
-      const sameName = name === officialName || (Math.min(name.length, officialName.length) >= 7 &&
-        (name.startsWith(officialName) || officialName.startsWith(name)));
+      const sameName = Boolean(name && officialName) && (name === officialName || (Math.min(name.length, officialName.length) >= 7 &&
+        (name.startsWith(officialName) || officialName.startsWith(name))));
       if (!sameCode && !sameName) return null;
       const totalDelta = Math.abs(receiptItemTotal(ocr) - receiptItemTotal(official));
       const qtyDelta = Math.abs(Number(ocr.quantity) - Number(official.quantity));
-      return { index, rank: (sameCode ? 100 : 0) + (sameName ? 30 : 0) -
+      return { index, sameName, rank: (sameCode ? 100 : 0) + (sameName ? 30 : 0) +
+        (normalizeReceiptUnit(ocr.unit) === normalizeReceiptUnit(official.unit) ? 10 : 0) -
         Math.min(70, totalDelta * 4) - Math.min(70, qtyDelta * 10) - Math.abs(ocrIndex - index) };
     }).filter(Boolean).sort((a, b) => b.rank - a.rank);
     const index = matches.length ? matches[0].index : -1;
@@ -957,6 +975,7 @@ function compareInvoiceItems(ocrItems, officialItems) {
     if (!official) return { ocr, official: null, ocrIndex,
       issues: ['Produto não encontrado na consulta.'], status: 'Item ausente na consulta' };
     const issues = [];
+    if (!matches[0].sameName) issues.push('Descrição diferente ou ausente');
     if (normalizeReceiptUnit(ocr.unit) !== normalizeReceiptUnit(official.unit)) issues.push('Unidade diferente');
     if (Math.abs(Number(ocr.quantity) - Number(official.quantity)) > 0.001) issues.push('Quantidade diferente');
     if (Math.abs(Number(ocr.unitPrice) - Number(official.unitPrice)) > 0.02) issues.push('Preço diferente');
@@ -1110,6 +1129,33 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [fiscalPermissions,setFiscalPermissions]=useState(null);
+  const [permissionUsers,setPermissionUsers]=useState([]);
+  const [permissionBusy,setPermissionBusy]=useState(false);
+  const [permissionError,setPermissionError]=useState('');
+  const fiscalKeys=[
+    ['fiscal.pending.read','Notas fiscais','Visualizar notas pendentes'],
+    ['fiscal.pending.create','Notas fiscais','Importar nota'],
+    ['fiscal.pending.review','Notas fiscais','Conferir e lançar nota'],
+    ['fiscal.pending.cancel','Notas fiscais','Cancelar nota pendente (somente gestor)']
+  ];
+  const canFiscal=(key)=>fiscalPermissions?.[key]===true;
+  async function changeFiscalPermission(user,key,allowed) {
+    if(!supabase||!accessCode||currentUser?.role!=='admin'||permissionBusy)return;
+    setPermissionBusy(true);setPermissionError('');
+    try {
+      const {data,error}=await supabase.rpc('inventory_permission_set',{
+        p_token:accessCode,p_user_id:user.id,p_key:key,p_allowed:allowed
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Permissão não foi salva.');
+      const result=await supabase.rpc('inventory_permissions_list',{p_token:accessCode});
+      if(result.error||!result.data)throw new Error('Salvo, mas não foi possível atualizar a lista.');
+      setFiscalPermissions(result.data.self||{});
+      setPermissionUsers(result.data.users||[]);
+      setToast('Permissão atualizada e registrada na auditoria.');
+    }catch(e){setPermissionError(e?.message||'Erro ao salvar permissão.');}
+    finally{setPermissionBusy(false);}
+  }
   const [menuOpen,setMenuOpen]=useState(false);
   const [navCollapsed,setNavCollapsed]=useState(false);
   const [accountOpen,setAccountOpen]=useState(false);
@@ -1165,7 +1211,15 @@ export default function Home() {
   const [editing, setEditing] = useState(null);
   const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
-  const [draft, setDraft] = useState(null);
+  const [draft, setDraftState] = useState(null);
+  const setDraft = (updater) => setDraftState((previous) =>
+    normalizeFiscalDraftReview(
+      typeof updater === 'function' ? updater(previous) : updater,
+      previous,
+      () => typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID() : 'line-' + uid()
+    )
+  );
   const [manualMode, setManualMode] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [manualChosenId, setManualChosenId] = useState('');
@@ -1196,6 +1250,20 @@ export default function Home() {
   const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
   const uploadRef = useRef(null);
 
+  // Reconcile the accessibility changes from PR #24 without changing fiscal
+  // business rules. Closing is blocked across all controls during a delete.
+  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+    (modal === 'product' || modal === 'adjust' ? modal : '');
+  useAccessibleDialog(activeDialog, () => {
+    if (mergePair) {
+      if (!mergeBusy) setMergePair(null);
+    } else if (detailDoc) {
+      if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
+    } else {
+      setModal('');
+    }
+  });
+
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
     const { data, error: loadError } = await supabase.rpc('inventory_get', { p_session_token: token });
@@ -1225,6 +1293,15 @@ export default function Home() {
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
     setCurrentUser(state.user || null);
+    const permissionsResult=await supabase.rpc('inventory_permissions_list',{p_token:token});
+    if(!permissionsResult.error && permissionsResult.data?.self) {
+      setFiscalPermissions(permissionsResult.data.self);
+      setPermissionUsers(permissionsResult.data.users||[]);
+    } else {
+      // Fail closed until the access-permissions migration is installed.
+      setFiscalPermissions({});
+      setPermissionUsers([]);
+    }
     setAccessCode(token);
     setAccessGranted(true);
     setDataReady(true);
@@ -1391,7 +1468,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1468,14 +1545,14 @@ export default function Home() {
     if (existingByName && normalizeReceiptUnit(existingByName.unit) !== normalizeReceiptUnit(it.unit))
       issues.push('Unidade do produto já cadastrado: ' + existingByName.unit + '. Confira a conversão.');
     return { issues: [...new Set(issues)], requiresReview: issues.length > 0,
-      done: issues.length === 0 || draft.reviewedItems?.[index] === true };
+      done: issues.length === 0 || draft.reviewedItems?.[it.lineId] === true };
   });
   const totalsRequireReview = Boolean(draft && (
     Boolean(draft.manualInvoice) || totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const readyForFinalReview = Boolean(draft?.items?.length && !officialMissing &&
+  const readyForFinalReview = Boolean(draft?.items?.length &&
     receiptReviewRows.every((row) => row.done) &&
     (!totalsRequireReview || draft.totalsReviewed));
   const cashMonthly=useMemo(()=>{
@@ -1530,13 +1607,42 @@ export default function Home() {
   }
   function selectManualInvoiceProduct(index, id) {
     const product=products.find((p)=>p.id===id);
-    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[index]:false},
+    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[d.items[index]?.lineId]:false},
       finalReviewed:false,totalsReviewed:false,
       items:d.items.map((it,i)=>i===index && product
         ? {...it,productId:product.id,name:product.name,code:product.sku,
            unit:product.unit,unitPrice:Number(product.cost)||0,
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
            readingWarning:''} : it)}));
+  }
+  async function readCashPdfWithOcr(file){
+    // Shared receipt OCR engine: Tesseract, also used for invoice photos.
+    // PDF.js only renders the page. It does not interpret the register totals.
+    const pdfjs=await import('pdfjs-dist/legacy/build/pdf');
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    const pdf=await pdfjs.getDocument({data:bytes,disableWorker:true,stopAtErrors:false}).promise;
+    let worker;
+    try{
+      const {createWorker}=await import('tesseract.js');
+      worker=await createWorker('por');
+      await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+      const texts=[];
+      for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,5);pageNumber++){
+        const page=await pdf.getPage(pageNumber);
+        const viewport=page.getViewport({scale:2.5});
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+        try{
+          await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+          const recognition=await worker.recognize(canvas);
+          texts.push(recognition.data.text||'');
+        }finally{canvas.width=0;canvas.height=0;page.cleanup();}
+      }
+      return texts.join('\n');
+    }finally{
+      if(worker)await worker.terminate().catch(()=>{});
+      await pdf.destroy();
+    }
   }
   async function importCashReport(event){
     const file=event.target.files?.[0];
@@ -1556,8 +1662,13 @@ export default function Home() {
           headers:{'content-type':'application/json','x-estoque-session':accessCode},
           body:JSON.stringify({base64:btoa(binary)})});
         const parsed=await response.json();
-        if(!response.ok)throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
-        text=parsed.text;
+        if(response.ok){text=parsed.text;}
+        else if(response.status===422){
+          try{text=await readCashPdfWithOcr(file);}
+          catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
+            '. Leitura OCR alternativa também falhou: '+ocrError.message+
+            '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
+        }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
       }else if(file.type.startsWith('image/')||/\.(jpe?g|png|webp)$/i.test(file.name)){
         const {createWorker}=await import('tesseract.js');
         const worker=await createWorker('por');
@@ -1793,7 +1904,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
           if (!receiptOcrWorkerRef.current) {
@@ -1969,6 +2080,26 @@ export default function Home() {
     pendingRevisions.current.set(data.id,data.revision);
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
+  async function cancelPendingReceipt(row) {
+    if (currentUser?.role !== 'admin' || !canFiscal('fiscal.pending.cancel') || !supabase || !accessCode) {
+      setError('Somente o Gestor pode cancelar notas pendentes.'); return;
+    }
+    if (!window.confirm('Cancelar definitivamente a nota "' +
+      (row.draft?.supplier || row.fileName) +
+      '"? Ela sairá da lista de conferência sem movimentar o estoque.')) return;
+    try {
+      const {data,error:cancelError}=await supabase.rpc('pending_receipt_cancel',{
+        p_token:accessCode,p_id:row.id
+      });
+      if(cancelError||!data?.ok)throw new Error(cancelError?.message||'Falha ao cancelar.');
+      pendingFingerprints.current.delete(row.id);
+      pendingRevisions.current.delete(row.id);
+      setPendingReceipts((rows)=>rows.filter((item)=>item.id!==row.id));
+      setDraft((current)=>current?.pendingId===row.id?null:current);
+      setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
+      setToast('Nota cancelada pelo Gestor.');
+    }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
+  }
   async function openPendingReceipt(row){
     if(draft && draft.pendingId!==row.id &&
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
@@ -2106,7 +2237,7 @@ export default function Home() {
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
-      reviewedItems: { ...(d.reviewedItems || {}), [index]: false },
+      reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
       finalReviewed: false, totalsReviewed: false,
       officialVerified: false,
       items: d.items.map((it, i) => {
@@ -2153,12 +2284,19 @@ export default function Home() {
     (async () => {
       try {
         const response = await fetch('/api/consulta-nfce', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-estoque-session': accessCode },
           body: JSON.stringify({ url }), signal: controller.signal
         });
         const data = await response.json().catch(() => ({}));
         if (controller.signal.aborted) return;
-        if (!response.ok) throw new Error(data.error || 'Consulta oficial indisponível.');
+        if (!response.ok) {
+          const fallback = response.status === 401 ? 'Sessão expirada. Faça login novamente para consultar a SEFAZ.' :
+            response.status === 403 ? 'Seu usuário não tem permissão para esta consulta.' :
+            response.status === 429 ? 'Muitas consultas em pouco tempo. Tente novamente em instantes.' :
+            response.status === 503 ? 'Autenticação temporariamente indisponível. Confira a nota manualmente.' :
+            'Consulta oficial indisponível. Confira a nota manualmente.';
+          throw new Error(data.error || fallback);
+        }
         if (data.source !== 'SVRS' || data.accessKey !== expectedKey)
           throw new Error('A resposta fiscal não corresponde à chave deste cupom.');
         const officialItems = Array.isArray(data.items) ? data.items : [];
@@ -2168,7 +2306,15 @@ export default function Home() {
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
-              officialStatus: 'Consulta automática concluída. Compare as linhas antes de lançar.' } : d);
+              officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
+              items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
+              officialApplied: true, finalReviewed:false, officialVerified:true,
+              subtotal: totals.subtotal ?? d.subtotal,
+              discount: totals.discount ?? d.discount,
+              total: totals.total ?? d.total,
+              totalsSource:'SEFAZ (consulta automática)',
+              source:String(d.source||'').includes('consulta pública')?d.source:String(d.source||'')+' + consulta pública'
+            } : d);
       } catch (err) {
         if (controller.signal.aborted) return;
         setDraft((d) => d && d.consultaUrl === url
@@ -2215,7 +2361,7 @@ export default function Home() {
         const match = compareInvoiceItems(d.items, d.officialItems).find((r) =>
           r.official === item && r.ocr && normalizeProductCode(r.ocr.code) === normalizeProductCode(item.code) &&
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
-        return { ...item, itemDiscount: Number(match?.ocr?.itemDiscount || 0) };
+        return { ...item, itemDiscount: Number(item.itemDiscount ?? match?.ocr?.itemDiscount ?? 0) };
       }),
       reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
       officialApplied: true,
@@ -2236,10 +2382,6 @@ export default function Home() {
       setError(pendingSaveError||'Aguarde a conferência ser salva no servidor antes de lançar.');
       return;
     }
-    if (officialMissing) {
-      setError('Há ' + officialMissing + ' item(ns) da consulta ainda ausentes. Inclua-os ou use os itens oficiais antes de lançar.');
-      return;
-    }
     if (receiptReviewRows.some((row) => !row.done)) {
       setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
       return;
@@ -2248,7 +2390,7 @@ export default function Home() {
       setError('Confira e marque os totais destacados antes de registrar a nota.');
       return;
     }
-    if (draftTotal < -0.01 || totalsFinalMismatch) {setError('O total líquido não confere com o documento. Corrija os valores antes de lançar.');return;}
+    if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
     if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
       setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
     }
@@ -2298,6 +2440,18 @@ export default function Home() {
       setError('Todas as linhas devem conter produto, quantidade, unidade e preço válidos.');
       return;
     }
+    const financialWarnings = [
+      totalsItemsMismatch && 'A soma dos itens difere do subtotal.',
+      totalsFinalMismatch && 'O total calculado difere do valor capturado.',
+      officialTotalsMismatch && 'Os totais diferem da consulta oficial.',
+      officialMissing > 0 && 'Há itens da consulta pública não correspondentes à conferência.',
+      discountUnattributed && 'Há desconto distribuído entre os itens.'
+    ].filter(Boolean);
+    if (financialWarnings.length && !window.confirm(
+      'ATENÇÃO — divergências na nota:\\n\\n' + financialWarnings.join('\\n') +
+      '\\n\\nConferido por: ' + draft.checkedBy +
+      '\\nDeseja lançar a nota com os valores revisados manualmente?'
+    )) return;
     // The unique fiscal access key is the primary deduplication key.
     const duplicate = documents.some((d) =>
       (validateNfceAccessKey(d.accessKey) && d.accessKey === draft.accessKey) ||
@@ -2477,6 +2631,16 @@ export default function Home() {
     }
   }
 
+  if (PREVIEW_UNSAFE) {
+    return <div className="auth-screen"><section className="auth-card" role="alert">
+      <h1>Ambiente de homologação bloqueado</h1>
+      <p>Esta prévia não possui autorização explícita para acessar o banco configurado.
+        Por segurança, o acesso ao estoque está bloqueado.</p>
+      <p>Para homologar com o banco existente, configure as variáveis Preview na Vercel,
+        inclusive a liberação controlada da branch de integração, e gere uma nova implantação.
+        Os logins e permissões continuam sendo verificados pelo banco.</p>
+    </section></div>;
+  }
   if (supabase && !accessLoaded) {
     return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
   }
@@ -2506,14 +2670,15 @@ export default function Home() {
       <button className="sidebar-close" type="button" aria-label="Fechar menu" onClick={()=>setMenuOpen(false)}>×</button>
       <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>Meu estoque</b><small>Ambiente de demonstração</small></span><Icon type="down" size={15}/></div>
       <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation" aria-label="Menu principal" onClick={e=>{if(e.target.closest(".nav-link"))setMenuOpen(false);}}>
-        <button className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
-        <button className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
-        {currentUser?.role === 'admin' && <button className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
-        <button className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>
-        <button className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
-        {currentUser?.role === 'admin' && <button className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
-        {currentUser?.role === 'admin' && <button className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
+        <button aria-label="Estoque" aria-current={view === 'stock' ? 'page' : undefined} className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
+        <button aria-label="Contagem de estoque" aria-current={view === 'count' ? 'page' : undefined} className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
+        {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
+        {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
+        <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
+        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
+        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Gestor · Permissões" aria-current={view === 'permissions' ? 'page' : undefined} className={view === 'permissions' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('permissions')}><Icon type="check"/><span>Gestor · Permissões</span></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
     </aside>
@@ -2526,7 +2691,7 @@ export default function Home() {
         </div>
         <div className="top-right">
           <span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span>
-          <button className="bell" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
+          <button className="bell" aria-label="Ver itens com estoque baixo" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
           <div className="account-menu">
             <button type="button" className="account-trigger" aria-haspopup="menu" aria-expanded={accountOpen} onClick={()=>setAccountOpen(o=>!o)}>
               <span className="user-avatar">{currentUser?.role==='admin'?'GE':'EQ'}</span>
@@ -2595,9 +2760,9 @@ export default function Home() {
             <article className="stat"><div className="stat-top"><span>Quantidade total</span><i className="stat-symbol blue"><Icon type="arrows" size={19}/></i></div><strong className="stat-value">{qty(units)}</strong><div className="stat-foot subtle">Soma das quantidades cadastradas</div></article>
           </section>
           {low.length > 0 && <section className="alert-strip"><span className="alert-icon"><Icon type="alert" size={19}/></span><div><b>{low.length} {low.length === 1 ? 'produto precisa' : 'produtos precisam'} de reposição</b><p>{low.slice(0, 3).map((p) => p.name).join(', ')}{low.length > 3 ? ' e mais ' + (low.length - 3) : ''} estão no mínimo ou abaixo dele.</p></div><button onClick={() => setFilter('Estoque baixo')}>Ver produtos <Icon type="chevron" size={15}/></button></section>}
-          <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}}><Icon type="sliders" size={16}/>Limpar filtros</button></div>
+          <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}}><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
-            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button title="Ajustar estoque" onClick={() => openAdjustment(p)}><Icon type="arrows" size={16}/></button><button title="Editar produto" onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'}><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
+            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)}><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'}><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
             <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
           <section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')}>Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)}><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
@@ -2644,10 +2809,25 @@ export default function Home() {
           {supplierGroups.length > 0 && !supplierGroups.some((s)=>norm(s.name+' '+s.cnpj).includes(norm(supplierFilter))) && <div className="empty-docs">Nenhum fornecedor encontrado para esta busca.</div>}
         </section>}
 
-        {view === 'documents' && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button><button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button></div></section>
+        {view === 'permissions' && currentUser?.role==='admin' && <section className="panel" style={{padding:20}}>
+          <h2>Permissões por usuário</h2>
+          <p>As operações fiscais são verificadas no banco a cada chamada. Cancelar nota continua exclusivo de contas gestoras.</p>
+          {permissionError&&<div className="notice" role="alert">{permissionError}</div>}
+          {!permissionUsers.length&&<div className="notice" role="alert">Nenhum usuário carregado. Verifique se a migração db/access-permissions.sql foi aplicada antes de db/pending-receipts.sql.</div>}
+          {permissionUsers.map(user=><div key={user.id} style={{borderTop:'1px solid #ddd',padding:'14px 0'}}>
+            <b>{user.name}</b> <small>({user.username} · {user.role==='admin'?'Gestor':'Funcionário'}{user.active?'':' · Inativo'})</small>
+            {fiscalKeys.map(([key,module,label])=><label key={key} style={{display:'flex',alignItems:'center',gap:10,marginTop:10}}>
+              <input type="checkbox" checked={user.permissions?.[key]===true}
+                disabled={permissionBusy||!user.active||(key==='fiscal.pending.cancel'&&user.role!=='admin')}
+                onChange={e=>void changeFiscalPermission(user,key,e.target.checked)}/>
+              <span><small>{module} / </small>{label}</span>
+            </label>)}
+          </div>)}
+        </section>}
+        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            Leitura automática de QR: o sistema usa leitores locais e, quando necessário, envia somente o recorte inferior do cupom à API externa. A conferência fiscal permanece na SEFAZ, com revisão antes de lançar.
+            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
           </div>
           <section className="panel pending-documents-panel">
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
@@ -2657,7 +2837,9 @@ export default function Home() {
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              <button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
+                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
           {busy && uploadBatchProgress && <div className="notice" role="status">Processando arquivo {uploadBatchProgress.current} de {uploadBatchProgress.total}: <b>{uploadBatchProgress.fileName}</b>. A conferência começa após terminar todos os arquivos.</div>}
@@ -2708,7 +2890,6 @@ export default function Home() {
           </section>}
           {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
-
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
               <b>Chave da NFC-e não validada.</b> {draft.keyWarning}
@@ -2732,24 +2913,24 @@ export default function Home() {
               </div>
             </div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
-              <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os dados não são substituídos sem sua revisão.</p></div></div>
+              <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os itens oficiais são adotados por padrão e exigem conferência antes do lançamento.</p></div></div>
               <div className="notice" role="status" style={{marginTop:10}}>{draft.officialStatus || 'Aguardando consulta automática…'}</div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
                 <button type="button" className="btn primary" onClick={() => void consultOfficialAutomatically(draft.consultaUrl, draft.accessKey)}>Consultar e comparar novamente</button>
                 <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary" style={{textDecoration:'none'}}>Abrir consulta oficial ↗</a>
                 {draft.officialItems?.length > 0 && <button type="button" className="btn secondary" onClick={applyOfficialItems}>Usar itens da consulta pública</button>}
               </div>
-              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Revise as diferenças antes de usar os dados oficiais.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
+              {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-              <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.manualInvoice && <label><span>CNPJ do fornecedor (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/\D/g,'').slice(0,14))} placeholder="14 dígitos"/></label>}<label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.manualInvoice && <label><span>CNPJ do fornecedor (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/\D/g,'').slice(0,14))} placeholder="14 dígitos"/></label>}<label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <b>Conferência do encarregado</b> — campos em amarelo precisam ser confrontados com a nota antes do lançamento.
-              {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Use os itens oficiais ou inclua-os manualmente.</span>}
+              {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Revise-os: o lançamento exigirá confirmação adicional.</span>}
             </div>
             <div className="table-wrap review-table">
               <table>
@@ -2761,7 +2942,7 @@ export default function Home() {
                     borderColor: attention && review.issues.some((issue) => issue.toLowerCase().includes(keyword)) ? '#c58a24' : undefined,
                     background: attention ? '#fffbeb' : undefined
                   });
-                  return <tr key={i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
+                  return <tr key={it.lineId || i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
                     <td>{draft.manualInvoice ? <div className="manual-invoice-product">
                       <input className="inline-input name-field" aria-label={'Buscar produto da linha '+(i+1)} value={it.search ?? ''} placeholder="Buscar produto por nome ou código"
                         onChange={(e)=>changeItem(i,'search',e.target.value)}/>
@@ -2816,15 +2997,15 @@ export default function Home() {
                     <td className="review-check-cell">
                       {review.requiresReview ? <div className="review-check-row">
                         <label className="review-check-label">
-                          <input type="checkbox" checked={Boolean(draft.reviewedItems?.[i])}
-                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
+                          <input type="checkbox" checked={Boolean(draft.reviewedItems?.[it.lineId])}
+                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [it.lineId]: e.target.checked } }))}/>
                           <span>Conferido pelo encarregado</span>
                         </label>
                         <ReviewIssuePopover issues={review.issues} productName={it.name} index={i} reviewed={review.done}/>
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
                     </td>
-                    <td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({
-                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: {},
+                    <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
+                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
                       totalsReviewed: false, finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
@@ -2865,10 +3046,14 @@ export default function Home() {
             <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
-          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR é executado no navegador e o documento original não é salvo no histórico. Ao ativar a opção de QR externo, um recorte da imagem é enviado ao servidor do Estoque+ e ao serviço de leitura de terceiros. Sem essa opção, a leitura permanece local.</span></div>
+          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
         </>}
 
         {view === 'cash' && <>
+          {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
+            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+          </section>}
           <section className="panel cash-summary">
             <div className="panel-head"><div><h2>Faturamento do mês</h2><p>O total de vendas exclui sangrias e suprimentos. As modalidades seguem o relatório de caixa enviado.</p></div>
               <label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>setCashMonth(e.target.value)}/></label>
@@ -2886,10 +3071,6 @@ export default function Home() {
               </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
             </div>
           </section>
-          {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
-            <button className="btn primary" type="button" onClick={()=>setCashEntryMode('choose')}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
-            {cashError&&<div className="error" role="alert">{cashError}</div>}
-          </section>}
           {cashEntryMode === 'choose' && <section className="panel cash-entry cash-choice-panel">
             <div className="panel-head"><div><h2>Registrar novo fechamento</h2><p>Como deseja preencher os dados?</p></div><button className="btn secondary" type="button" onClick={()=>setCashEntryMode('')}>Cancelar</button></div>
             <div className="cash-choice-options">
@@ -2949,10 +3130,10 @@ export default function Home() {
       </div>
     </main>
 
-    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2>{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label><label className="field"><span>Fornecedor habitual (opcional)</span><input list="estq-known-suppliers" value={productForm.preferredSupplier || ''} onChange={(e) => setProductForm({ ...productForm, preferredSupplier: e.target.value })} placeholder="Ex.: Atacadista Centro"/><datalist id="estq-known-suppliers">{knownSuppliers.map((name) => <option key={name} value={name}/>)}</datalist><small>Se não escolher, usamos o fornecedor mais frequente das notas fiscais.</small></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
+    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2 id="product-dialog-title">{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" aria-label="Fechar cadastro de produto" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label><label className="field"><span>Fornecedor habitual (opcional)</span><input list="estq-known-suppliers" value={productForm.preferredSupplier || ''} onChange={(e) => setProductForm({ ...productForm, preferredSupplier: e.target.value })} placeholder="Ex.: Atacadista Centro"/><datalist id="estq-known-suppliers">{knownSuppliers.map((name) => <option key={name} value={name}/>)}</datalist><small>Se não escolher, usamos o fornecedor mais frequente das notas fiscais.</small></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
     {mergePair && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !mergeBusy) setMergePair(null); }}>
-      <section className="modal duplicate-merge-modal" role="dialog" aria-modal="true" aria-label="Consolidar cadastros duplicados">
-        <div className="modal-heading"><div><div className="eyebrow">AÇÃO EXCLUSIVA DO GESTOR</div><h2>Consolidar produtos</h2><p>Escolha o cadastro principal e confira as quantidades.</p></div><button className="close-btn" disabled={mergeBusy} onClick={() => setMergePair(null)}><Icon type="close"/></button></div>
+      <section className="modal duplicate-merge-modal" role="dialog" aria-modal="true" aria-labelledby="merge-dialog-title">
+        <div className="modal-heading"><div><div className="eyebrow">AÇÃO EXCLUSIVA DO GESTOR</div><h2 id="merge-dialog-title">Consolidar produtos</h2><p>Escolha o cadastro principal e confira as quantidades.</p></div><button type="button" className="close-btn" aria-label="Fechar consolidação de produtos" disabled={mergeBusy} onClick={() => setMergePair(null)}><Icon type="close"/></button></div>
         <div className="duplicate-merge-body">
           <div className="duplicate-guidance">⚠ Esta operação remove o cadastro secundário e atualiza os vínculos de movimentações e notas para o produto principal. O histórico das contagens antigas é mantido como registro original.</div>
           {[mergePair.left, mergePair.right].map((p) => <label key={p.id} className="duplicate-keep-choice"><input type="radio" name="mergeKeep" value={p.id} checked={mergeKeepId === p.id} onChange={() => setMergeKeepId(p.id)} disabled={mergeBusy}/><span><b>{p.name}</b><small>Código {p.sku} · {qty(p.stock)} {p.unit} · custo {money(p.cost)}</small><small>{mergeKeepId === p.id ? 'Cadastro que permanecerá visível no estoque' : 'Cadastro que será removido após a consolidação'}</small></span></label>)}
@@ -2963,8 +3144,8 @@ export default function Home() {
         <div className="modal-actions"><button className="btn secondary" type="button" disabled={mergeBusy} onClick={() => setMergePair(null)}>Cancelar</button><button className="btn primary" type="button" disabled={!mergeAcknowledged || mergeBusy || !mergePair.sameUnit} onClick={() => void confirmProductMerge()}>{mergeBusy ? 'Consolidando…' : 'Confirmar consolidação'}</button></div>
       </section>
     </div>}
-    {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2>Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
-    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetailDoc(null); }}><section className="modal detail-modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2>{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" onClick={() => setDetailDoc(null)}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
-    {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
+    {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
+    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }

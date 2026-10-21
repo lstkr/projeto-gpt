@@ -4,22 +4,40 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
+      # No committed lockfile yet; move to npm ci after introducing one.
       - name: Install dependencies
         run: npm install
-      - name: Build Next.js app
-        run: npm run build
+      # Unit tests must run outside the deployment environment:
+      # Preview deliberately denies access to an unconfigured database (503),
+      # while authentication contract tests exercise 401 with mocked RPCs.
+      - name: Unit and regression tests (no deployment environment)
+        run: npm test
+      # Simulate Vercel's Preview environment for pull requests, including
+      # build-time ESTOQUE_DEPLOY_ENV in next.config.js.
+      # The preview must remain fail-closed until an isolated database is set.
+      - name: Build Next.js app (Vercel environment parity)
+        env:
+          VERCEL: '1'
+          VERCEL_ENV: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+        run: |
+          echo "Node $(node --version); npm $(npm --version); VERCEL_ENV=${VERCEL_ENV}"
+          npm run build

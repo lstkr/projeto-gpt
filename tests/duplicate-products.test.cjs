@@ -141,3 +141,17 @@ test('um conflito de codigo com texto sem sentido aparece para revisao, nao para
   assert.equal(match.confidence,'revisar');
   assert.ok(match.reasons.some(x => x.includes('OCR')));
 });
+
+test('lista por confiança antes de semelhança tanto para candidato quanto para catálogo', async () => {
+  const { findDuplicatesForCandidate, findPotentialDuplicates } = await utils;
+  const review = prod('review', 'Café', '99999', 'kg');
+  const high = prod('high', 'Café', '00123', 'un');
+  const candidate = prod('candidate', 'CAFÉ', '123', 'un');
+  const suggestions = findDuplicatesForCandidate(candidate, [review, high]);
+  assert.equal(suggestions.length, 2);
+  assert.deepEqual(suggestions.map((pair) => pair.left.id), ['high', 'review']);
+  assert.deepEqual(suggestions.map((pair) => pair.confidence), ['alta', 'revisar']);
+  const catalogPairs = findPotentialDuplicates([review, high, candidate]);
+  assert.equal(catalogPairs[0].confidence, 'alta');
+  assert.ok(catalogPairs.slice(1).every((pair) => pair.confidence === 'revisar'));
+});

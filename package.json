@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm test && next build",
+    "build": "next build",
     "start": "next start",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "verify": "npm test && npm run build"
   },
   "dependencies": {
     "next": "^15.5.6",
@@ -17,9 +18,9 @@
     "jsqr": "1.4.0",
     "@zxing/library": "0.21.3",
     "cheerio": "1.0.0",
-    "pdf-parse": "^1.1.1"
+    "pdfjs-dist": "3.11.174"
   },
   "engines": {
-    "node": ">=20.9.0"
+    "node": "22.x"
   }
 }

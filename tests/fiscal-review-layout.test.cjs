@@ -4,8 +4,13 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const view = readFileSync(join(__dirname, '../pages/index.js'), 'utf8');
-const documents = view.slice(view.indexOf("{view === 'documents' && <>"));
-const review = documents.slice(documents.indexOf('{draft && <section className="panel review-panel">'));
+// The fiscal module may have a server-backed permission guard before the fragment.
+const start = view.indexOf("{view === 'documents' &&");
+assert.ok(start >= 0, 'documents module must be rendered');
+const documents = view.slice(start);
+const reviewStart = documents.indexOf('{draft && <section className="panel review-panel">');
+assert.ok(reviewStart >= 0, 'fiscal review panel must be present');
+const review = documents.slice(reviewStart);
 
 test('importação de notas aparece antes da fila de conferência', () => {
   const importArea = documents.indexOf('Da nota fiscal para o estoque');
