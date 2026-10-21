@@ -1618,8 +1618,8 @@ export default function Home() {
   async function readCashPdfWithOcr(file){
     // Shared receipt OCR engine: Tesseract, also used for invoice photos.
     // PDF.js only renders the page. It does not interpret the register totals.
-    const pdfjs=await import('pdfjs-dist/legacy/build/pdf');
-    pdfjs.GlobalWorkerOptions.workerSrc=`/vendor/pdf.worker-${pdfjs.version}.min.js`;
+    const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc=`/vendor/pdf.worker-${pdfjs.version}.min.mjs`;
     const bytes=new Uint8Array(await file.arrayBuffer());
     const task=pdfjs.getDocument({data:bytes,stopAtErrors:false,isEvalSupported:false});
     let worker;
