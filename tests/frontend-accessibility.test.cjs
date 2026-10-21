@@ -58,3 +58,11 @@ test('critical icon-only product actions and notification close carry accessible
   assert.match(view, /aria-label=\{'Remover ' \+ \(it\.name \|\| 'item'\) \+ ' da nota'\}/);
   assert.match(view, /aria-label="Dispensar notificação"/);
 });
+
+test('invoice details cannot close through Escape, backdrop, X or footer during deletion', () => {
+  assert.match(view, /useAccessibleDialog\(activeDialog,\s*\(\) => \{/);
+  assert.match(view, /else if \(detailDoc\) \{\s*if \(!deletingDocId\)/);
+  assert.match(view, /e\.target === e\.currentTarget && !deletingDocId/);
+  assert.match(view, /aria-label="Fechar detalhes do documento" disabled=\{Boolean\(deletingDocId\)\}/);
+  assert.match(view, /disabled=\{Boolean\(deletingDocId\)\} onClick=\{\(\) => \{setDetailDoc\(null\);setDeleteError\(''\);\}\}>Fechar detalhes/);
+});
