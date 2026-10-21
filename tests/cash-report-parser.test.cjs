@@ -59,3 +59,66 @@ test('ignora valores duplicados na seção caixa digital',async()=>{
  const p=parseCashReport(fixture.replace('CARTAO CREDITO           R$ 130,00         R$ 0,00','CARTAO CREDITO           R$ 999,00         R$ 0,00'));
  assert.equal(p.cartaoCredito,'130.00');
 });
+
+
+test('PDF real: valores antes das modalidades NFC-e, PIX e dinheiro de vendas',async()=>{
+ const {parseCashReport}=await parser;
+ const {cashTotals}=await import('../lib/cash-closing.mjs');
+ const extracted=`Caixa do dia: 21/10/2026
+Caixa Nº: 003
+Operador: TESTE
+NFC-e
+R$ 462,50 (+)CARTAO CREDITO
+R$ 267,00 (+)CARTAO DEBITO
+R$ 292,00 (+)DEBITO
+R$ 253,00 (+)DINHEIRO
+R$ 401,00 (+)PIX
+(=)Total R$ 1.675,50
+(=)Total em Cartão/POS R$ 729,50
+Movimentações Manuais
+(+)DINHEIRO R$ 120,00
+Motivo: SUPRIMENTO - TROCO
+(-)DINHEIRO R$ 100,00
+Motivo: SANGRIA - RETIRADA
+Caixa Digital
+CARTAO CREDITO R$ 999,00 R$ 0,00
+Caixa Físico`;
+ const result=parseCashReport(extracted);
+ assert.equal(result.cartaoCredito,'462.50');
+ assert.equal(result.cartaoDebito,'267.00');
+ assert.equal(result.credito,'0');
+ assert.equal(result.debito,'292.00');
+ assert.equal(result.dinheiroVendas,'253.00');
+ assert.equal(result.outras,'401.00'); // PIX agrupado em Outras até haver campo dedicado.
+ assert.equal(result.reportedTotal,1675.50);
+ assert.equal(result.reportedPos,729.50);
+ assert.equal(result.movements.length,2);
+ assert.deepEqual(result.movements.map(x=>x.type),['suprimento','sangria']);
+ assert.equal(cashTotals(result).revenue,1675.50);
+ assert.equal(cashTotals(result).pos,729.50);
+ assert.equal(cashTotals(result).cashExpected,273);
+ assert.ok(result.importWarnings.some(x=>x.includes('PIX')));
+ assert.ok(!result.importWarnings.some(x=>x.includes('não confere')));
+});
+test('PIX e Outras coexistentes devem somar e não sobrescrever valores',async()=>{
+ const {parseCashReport}=await parser;
+ const r=parseCashReport(`NFC-e
+R$ 401,00 (+)PIX
+(+)OUTRAS R$ 75,00
+(=)Total R$ 476,00
+Caixa Digital`);
+ assert.equal(r.outras,'476.00');
+ assert.ok(!r.importWarnings.some(x=>x.includes('não confere')));
+});
+test('não duplicar faturamento pela tabela do caixa digital',async()=>{
+ const {parseCashReport}=await parser;
+ const r=parseCashReport(`NFC-e
+R$ 12,00 (+)DINHEIRO
+(=)Total R$ 12,00
+Caixa Digital
+R$ 999,00 (+)DINHEIRO
+R$ 400,00 (+)PIX
+Caixa Físico`);
+ assert.equal(r.dinheiroVendas,'12.00');
+ assert.equal(r.outras,'0');
+});
