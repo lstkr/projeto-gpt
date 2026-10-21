@@ -74,7 +74,8 @@ begin
  raise exception 'Dados inválidos' using errcode='22023'; end if;
  select * into existing from public.pending_receipts where id=p_id for update;
  if not found or existing.state<>'pending' then raise exception 'Nota não está mais pendente' using errcode='22023'; end if;
- if existing.revision<>p_rev then raise exception 'Outra sessão alterou esta nota. Reabra para atualizar.' using errcode='40001'; end if;
+ if p_rev is null or p_rev < 1 then raise exception 'Revisão inválida.' using errcode='22023'; end if;
+ if existing.revision is distinct from p_rev then raise exception 'Outra sessão alterou esta nota. Reabra para atualizar.' using errcode='40001'; end if;
  update public.pending_receipts set draft=p_draft,revision=revision+1,updated_at=now() where id=p_id;
  return jsonb_build_object('ok',true,'revision',p_rev+1);
 end;
@@ -117,7 +118,12 @@ begin
  end if;
  update public.pending_receipts set state='posted',updated_at=now()
  where id=p_id and state='pending';
- return jsonb_build_object('ok',found);
+ if found then return jsonb_build_object('ok',true); end if;
+ -- inventory_save now transitions pending -> posted in the SAME transaction.
+ -- Legacy callers may safely retry the marker after a successful commit.
+ return jsonb_build_object('ok',exists(
+   select 1 from public.pending_receipts where id=p_id and state='posted'
+ ));
 end;
 $function$;
 
@@ -151,6 +157,10 @@ begin
   if (actor_role is distinct from 'admin' or not private.has_permission(actor_id,'fiscal.pending.cancel')) then
     raise exception 'Somente o Gestor pode cancelar notas pendentes.' using errcode='42501';
   end if;
+  -- Same lock order as inventory_save: inventory first, pending row second.
+  -- Otherwise simultaneous cancellation and posting can race or deadlock.
+  perform 1 from public.shared_inventory where id=true for update;
+  if not found then raise exception 'Estoque compartilhado indisponível.' using errcode='22023'; end if;
   select * into existing from public.pending_receipts where id=p_id for update;
   if not found or existing.state <> 'pending' then
     raise exception 'Nota não está mais pendente.' using errcode='22023';
