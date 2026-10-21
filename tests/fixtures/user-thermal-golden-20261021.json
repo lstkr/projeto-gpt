@@ -1,0 +1,627 @@
+{
+  "schema_version": 1,
+  "notes": "Transcrições manualmente revisadas a partir de 10 fotos, sem CNPJ/CPF, chaves NFC-e, QR, fornecedor ou dados de cliente; NÃO medem precisão OCR na imagem. Fotografias originais armazenadas apenas na Biblioteca privada do usuário (/Estoque+/Testes OCR).",
+  "photos": 10,
+  "documents": 11,
+  "combined_photo_documents": 2,
+  "cash": [
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-26.jpeg",
+      "case_id": "26/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 26/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 304,00",
+        "(+)CARTAO DEBITO R$ 417,00",
+        "(+)CREDITO R$ 80,00",
+        "(+)DINHEIRO R$ 129,00",
+        "(+)OUTRAS R$ 153,00",
+        "(=)Total R$ 1.083,00",
+        "(=)Total em Cartão/POS R$ 721,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 183,50",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(-)DINHEIRO R$ 3,00",
+        "Motivo: SANGRIA - desconto",
+        "(-)DINHEIRO R$ 100,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 210,00",
+        "Motivo: SANGRIA - fechamento",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "26/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "304,00",
+          "CARTAO DEBITO": "417,00",
+          "CREDITO": "80,00",
+          "DINHEIRO": "129,00",
+          "OUTRAS": "153,00"
+        },
+        "total": "1.083,00",
+        "pos": "721,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "183,50",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "sangria",
+            "amount": "3,00",
+            "reason": "SANGRIA - desconto"
+          },
+          {
+            "type": "sangria",
+            "amount": "100,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "210,00",
+            "reason": "SANGRIA - fechamento"
+          }
+        ],
+        "physical": {
+          "sistema": "-0,50",
+          "operador": "0,00",
+          "diferenca": null
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-25.jpeg",
+      "case_id": "25/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 25/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 388,00",
+        "(+)CARTAO DEBITO R$ 356,00",
+        "(+)CREDITO R$ 10,00",
+        "(+)DINHEIRO R$ 80,00",
+        "(+)OUTRAS R$ 72,00",
+        "(=)Total R$ 906,00",
+        "(=)Total em Cartão/POS R$ 744,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 104,50",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(-)DINHEIRO R$ 1,00",
+        "Motivo: SANGRIA - troco errado",
+        "(-)DINHEIRO R$ 183,50",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "25/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "388,00",
+          "CARTAO DEBITO": "356,00",
+          "CREDITO": "10,00",
+          "DINHEIRO": "80,00",
+          "OUTRAS": "72,00"
+        },
+        "total": "906,00",
+        "pos": "744,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "104,50",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "sangria",
+            "amount": "1,00",
+            "reason": "SANGRIA - troco errado"
+          },
+          {
+            "type": "sangria",
+            "amount": "183,50",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "183,50",
+          "operador": "183,50",
+          "diferenca": "0,00"
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-14.jpeg",
+      "case_id": "14/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 14/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 339,00",
+        "(+)CARTAO DEBITO R$ 371,00",
+        "(+)DEBITO R$ 12,00",
+        "(+)DINHEIRO R$ 267,00",
+        "(+)OUTRAS R$ 168,00",
+        "(=)Total R$ 1.157,00",
+        "(=)Total em Cartão/POS R$ 710,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 114,50",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(+)DINHEIRO R$ 50,00",
+        "Motivo: SUPRIMENTO - ifood",
+        "(-)DINHEIRO R$ 58,00",
+        "Motivo: SANGRIA - credito",
+        "(-)DINHEIRO R$ 150,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 100,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 123,50",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "14/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "339,00",
+          "CARTAO DEBITO": "371,00",
+          "DEBITO": "12,00",
+          "DINHEIRO": "267,00",
+          "OUTRAS": "168,00"
+        },
+        "total": "1.157,00",
+        "pos": "710,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "114,50",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "suprimento",
+            "amount": "50,00",
+            "reason": "SUPRIMENTO - ifood"
+          },
+          {
+            "type": "sangria",
+            "amount": "58,00",
+            "reason": "SANGRIA - credito"
+          },
+          {
+            "type": "sangria",
+            "amount": "150,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "100,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "123,50",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "123,50",
+          "operador": "123,50",
+          "diferenca": "0,00"
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-11.jpeg",
+      "case_id": "11/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 11/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 401,00",
+        "(+)CARTAO DEBITO R$ 419,00",
+        "(+)CREDITO R$ 75,00",
+        "(+)DEBITO R$ 7,00",
+        "(+)DINHEIRO R$ 91,00",
+        "(+)OUTRAS R$ 170,00",
+        "(=)Total R$ 1.163,00",
+        "(=)Total em Cartão/POS R$ 820,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 99,75",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(-)DINHEIRO R$ 100,00",
+        "Motivo: SANGRIA - deposito",
+        "(+)DINHEIRO R$ 41,00",
+        "Motivo: SUPRIMENTO - ifood",
+        "(-)DINHEIRO R$ 131,75",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "11/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "401,00",
+          "CARTAO DEBITO": "419,00",
+          "CREDITO": "75,00",
+          "DEBITO": "7,00",
+          "DINHEIRO": "91,00",
+          "OUTRAS": "170,00"
+        },
+        "total": "1.163,00",
+        "pos": "820,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "99,75",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "sangria",
+            "amount": "100,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "suprimento",
+            "amount": "41,00",
+            "reason": "SUPRIMENTO - ifood"
+          },
+          {
+            "type": "sangria",
+            "amount": "131,75",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "131,75",
+          "operador": "131,75",
+          "diferenca": "0,00"
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-08.jpeg",
+      "case_id": "08/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 08/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 295,00",
+        "(+)CARTAO DEBITO R$ 177,00",
+        "(+)DINHEIRO R$ 74,00",
+        "(+)OUTRAS R$ 117,00",
+        "(=)Total R$ 663,00",
+        "(=)Total em Cartão/POS R$ 472,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 129,75",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(-)DINHEIRO R$ 100,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 103,75",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "08/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "295,00",
+          "CARTAO DEBITO": "177,00",
+          "DINHEIRO": "74,00",
+          "OUTRAS": "117,00"
+        },
+        "total": "663,00",
+        "pos": "472,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "129,75",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "sangria",
+            "amount": "100,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "103,75",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "103,75",
+          "operador": "103,75",
+          "diferenca": "0,00"
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-11-04.jpeg",
+      "case_id": "04/11/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 04/11/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 453,00",
+        "(+)CARTAO DEBITO R$ 360,00",
+        "(+)CREDITO R$ 10,00",
+        "(+)DEBITO R$ 24,00",
+        "(+)DINHEIRO R$ 75,00",
+        "(+)OUTRAS R$ 222,00",
+        "(=)Total R$ 1.144,00",
+        "(=)Total em Cartão/POS R$ 813,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 64,75",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(+)DINHEIRO R$ 1,00",
+        "Motivo: SUPRIMENTO - troco",
+        "(+)DINHEIRO R$ 3,00",
+        "Motivo: SUPRIMENTO - troco errado",
+        "(-)DINHEIRO R$ 50,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 93,75",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "04/11/2025",
+        "channels": {
+          "CARTAO CREDITO": "453,00",
+          "CARTAO DEBITO": "360,00",
+          "CREDITO": "10,00",
+          "DEBITO": "24,00",
+          "DINHEIRO": "75,00",
+          "OUTRAS": "222,00"
+        },
+        "total": "1.144,00",
+        "pos": "813,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "64,75",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "suprimento",
+            "amount": "1,00",
+            "reason": "SUPRIMENTO - troco"
+          },
+          {
+            "type": "suprimento",
+            "amount": "3,00",
+            "reason": "SUPRIMENTO - troco errado"
+          },
+          {
+            "type": "sangria",
+            "amount": "50,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "93,75",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "93,75",
+          "operador": "93,75",
+          "diferenca": "0,00"
+        }
+      }
+    },
+    {
+      "kind": "fechamento_termico",
+      "photo": "caixa-2025-10-08.jpeg",
+      "case_id": "08/10/2025",
+      "transcribed_lines": [
+        "Fechamento de Caixa",
+        "Caixa do dia: 08/10/2025",
+        "Caixa Nº: 003",
+        "Operador: OPERADOR_ANONIMIZADO",
+        "NFC-e",
+        "Espécie Valor",
+        "(+)CARTAO CREDITO R$ 210,00",
+        "(+)CARTAO DEBITO R$ 284,00",
+        "(+)CREDITO R$ 23,00",
+        "(+)DEBITO R$ 70,00",
+        "(+)DINHEIRO R$ 247,00",
+        "(+)OUTRAS R$ 177,00",
+        "(=)Total R$ 1.011,00",
+        "(=)Total em Cartão/POS R$ 494,00",
+        "Movimentações Manuais",
+        "Espécie Valor",
+        "(+)DINHEIRO R$ 125,65",
+        "Motivo: SUPRIMENTO - ABERTURA DE CAIXA",
+        "(+)DINHEIRO R$ 36,00",
+        "Motivo: SUPRIMENTO - ifood",
+        "(-)DINHEIRO R$ 150,00",
+        "Motivo: SANGRIA - deposito",
+        "(-)DINHEIRO R$ 180,00",
+        "Motivo: SANGRIA - sangria",
+        "(-)DINHEIRO R$ 81,85",
+        "Motivo: SANGRIA - FECHAMENTO DE CAIXA",
+        "Caixa Digital",
+        "CARTAO CREDITO R$ 999,99 R$ 0,00",
+        "Caixa Físico"
+      ],
+      "expected": {
+        "day": "08/10/2025",
+        "channels": {
+          "CARTAO CREDITO": "210,00",
+          "CARTAO DEBITO": "284,00",
+          "CREDITO": "23,00",
+          "DEBITO": "70,00",
+          "DINHEIRO": "247,00",
+          "OUTRAS": "177,00"
+        },
+        "total": "1.011,00",
+        "pos": "494,00",
+        "movements": [
+          {
+            "type": "suprimento",
+            "amount": "125,65",
+            "reason": "SUPRIMENTO - ABERTURA DE CAIXA"
+          },
+          {
+            "type": "suprimento",
+            "amount": "36,00",
+            "reason": "SUPRIMENTO - ifood"
+          },
+          {
+            "type": "sangria",
+            "amount": "150,00",
+            "reason": "SANGRIA - deposito"
+          },
+          {
+            "type": "sangria",
+            "amount": "180,00",
+            "reason": "SANGRIA - sangria"
+          },
+          {
+            "type": "sangria",
+            "amount": "81,85",
+            "reason": "SANGRIA - FECHAMENTO DE CAIXA"
+          }
+        ],
+        "physical": {
+          "sistema": "78,65",
+          "operador": "81,85",
+          "diferenca": "3,20"
+        }
+      }
+    }
+  ],
+  "fiscal": [
+    {
+      "kind": "nfce_termica",
+      "photo": "fiscal-01-ovo.jpeg",
+      "case_id": "ovo-duas-unidades",
+      "document_index": 0,
+      "transcribed_lines": [
+        "CODIGO DESCRIÇÃO",
+        "31323 OVO 20UN BRANCO",
+        "2,00 UN 8,99 17,98",
+        "QTD TOTAL DE ITENS 1",
+        "VALOR TOTAL R$ 17,98",
+        "FORMA DE PAGAMENTO Dinheiro 17,98",
+        "RESUMO DO PAGAMENTO Total da Venda R$ 17,98 Valor Pago R$ 50,00 Troco R$ 32,02"
+      ],
+      "expected": {
+        "products": 1,
+        "total": "17,98",
+        "quantity": 2,
+        "unit": "un",
+        "change": "32,02",
+        "amountGiven": "50,00"
+      }
+    },
+    {
+      "kind": "nfce_termica",
+      "photo": "fiscal-02-tomate.jpeg",
+      "case_id": "tomate-quilo",
+      "document_index": 0,
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO",
+        "836 TOMATE",
+        "1,0000 KG 14,3700 14,37",
+        "QTD TOTAL DE ITENS 1",
+        "VALOR TOTAL R$ 14,37"
+      ],
+      "expected": {
+        "products": 1,
+        "total": "14,37",
+        "quantity": 1,
+        "unit": "kg"
+      }
+    },
+    {
+      "kind": "nfce_termica",
+      "photo": "fiscal-03-duas-notas.jpeg",
+      "case_id": "rio-sul-com-desconto",
+      "document_index": 0,
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO",
+        "0410160 SACO ADESIVADO TRANSP 7,6X13+3",
+        "101,00 UN 0,20 20,20",
+        "desconto 2,02",
+        "valor liquido 18,18",
+        "0397431 SACO ADESIVADO TRANSP 8X13+3",
+        "1,00 UN 0,30 0,30",
+        "0010987 BOBINA 80MMX40MT TERMICA",
+        "4,00 UN 7,75 31,00",
+        "Qtd Total de Itens 106",
+        "Sub-Total 51,50",
+        "Desconto 2,02",
+        "Valor Total R$ 49,48"
+      ],
+      "expected": {
+        "products": 3,
+        "total": "49,48",
+        "subtotal": "51,50",
+        "discount": "2,02",
+        "fiscalQuantity": 106
+      }
+    },
+    {
+      "kind": "nfce_termica",
+      "photo": "fiscal-03-duas-notas.jpeg",
+      "case_id": "rudi-quatro-itens",
+      "document_index": 1,
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO",
+        "613 MANJERICAO",
+        "1,0000 ML 5,0000 5,00",
+        "810 LIMAO",
+        "1,0000 KG 6,1300 6,13",
+        "836 TOMATE",
+        "1,0000 KG 18,3600 18,36",
+        "813 ABACATE",
+        "1,0000 KG 15,5600 15,56",
+        "QTD TOTAL DE ITENS 4",
+        "VALOR TOTAL R$ 45,05"
+      ],
+      "expected": {
+        "products": 4,
+        "total": "45,05",
+        "manjericaoUnit": "ml"
+      }
+    }
+  ]
+}
