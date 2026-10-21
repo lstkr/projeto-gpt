@@ -84,6 +84,23 @@ test('Cia da Fruta: right-aligned total on description row is reconciled', () =>
   assert.equal(items[0].lineTotal, 17.98);
 });
 
+test('Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns', () => {
+  const receipt = [
+    '# Cód Descrição Qtd Un Vl Unit. Vl Total',
+    '001 31323 OVO 20UN BRANCO 2 UN X 8,99 17,98',
+    'QTD TOTAL DE ITENS 001',
+    'VALOR TOTAL R$ 17,98'
+  ].join('\n');
+  const items = rules.parseReceiptOcr(receipt);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, '31323');
+  assert.equal(items[0].name, 'OVO 20UN BRANCO');
+  assert.equal(items[0].quantity, 2);
+  assert.equal(items[0].unit, 'un');
+  assert.equal(items[0].unitPrice, 8.99);
+  assert.equal(items[0].lineTotal, 17.98);
+});
+
 test('Without numbered item column, the first code is still the fiscal product code', () => {
   const receipt = [
     'CÓDIGO DESCRIÇÃO',
