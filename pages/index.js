@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClient } from '@supabase/supabase-js';
+import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
@@ -1198,7 +1199,15 @@ export default function Home() {
   const [editing, setEditing] = useState(null);
   const [productForm, setProductForm] = useState({ name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
   const [adjust, setAdjust] = useState({ type: 'Entrada', quantity: '1', reason: 'Compra/recebimento' });
-  const [draft, setDraft] = useState(null);
+  const [draft, setDraftState] = useState(null);
+  const setDraft = (updater) => setDraftState((previous) =>
+    normalizeFiscalDraftReview(
+      typeof updater === 'function' ? updater(previous) : updater,
+      previous,
+      () => typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID() : 'line-' + uid()
+    )
+  );
   const [manualMode, setManualMode] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [manualChosenId, setManualChosenId] = useState('');
@@ -1510,7 +1519,7 @@ export default function Home() {
     if (existingByName && normalizeReceiptUnit(existingByName.unit) !== normalizeReceiptUnit(it.unit))
       issues.push('Unidade do produto já cadastrado: ' + existingByName.unit + '. Confira a conversão.');
     return { issues: [...new Set(issues)], requiresReview: issues.length > 0,
-      done: issues.length === 0 || draft.reviewedItems?.[index] === true };
+      done: issues.length === 0 || draft.reviewedItems?.[it.lineId] === true };
   });
   const totalsRequireReview = Boolean(draft && (
     Boolean(draft.manualInvoice) || totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
@@ -1572,7 +1581,7 @@ export default function Home() {
   }
   function selectManualInvoiceProduct(index, id) {
     const product=products.find((p)=>p.id===id);
-    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[index]:false},
+    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[d.items[index]?.lineId]:false},
       finalReviewed:false,totalsReviewed:false,
       items:d.items.map((it,i)=>i===index && product
         ? {...it,productId:product.id,name:product.name,code:product.sku,
@@ -2202,7 +2211,7 @@ export default function Home() {
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
-      reviewedItems: { ...(d.reviewedItems || {}), [index]: false },
+      reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
       finalReviewed: false, totalsReviewed: false,
       officialVerified: false,
       items: d.items.map((it, i) => {
@@ -2877,7 +2886,7 @@ export default function Home() {
                     borderColor: attention && review.issues.some((issue) => issue.toLowerCase().includes(keyword)) ? '#c58a24' : undefined,
                     background: attention ? '#fffbeb' : undefined
                   });
-                  return <tr key={i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
+                  return <tr key={it.lineId || i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
                     <td>{draft.manualInvoice ? <div className="manual-invoice-product">
                       <input className="inline-input name-field" aria-label={'Buscar produto da linha '+(i+1)} value={it.search ?? ''} placeholder="Buscar produto por nome ou código"
                         onChange={(e)=>changeItem(i,'search',e.target.value)}/>
@@ -2932,15 +2941,15 @@ export default function Home() {
                     <td className="review-check-cell">
                       {review.requiresReview ? <div className="review-check-row">
                         <label className="review-check-label">
-                          <input type="checkbox" checked={Boolean(draft.reviewedItems?.[i])}
-                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [i]: e.target.checked } }))}/>
+                          <input type="checkbox" checked={Boolean(draft.reviewedItems?.[it.lineId])}
+                            onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:false, reviewedItems: { ...(d.reviewedItems || {}), [it.lineId]: e.target.checked } }))}/>
                           <span>Conferido pelo encarregado</span>
                         </label>
                         <ReviewIssuePopover issues={review.issues} productName={it.name} index={i} reviewed={review.done}/>
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
                     </td>
                     <td><button className="delete-line" title="Remover item" onClick={() => setDraft((d) => ({
-                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: {},
+                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
                       totalsReviewed: false, finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
@@ -2981,7 +2990,7 @@ export default function Home() {
             <div className="modal-actions"><button className="btn secondary" onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" onClick={confirmDocument}><Icon type="check" size={17}/>Confirmar entrada no estoque</button></div>
           </section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
-          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR é executado no navegador e o documento original não é salvo no histórico. Ao ativar a opção de QR externo, um recorte da imagem é enviado ao servidor do Estoque+ e ao serviço de leitura de terceiros. Sem essa opção, a leitura permanece local.</span></div>
+          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
         </>}
 
         {view === 'cash' && <>
