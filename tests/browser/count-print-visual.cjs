@@ -33,7 +33,8 @@ function fixture(paper,mode) {
 async function measure(page) {
  return page.evaluate(()=>{
    const table=document.querySelector('table');
-   const cells=[...document.querySelectorAll('th,td')];
+   const container=table||document.querySelector('.thermal-list');
+   const cells=[...document.querySelectorAll('th,td,.thermal-title,.thermal-values span')];
    const tolerance=2;
    const overflowing=cells.map((cell,index)=>{
      const rect=cell.getBoundingClientRect();
@@ -47,15 +48,15 @@ async function measure(page) {
        invalid:cell.scrollWidth>cell.clientWidth+tolerance
      };
    }).filter(cell=>cell.invalid||!cell.visible);
-   const tr=[...document.querySelectorAll('tbody tr')].map(x=>x.getBoundingClientRect());
+   const tr=[...document.querySelectorAll('tbody tr,.thermal-item')].map(x=>x.getBoundingClientRect());
    const rowsOverlap=tr.some((r,index)=>index>0&&r.top<tr[index-1].bottom-1);
    const html=document.documentElement;
    return {
      pageOverflow:html.scrollWidth>window.innerWidth+tolerance,
-     tableOverflow:table.scrollWidth>table.clientWidth+tolerance,
+     tableOverflow:container.scrollWidth>container.clientWidth+tolerance,
      cellProblems:overflowing.slice(0,12),
      rowsOverlap,rows:tr.length,
-     tableWidth:Math.ceil(table.getBoundingClientRect().width),
+     tableWidth:Math.ceil(container.getBoundingClientRect().width),
      viewportWidth:window.innerWidth
    };
  });
@@ -98,7 +99,7 @@ async function measure(page) {
    const p=await c.newPage();
    await p.setContent(countPrintHtml(fixture('thermal58','blind')));
    await p.evaluate(()=>{
-     const cell=document.querySelector('tbody td:nth-child(2)');
+     const cell=document.querySelector('.thermal-title');
      cell.style.whiteSpace='nowrap';
      cell.style.overflowWrap='normal';
      cell.style.wordBreak='normal';

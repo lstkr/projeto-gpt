@@ -31,8 +31,10 @@ test('thermal widths 58 and 80 use separate page sizes and short fonts',async()=
   for(const [paper,size] of [['thermal58','58mm 297mm'],['thermal80','80mm 297mm']]){
     const html=countPrintHtml({...source,paper},issuedAt);
     assert.ok(html.includes('size:'+size));
-    assert.match(html,/font-size:9px/);
-    assert.match(html,/table-header-group|break-inside:avoid/);
+    assert.match(html,/thermal-item/);
+    assert.match(html,/break-inside:avoid/);
+    assert.doesNotMatch(html,/<table|<th>/);
+    assert.match(html,/Contado: __________________/);
   }
 });
 test('every untrusted field is escaped, no inline executable elements',async()=>{
@@ -59,4 +61,14 @@ test('fractional units incompatible with precision require review rather than tr
       {name:'Açúcar',unit:'kg',expected:0.0005,counted:0.001}]},issuedAt);
   assert.match(html,/Conferir/);
   assert.doesNotMatch(html,/NaN|Infinity/);
+});
+
+test('thermal reconciliation keeps full-width product name and stacked values',async()=>{
+  const {countPrintHtml}=await print;
+  const html=countPrintHtml({...source,paper:'thermal58',mode:'differences'},issuedAt);
+  assert.match(html,/<div class="thermal-title">/);
+  assert.match(html,/Unidade: kg|Sistema: <b>15,5<\/b>/);
+  assert.match(html,/Contado: <b>8,123<\/b>/);
+  assert.match(html,/Diferença: <b>-7,377<\/b>/);
+  assert.doesNotMatch(html,/<table|<th>/);
 });
