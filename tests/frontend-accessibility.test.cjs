@@ -21,7 +21,7 @@ test('mobile alerts keep text-only critical actions readable', () => {
 test('all navigation entries preserve an accessible name when sidebar labels are hidden', () => {
   const menu = view.slice(view.indexOf('<nav className="navigation"'), view.indexOf('</nav>'));
   const entries = ['Estoque', 'Contagem de estoque', 'Possíveis duplicatas',
-    'Notas fiscais', 'Movimentações', 'Fechamento de caixa', 'Lista de compras', 'Gestor · Permissões', 'Fornecedores'];
+    'Notas fiscais', 'Movimentações', 'Fechamento de caixa', 'Lista de compras', 'Fornecedores'];
   entries.forEach((name) => assert.ok(menu.includes('aria-label="' + name + '"'), name));
   assert.equal((menu.match(/aria-current=/g) || []).length, entries.length);
 });
@@ -73,7 +73,7 @@ test('manager settings remain available via profile while sidebar has no duplica
   assert.doesNotMatch(menu, /aria-label="Estabelecimentos e equipe"/);
   assert.match(view, /role="menuitem" onClick=\{\(\)=>\{setAccountOpen\(false\);setMenuOpen\(false\);setView\('settings'\);\}\}>Configurações/);
   assert.match(view, /\(view === 'settings' \|\| \(view === 'administration' && currentUser\?\.role === 'admin'\)\) && <TenantAdministration/);
-  assert.match(menu, /aria-label="Gestor · Permissões"/);
+  assert.doesNotMatch(menu, /aria-label="Gestor · Permissões"/);
 });
 
 test('settings keep manager workflows and hide manager tools from employee accounts', () => {
@@ -88,4 +88,11 @@ test('settings keep manager workflows and hide manager tools from employee accou
   assert.match(administration, /const canManage = isDba \|\| user\?\.role === 'admin'/);
   assert.match(administration, /\{canManage && <>/);
   assert.match(administration, /\{isDba && <>/);
+});
+
+test('permissions move into the manager profile menu without changing their page', () => {
+ const menu = view.slice(view.indexOf('<nav className="navigation"'), view.indexOf('</nav>'));
+ assert.doesNotMatch(menu, /aria-label="Gestor · Permissões"/);
+ assert.match(view, /currentUser\?\.role === 'admin' && <button type="button" role="menuitem" onClick=\{\(\)=>\{setAccountOpen\(false\);setMenuOpen\(false\);setView\('permissions'\);\}\}>Permissões<\/button>/);
+ assert.match(view, /view === 'permissions'/);
 });
