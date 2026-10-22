@@ -45,7 +45,7 @@ export default function CountPrintAction({products,latestCount,user,unitName}){
       <button type="button" className="btn secondary" disabled={!products?.length}
         onClick={()=>{setReady(false);setOpen(true);}}>Abrir prévia de impressão</button>
     </div>
-    {open&&createPortal(<div className="overlay" onMouseDown={event=>{
+    {open&&createPortal(<div className="overlay count-print-overlay" onMouseDown={event=>{
       if(event.target===event.currentTarget)setOpen(false);
     }}>
       <section role="dialog" aria-modal="true" aria-labelledby="count-print-title"
