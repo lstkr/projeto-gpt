@@ -1155,6 +1155,7 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [activeTenantName,setActiveTenantName]=useState('');
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [fiscalPermissions,setFiscalPermissions]=useState(null);
   const [permissionUsers,setPermissionUsers]=useState([]);
@@ -1311,6 +1312,8 @@ export default function Home() {
       return false;
     }
     const identity = membership.data.user;
+    const selectedTenant = (membership.data.tenants||[]).find(tenant=>tenant.id===membership.data.activeTenantId);
+    setActiveTenantName(selectedTenant?.name||'');
     const passwordRequired = Boolean(membership.data.mustChangePassword);
     setMustChangePassword(passwordRequired);
     setCurrentUser(identity);
@@ -2927,7 +2930,7 @@ export default function Home() {
               {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
-          </div>}<CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser}/>
+          </div>}<CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/>
           {!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
           {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
           {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}}>Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 style={{marginTop:22}}>Histórico de contagens</h3>
