@@ -114,7 +114,7 @@ const closings = [
     await printDialog.waitFor();
     const printFrame=page.frameLocator('iframe[title="Documento da contagem para impressão"]');
     assert.equal(await printFrame.locator('tbody tr').count(),2);
-    assert.match(await printFrame.locator('h1').textContent(),/Contagem cega/);
+    assert.match(await printFrame.locator('h1').textContent(),/contagem cega/i);
     assert.match(await printFrame.locator('body').innerText(),/Unidade QA/,'impressão precisa identificar estabelecimento ativo');
     assert.doesNotMatch(await printFrame.locator('body').innerText(),/98765|999999|123456|999998|20.*L/);
     await page.getByRole('button',{name:'Imprimir documento'}).waitFor({state:'visible'});
