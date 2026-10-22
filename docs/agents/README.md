@@ -33,3 +33,7 @@ Os documentos **não criam chats nem agentes autônomos automaticamente**. Eles 
 - Cada entrega deve citar as mudanças realizadas, testes efetivamente executados, riscos, pendências e eventual plano de rollback.
 
 **Regra central:** nenhuma alteração pode comprometer a integridade do estoque, a segurança dos usuários ou funcionalidades existentes.
+
+## Nova estrutura sênior → engineer
+
+Ver [modelo de squads](../../governance/TEAM_DELIVERY_MODEL.md) e [quadro do CTO](../../governance/DELIVERY_BOARD.md). Heads continuam responsáveis por desenho e aprovação; engenheiros executam tickets menores com branches/PRs isoladas. Perfis documentados não iniciam execução remota automaticamente.
