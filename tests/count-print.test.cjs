@@ -41,7 +41,7 @@ test('every untrusted field is escaped, no inline executable elements',async()=>
   const html=countPrintHtml({paper:'thermal58',mode:'differences',
     establishment:payload,reference:payload,responsible:payload,
     items:[{name:payload,sku:payload,unit:payload,category:payload,expected:1,counted:1}]},issuedAt);
-  assert.doesNotMatch(html,/<img|<script|onerror=/i);
+  assert.doesNotMatch(html,/<img\b|<script\b|<[^>]+\sonerror=/i);
   assert.match(html,/&lt;img/);
 });
 test('invalid paper, mode, huge items or time rejects early',async()=>{
