@@ -2870,7 +2870,6 @@ export default function Home() {
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
         <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
-        {currentUser?.role === 'admin' && <button aria-label="Gestor · Permissões" aria-current={view === 'permissions' ? 'page' : undefined} className={view === 'permissions' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('permissions')}><Icon type="check"/><span>Gestor · Permissões</span></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
@@ -2897,6 +2896,7 @@ export default function Home() {
               <div className="account-dropdown" role="menu">
                 <p><b>{currentUser?.display_name||'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'} · {saveStatus||'Sessão ativa'}</small></p>
                 <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('settings');}}>Configurações</button>
+                {currentUser?.role === 'admin' && <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('permissions');}}>Permissões</button>}
                 <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setToast('Os dados são sincronizados no banco compartilhado da equipe.');}}>Sobre a sincronização</button>
                 <button type="button" role="menuitem" className="signout-menu-item" onClick={()=>{setAccountOpen(false);if(supabase)handleLock();}}>Sair da conta</button>
               </div></>}
