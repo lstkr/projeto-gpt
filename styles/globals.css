@@ -827,11 +827,11 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .count-print-controls label{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:6px}
 .count-print-controls select{min-height:42px;min-width:0;max-width:100%;padding:8px;border:1px solid var(--line);border-radius:8px}
 .count-print-controls button{min-height:42px}
-.count-print-modal{width:min(900px,94vw);max-height:92vh;display:flex;flex-direction:column;gap:10px}
+.count-print-modal{width:min(900px,calc(100vw - 40px));max-height:92vh;padding:20px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px}
 .count-print-modal h2{margin:0}
 .count-print-preview-scroll{min-height:170px;flex:1 1 auto;overflow:auto;border:1px solid #cbd5e1;background:#f3f5f3;padding:10px}
 .count-print-frame{display:block;background:white;border:1px solid #dce1dc;margin:0 auto;height:56vh;max-height:610px}
 .count-print-a4{width:min(100%,794px)}
 .count-print-thermal58{width:min(100%,230px)}
 .count-print-thermal80{width:min(100%,318px)}
-@media(max-width:480px){.count-print-modal{width:96vw;max-height:94vh;padding:12px}.count-print-preview-scroll{padding:5px}.count-print-controls label,.count-print-controls button{flex:1 1 100%}}
+@media(max-width:480px){.count-print-modal{width:calc(100vw - 24px);max-height:94vh;padding:12px}.count-print-preview-scroll{padding:5px}.count-print-controls label,.count-print-controls button{flex:1 1 100%}}
