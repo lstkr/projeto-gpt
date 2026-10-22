@@ -39,3 +39,17 @@ As imagens originais **não estão neste repositório** e não devem ser copiada
 ### Limitação
 
 **Golden textual ≠ teste ponta-a-ponta de OCR da imagem**. A suíte automática testa resultados esperados sobre transcrição normalizada e ajuda a identificar regressões de parser. A comparação de OCR em pixels depende de um executor com acesso autorizado aos originais privados e não deve usar a rede para consultar notas fiscais reais sem autorização explícita.
+
+## Ampliação autorizada — 22/10/2026 (issue #94)
+
+O usuário autorizou uso interno das fotografias **reais** em testes por qualquer especialidade do projeto. O acervo privado `/Estoque+/Testes OCR` contém agora **13 fotografias / no mínimo 14 documentos** (7 fechamentos, 6 fotos fiscais, uma delas com duas notas independentes). As 10 fotos de 21/10 e seus 11 documentos continuam com golden transcrito; foram adicionadas:
+
+| Novo arquivo privado | Desafio | Golden humano |
+|---|---|---|
+| `fiscal-04-danfe.jpeg` | DANFE de folha, classificação de documento e campos tabulares | Pendente |
+| `fiscal-05-cupom-termico.jpeg` | Cupom amassado, linhas/valores de itens e QR | Pendente |
+| `fiscal-06-contingencia.jpeg` | Cupom com emissão em contingência, ruído e regras de conferência | Pendente |
+
+Catálogo rastreável: `tests/fixtures/private-real-images-20261022.json` (SHA-256/tamanho/dimensões). Para validar **as próprias imagens** em cópia local, extrair o pacote privado e executar `node scripts/verify-private-image-fixtures.cjs /caminho/images` (ou definir `ESTOQUE_REAL_FIXTURES_DIR`). Esse comando **só confere a integridade**, não executa OCR nem consulta SEFAZ. Não enviar imagens ou dados fiscais reais em logs/artefatos públicos.
+
+**Obrigatório:** QA ainda deverá validar visualmente os 3 novos goldens, executar OCR sobre pixels originais em ambiente isolado e registrar campo, falha e latência. Parser textual aprovado não implica precisão de OCR.

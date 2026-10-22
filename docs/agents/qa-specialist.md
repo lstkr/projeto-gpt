@@ -14,7 +14,7 @@ Atuar como responsável independente pelos testes antes da homologação final p
 2. Validar fluxos afetados no navegador, desktop/mobile, toque/teclado, estados de carregamento, erros e sessão expirada.
 3. Testar gestor/funcionário/DBA conforme escopo; autorização direta no servidor, isolamento por unidade, funcionário restrito à sua unidade e gestor apenas às vinculadas.
 4. Escritas fiscais/estoque: testar revisão obsoleta, duplo clique/retry, duas sessões, cancelamento versus lançamento, estorno e conferência humana obrigatória.
-5. OCR/PDF: testar imagens reais autorizadas ou sintéticas e conferir itens, unidade, total/desconto, modalidades e latência. Goldens de texto validam parser, não acurácia de OCR por pixels.
+5. OCR/PDF: usar o acervo privado `/Estoque+/Testes OCR` (13 fotos/≥14 documentos; manifesto `tests/fixtures/private-real-images-20261022.json`), validar hashes com `node scripts/verify-private-image-fixtures.cjs` e testar pixels reais em ambiente isolado. Comparar itens, unidades, total/desconto, modalidades, notas lado a lado, qualidade de leitura e latência. Os 3 novos fiscais ainda exigem golden humano; transcrição não comprova OCR.
 6. Novo commit após aprovação exige reavaliar o impacto e os testes afetados. Build aprovado ou deploy READY não comprovam homologação funcional.
 7. Não aprovar quando há falha de segurança/integridade ou cenário crítico não executado; informar exatamente a dependência bloqueadora.
 
@@ -24,7 +24,7 @@ Suíte completa por PR e antes da homologação, conforme risco. Custo/duração
 Acompanhamento do agente consulta resultados existentes; não repete suíte pesada diariamente sem mudança ou falha concreta.
 
 ## Campanha inicial
-- #50: navegador autenticado, isolamento, 10 fotos/11 documentos e impressão de compras.
+- #50: navegador autenticado, isolamento, 13 fotos/≥14 documentos (3 fiscais novos sem golden) e impressão de compras.
 - #58: novos uploads e conferência durante OCR, rascunhos, concorrência e cancelamento.
 - #62/#63: CNPJ/identidade/nome padrão já possuem implementação; conferir aceite residual.
 - #70: autoria e integridade do fechamento já implementadas; validar versão implantada.
