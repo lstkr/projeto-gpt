@@ -126,7 +126,11 @@ const closings = [
         const frame=dialog?.querySelector('iframe');
         if(!overlay||!dialog||!frame)return {missing:true};
         const box=dialog.getBoundingClientRect();
+        const hit=document.elementFromPoint(
+          Math.min(innerWidth-2,Math.max(2,box.left+box.width/2)),
+          Math.min(innerHeight-2,Math.max(2,box.top+30)));
         return {missing:false,
+          obscuredByOtherLayer:!(hit===dialog||dialog.contains(hit)),
           outOfBounds:box.left < -2 || box.right > innerWidth+2,
           clippedPreview:frame.clientWidth===0||frame.clientHeight===0,
           pageOverflow:document.documentElement.scrollWidth>innerWidth+2
@@ -134,6 +138,7 @@ const closings = [
       });
       assert.equal(measured.missing,false,'prévia ausente em '+width+'px');
       assert.equal(measured.outOfBounds,false,'modal fora da tela em '+width+'px');
+      assert.equal(measured.obscuredByOtherLayer,false,'modal encoberto por menu/backdrop em '+width+'px');
       assert.equal(measured.clippedPreview,false,'iframe cortado em '+width+'px');
       assert.equal(measured.pageOverflow,false,'rolagem horizontal indevida em '+width+'px');
       await page.screenshot({path:path.join(output,'count-preview-'+width+'.png')});

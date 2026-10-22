@@ -835,3 +835,6 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .count-print-thermal58{width:min(100%,230px)}
 .count-print-thermal80{width:min(100%,318px)}
 @media(max-width:480px){.count-print-modal{width:calc(100vw - 24px);max-height:94vh;padding:12px}.count-print-preview-scroll{padding:5px}.count-print-controls label,.count-print-controls button{flex:1 1 100%}}
+
+/* The mobile sidebar/backdrop sits at z-index 25/24; printable modal must remain above it. */
+.count-print-overlay{z-index:40}
