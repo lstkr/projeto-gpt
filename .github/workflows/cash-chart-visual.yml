@@ -1,10 +1,13 @@
-name: Cash chart visual QA
+name: Financial chart and count-print visual QA
 on:
   pull_request:
     paths:
       - 'pages/index.js'
       - 'styles/globals.css'
       - 'tests/browser/cash-chart-visual.cjs'
+      - 'tests/browser/count-print-visual.cjs'
+      - 'lib/count-print.mjs'
+      - 'tests/count-print.test.cjs'
       - '.github/workflows/cash-chart-visual.yml'
   workflow_dispatch:
 permissions:
@@ -12,7 +15,7 @@ permissions:
 jobs:
   chart-layout:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://visual-fixture.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: synthetic-ci-key-no-real-access
@@ -38,11 +41,13 @@ jobs:
           node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
       - name: Verify layout across viewports
         run: node tests/browser/cash-chart-visual.cjs
-      - name: Preserve screenshots when QA fails
-        if: failure()
+      - name: Verify A4 and thermal stock-count layouts
+        run: node tests/browser/count-print-visual.cjs
+      - name: Preserve synthetic visual QA screenshots
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: cash-chart-visual-evidence
+          name: visual-qa-evidence
           path: |
             tests/browser/artifacts/
             /tmp/estoque-visual-server.log
