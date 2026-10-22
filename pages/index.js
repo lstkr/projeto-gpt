@@ -1220,6 +1220,7 @@ export default function Home() {
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
   const [cashChartScope,setCashChartScope]=useState('month');
   const [cashSelectedDay,setCashSelectedDay]=useState('');
+  const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
@@ -1676,6 +1677,7 @@ export default function Home() {
     });
   },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
   const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
+  const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
   const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
@@ -3310,9 +3312,15 @@ export default function Home() {
               <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
             </div>
             <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
+            <div className="cash-chart-inspector" role="status" aria-live="polite" aria-atomic="true" data-testid="cash-chart-inspector">
+              {cashHighlightedEntry ? <>
+                <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
+                <strong>{money(cashHighlightedEntry.revenue)}</strong>
+              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
+            </div>
             <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} disabled={!hasRevenue} onClick={()=>setCashSelectedDay(cashSelectedDay===p.day?'':p.day)}>
-                <span>{hasRevenue?money(p.revenue):'\u00a0'}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
+                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
                 <small>{axisDate}</small><small>{weekday}</small>
               </button>})}
             </div>
