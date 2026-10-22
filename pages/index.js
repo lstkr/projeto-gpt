@@ -1665,6 +1665,17 @@ export default function Home() {
   },[closings,cashMonth]);
   const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
   const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
+  const cashChartDays=useMemo(()=>{
+    if(cashChartScope==='year') return cashYearly.daily;
+    const [year,month]=cashMonth.split('-').map(Number);
+    const daysInMonth=new Date(year,month,0).getDate();
+    const revenueByDay=new Map(cashMonthly.daily.map(item=>[item.day,item.revenue]));
+    return Array.from({length:daysInMonth},(_,index)=>{
+      const day=`${cashMonth}-${String(index+1).padStart(2,'0')}`;
+      return {day,revenue:revenueByDay.get(day)??0};
+    });
+  },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
+  const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
   const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
@@ -3300,11 +3311,11 @@ export default function Home() {
               <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
             </div>
             <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
-            <div className="cash-chart" aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartData.daily.length ? cashChartData.daily.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} onClick={()=>setCashSelectedDay(cashSelectedDay===p.day?'':p.day)}>
-                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashChartData.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
+            <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} disabled={!hasRevenue} onClick={()=>setCashSelectedDay(cashSelectedDay===p.day?'':p.day)}>
+                <span>{hasRevenue?money(p.revenue):'\u00a0'}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
                 <small>{axisDate}</small><small>{weekday}</small>
-              </button>}) : <p>Sem fechamento neste período. Envie um relatório para começar o gráfico.</p>}
+              </button>})}
             </div>
           </section>
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
