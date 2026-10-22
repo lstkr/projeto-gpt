@@ -1,4 +1,5 @@
 import {useMemo,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {useAccessibleDialog} from './useAccessibleDialog';
 import {buildCountSheet} from '../lib/count-print-view.mjs';
 import {countPrintHtml} from '../lib/count-print.mjs';
@@ -44,7 +45,7 @@ export default function CountPrintAction({products,latestCount,user,unitName}){
       <button type="button" className="btn secondary" disabled={!products?.length}
         onClick={()=>{setReady(false);setOpen(true);}}>Abrir prévia de impressão</button>
     </div>
-    {open&&<div className="overlay" onMouseDown={event=>{
+    {open&&createPortal(<div className="overlay" onMouseDown={event=>{
       if(event.target===event.currentTarget)setOpen(false);
     }}>
       <section role="dialog" aria-modal="true" aria-labelledby="count-print-title"
@@ -62,6 +63,6 @@ export default function CountPrintAction({products,latestCount,user,unitName}){
           <button type="button" className="btn primary" disabled={!ready} onClick={printPreview}>Imprimir documento</button>
         </div>
       </section>
-    </div>}
+    </div>,document.body)}
   </section>;
 }
