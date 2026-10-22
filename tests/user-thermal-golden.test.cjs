@@ -51,10 +51,12 @@ for(const example of dataset.cash){
       'printed sales channels must reconcile to printed total');
     assert.equal(actual.reportedTotal,money(example.expected.total));
     assert.equal(actual.reportedPos,money(example.expected.pos));
-    assert.equal(actual.movements.length,example.expected.movements.length);
-    for(let i=0;i<example.expected.movements.length;i++){
-      assert.equal(actual.movements[i].type,example.expected.movements[i].type);
-      assert.equal(actual.movements[i].amount,decimal(example.expected.movements[i].amount));
+    const countedMovements=example.expected.movements.filter(m=>
+      !/^SANGRIA\s*-\s*FECHAMENTO\s+DE\s+CAIXA\b/i.test(m.reason));
+    assert.equal(actual.movements.length,countedMovements.length);
+    for(let i=0;i<countedMovements.length;i++){
+      assert.equal(actual.movements[i].type,countedMovements[i].type);
+      assert.equal(actual.movements[i].amount,decimal(countedMovements[i].amount));
     }
     assert.ok(!actual.importWarnings.some(x=>x.includes('não confere')),
       'source should reconcile without a spurious sales mismatch');
@@ -104,3 +106,4 @@ for(const example of dataset.fiscal){
       assert.equal(items[0].unit,example.expected.manjericaoUnit);
   });
 }
+

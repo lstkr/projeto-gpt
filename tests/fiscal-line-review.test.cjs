@@ -92,3 +92,14 @@ test('the rendered form uses lineId rather than array indexes as approval keys',
   assert.match(page, /\[it\.lineId\]: e\.target\.checked/);
   assert.doesNotMatch(page, /checked=\{Boolean\(draft\.reviewedItems\?\.\[i\]\)\}/);
 });
+
+test('changing issuer invalidates every fiscal line approval', async () => {
+  const {normalizeFiscalDraftReview} = await review;
+  const f = allocator();
+  const base = normalizeFiscalDraftReview({...draft([row('Egg')]),supplierCnpj:'11222333000181'},null,f);
+  const id = base.items[0].lineId;
+  const changed = normalizeFiscalDraftReview({...base,supplierCnpj:'',reviewedItems:{[id]:true},finalReviewed:true},base,f);
+  assert.equal(changed.reviewedItems[id],undefined);
+  assert.equal(changed.finalReviewed,false);
+});
+

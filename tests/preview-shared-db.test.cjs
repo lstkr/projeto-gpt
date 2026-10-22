@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const POLICY = import('../lib/preview-database-policy.mjs');
 const GUARD = import('../lib/server/inventory-session.mjs');
-const BRANCH = 'integration/homologacao-clean-main-20261020';
+const BRANCH = 'feat/tenant-fiscal-purchases-20261021';
 const LIVE = 'https://dpauqdihvhbbaellwjav.supabase.co';
 const KEY = 'test_publishable_key_only';
 const TOKEN = 'a'.repeat(64);
@@ -89,3 +89,5 @@ test('build includes Preview policy without putting credentials in Next configur
   assert.match(server,/previewDatabaseIsBlocked\(/);
   assert.match(server,/inventory_validate_session/);
 });
+
+

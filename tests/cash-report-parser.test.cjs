@@ -36,7 +36,7 @@ OUTRAS                   R$ 165,00         R$ 0,00
 (=)Total                 R$ 569,00         R$ 0,00
 Caixa Físico
 `;
-test('PDF 1501: detecta vendas uma vez e 3 movimentações distintas',async()=>{
+test('PDF 1501: detecta vendas uma vez e ignora sangria usada apenas no fechamento',async()=>{
  const {parseCashReport}=await parser;
  const r=parseCashReport(fixture);
  assert.equal(r.day,'2026-10-10');assert.equal(r.register,'003');
@@ -45,9 +45,9 @@ test('PDF 1501: detecta vendas uma vez e 3 movimentações distintas',async()=>{
  assert.equal(r.credito,'181.00');assert.equal(r.debito,'72.00');
  assert.equal(r.outras,'165.00');assert.equal(r.reportedTotal,569);
  assert.equal(r.reportedPos,151);
- assert.equal(r.movements.length,3);
- assert.deepEqual(r.movements.map(m=>m.amount),['238.50','3.00','241.50']);
- assert.deepEqual(r.movements.map(m=>m.type),['suprimento','suprimento','sangria']);
+ assert.equal(r.movements.length,2);
+ assert.deepEqual(r.movements.map(m=>m.amount),['238.50','3.00']);
+ assert.deepEqual(r.movements.map(m=>m.type),['suprimento','suprimento']);
  assert.equal(r.requiresReview,true);
 });
 test('inconsistência de total fiscal cria alerta',async()=>{
@@ -122,3 +122,4 @@ Caixa Físico`);
  assert.equal(r.dinheiroVendas,'12.00');
  assert.equal(r.outras,'0');
 });
+

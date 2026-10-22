@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import TenantAdministration from '../components/TenantAdministration';
 import { createPortal } from 'react-dom';
+import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
-import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
+import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
@@ -478,12 +481,7 @@ function normalizeReceiptName(value) {
 // Fiscal item codes belong to their issuer. Within one issuer, padding such as
 // 00123/123 is equivalent, but a second signal (description) is still checked.
 function findSupplierAliasProduct(item, catalog, supplierCnpj) {
-  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
-  const code = normalizeProductCode(item?.code);
-  if (!issuer || !code) return null;
-  return catalog.find((product) => (product.supplierCodes || []).some((alias) =>
-    String(alias.cnpj || '').replace(/\D/g, '') === issuer &&
-    normalizeProductCode(alias.code) === code)) || null;
+  return supplierAliasProduct(item, catalog, supplierCnpj);
 }
 function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
   const fiscalCode = normalizeProductCode(item?.code);
@@ -498,16 +496,13 @@ function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
   });
 }
 function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
+  if (supplierAliasProducts(item, catalog, supplierCnpj).length > 1) return null;
   const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
   if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
     return bySupplier;
-  const issuer = String(supplierCnpj || '').replace(/\D/g, '');
-  const candidate = { id: '__novo_item_fiscal__', name: item.name, sku: item.code,
-    supplierCodes: issuer && item.code ? [{ cnpj: issuer, code: item.code }] : [],
-    unit: item.unit };
-  return catalog.find((product) => checkDuplicatePair(product, candidate)?.confidence === 'alta') ||
-    catalog.find((product) => normalizeReceiptName(product.name) === normalizeReceiptName(item.name) &&
-      normalizeReceiptUnit(product.unit) === normalizeReceiptUnit(item.unit)) || null;
+  // Internal SKUs and descriptions are only review hints. Fiscal codes are
+  // issuer-scoped text; padding is not proof of equivalence.
+  return null;
 }
 
 function mergeReceiptCandidates(primary, alternate) {
@@ -847,9 +842,7 @@ function detectReceiptSupplier(text) {
 }
 
 function detectSupplierCnpj(text) {
-  const match = String(text || '').match(/CNPJ\s*[:.-]?\s*([\d.\/-]{14,20})/i);
-  const digits = String(match?.[1] || '').replace(/\D/g, '');
-  return digits.length === 14 ? digits : '';
+  return extractIssuerCnpj(text);
 }
 
 function detectReceiptMetadata(text) {
@@ -1161,6 +1154,7 @@ export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [fiscalPermissions,setFiscalPermissions]=useState(null);
   const [permissionUsers,setPermissionUsers]=useState([]);
   const [permissionBusy,setPermissionBusy]=useState(false);
@@ -1202,6 +1196,7 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
   const [pendingSaveError,setPendingSaveError]=useState('');
@@ -1215,6 +1210,7 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
+  const cashSavingRef=useRef(false);
   const [cashEntryMode,setCashEntryMode]=useState(''); // '', upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
@@ -1222,10 +1218,12 @@ export default function Home() {
   const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
+  const [cashChartScope,setCashChartScope]=useState('month');
+  const [cashSelectedDay,setCashSelectedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
-    dinheiroVendas:'0',cashCounted:'',movements:[]
+    dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]
   });
   const [stockCounts,setStockCounts]=useState([]);
   const [countSettings,setCountSettings]=useState(COUNT_DEFAULTS);
@@ -1248,7 +1246,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      typeof updater === 'function' ? updater(previous) : updater,
+      prepareFiscalIdentity(typeof updater === 'function' ? updater(previous) : updater, previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1287,12 +1285,15 @@ export default function Home() {
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
   const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+    view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useAccessibleDialog(activeDialog, () => {
     if (mergePair) {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
+    } else if (view === 'cash' && cashSelectedDay) {
+      setCashSelectedDay('');
     } else {
       setModal('');
     }
@@ -1300,6 +1301,23 @@ export default function Home() {
 
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
+    const membership = await supabase.rpc('inventory_tenants', { p_token: token });
+    if (membership.error || !membership.data?.user) {
+      setAccessGranted(false); setDataReady(false); setAccessCode(''); setCurrentUser(null);
+      setAccessMessage('Não foi possível validar os acessos da conta. Entre novamente.');
+      try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
+      return false;
+    }
+    const identity = membership.data.user;
+    const passwordRequired = Boolean(membership.data.mustChangePassword);
+    setMustChangePassword(passwordRequired);
+    setCurrentUser(identity);
+    if (passwordRequired || identity.role === 'superadmin') {
+      setProducts([]); setDocuments([]); setMovements([]); setPendingReceipts([]); setClosings([]);
+      setAccessCode(token); setAccessGranted(true); setDataReady(true); setLoaded(true);
+      try { sessionStorage.setItem('projeto-gpt-session', token); } catch (_) {}
+      return true;
+    }
     const { data, error: loadError } = await supabase.rpc('inventory_get', { p_session_token: token });
     if (loadError || !data) {
       setAccessMessage('Sua sessão expirou ou não é válida. Entre novamente com seu login e senha.');
@@ -1318,6 +1336,7 @@ export default function Home() {
     setProducts(Array.isArray(state.products) ? state.products : []);
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
+    setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
     const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
@@ -1397,6 +1416,7 @@ export default function Home() {
         if (Array.isArray(state.products)) setProducts(state.products);
         if (Array.isArray(state.movements)) setMovements(state.movements);
         if (Array.isArray(state.documents)) setDocuments(state.documents);
+        if (Array.isArray(state.suppliers)) setSuppliers(state.suppliers);
         if (Array.isArray(state.stockCounts)) setStockCounts(state.stockCounts);
         if (state.countSettings){setCountSettings(state.countSettings);setSettingsForm(state.countSettings);}
       }
@@ -1407,11 +1427,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded || supabase) return;
-    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, stockCounts, countSettings })); } catch (_) {}
-  }, [loaded, products, movements, documents, stockCounts, countSettings, supabase]);
+    try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
+  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
-    if (!supabase || !accessGranted || !dataReady || !accessCode) return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin') return;
     if (skipNextSyncRef.current) {
       skipNextSyncRef.current = false;
       return;
@@ -1423,7 +1443,7 @@ export default function Home() {
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
         const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
           p_session_token: accessCode,
-          p_state: { products, movements, documents, revision: revisionRef.current }
+          p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
         });
         if (saveError || !saved?.ok) {
           setSaveStatus('Falha ao salvar');
@@ -1448,7 +1468,56 @@ export default function Home() {
       });
     }, 650);
     return () => clearTimeout(timer);
-  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents]);
+  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents, suppliers, mustChangePassword, currentUser?.role]);
+
+  const administrationGuardRef = useRef(null);
+  administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
+  const invokeAdministration = useCallback(async (name, args) => {
+    if (!supabase || !accessCode) throw new Error('Sessão necessária.');
+    if (name === 'inventory_select_tenant') {
+      // Only a stable view can switch. Token rotation at the database prevents
+      // delayed requests from the previous unit from crossing this boundary.
+      const guard = administrationGuardRef.current;
+      if (guard.saveStatus !== 'Sincronizado' || guard.busy || guard.cashSaving || guard.cashImporting || guard.countBusy || guard.mergeBusy || guard.deletingDocId || guard.pendingBusy || guard.draft || guard.draftQueueLength || guard.manualMode || guard.modal) {
+        throw new Error('Conclua as operações da unidade atual antes de trocar.');
+      }
+      setDataReady(false);
+      try { await saveQueueRef.current; await pendingSaveSerial.current; }
+      catch { setDataReady(true); throw new Error('Falha ao concluir gravações pendentes.'); }
+    }
+    try {
+      const { data, error: rpcError } = await supabase.rpc(name, { ...args, p_token: accessCode });
+      if (rpcError || !data || data.ok === false) throw new Error('Operação recusada.');
+      if (name === 'inventory_select_tenant') {
+        if (!data.session_token || data.session_token === accessCode) throw new Error('Rotação de sessão necessária.');
+        // Never put a token for the new tenant into state containing old stock.
+        try { sessionStorage.setItem('projeto-gpt-session', data.session_token); }
+        catch {
+          // The old token is revoked. A fresh login is safer than rendering
+          // state from the previous unit when browser storage is unavailable.
+          window.location.replace(window.location.pathname + window.location.search);
+          throw new Error('Entre novamente para acessar a unidade.');
+        }
+      }
+      return data;
+    } catch (failure) {
+      if (name === 'inventory_select_tenant') {
+        setDataReady(true);
+        setToast('Troca de estabelecimento não concluída. Entre novamente se a sessão expirou.');
+      }
+      throw failure;
+    }
+  }, [supabase, accessCode]);
+
+  const reloadSelectedTenant = useCallback(async () => {
+    window.location.replace(window.location.pathname + window.location.search);
+  }, []);
+
+  const finishPasswordChange = useCallback(async () => {
+    if (supabase && accessCode) await supabase.rpc('inventory_logout', { p_session_token: accessCode });
+    try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
+    window.location.replace(window.location.pathname + window.location.search);
+  }, [supabase, accessCode]);
 
   function handleLock() {
     const token = accessCode;
@@ -1461,6 +1530,7 @@ export default function Home() {
     } catch (_) {}
     setAccessCode('');
     setCurrentUser(null);
+    setMustChangePassword(false);
     setLoginPassword('');
     setAccessGranted(false);
     setDataReady(false);
@@ -1502,7 +1572,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1552,7 +1622,7 @@ export default function Home() {
       'Possível duplicidade com "' + candidateDuplicates[0].left.name +
       '". Confira e selecione o produto existente antes de criar outro.');
     if (aliasProduct && !targetProduct &&
-        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.name))
+        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.originalName ?? it.name))
       issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
         '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
     if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
@@ -1593,6 +1663,9 @@ export default function Home() {
     const [year,month]=cashMonth.split('-').map(Number);
     return aggregateCashMonthly(closings,year,month);
   },[closings,cashMonth]);
+  const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
+  const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
+  const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
@@ -1735,47 +1808,58 @@ export default function Home() {
     }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
     finally{setCashImporting(false);}
   }
-  function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
+  function changeCashField(key,value){setCashForm(prev=>{
+    const next={...prev,[key]:value};
+    if(key==='cashReviewed')next.reviewedImport=prev.sourceFileName?Boolean(value):false;
+    else if(key==='reviewedImport')next.cashReviewed=Boolean(value);
+    else{next.cashReviewed=false;if(prev.sourceFileName)next.reviewedImport=false;}
+    return next;
+  });setCashError('');}
   function newCashClosing(mode='manual'){
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
     setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
-      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]});
+      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
     setCashError('');
   }
   function editCashClosing(entry){
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEntryMode('edit');
     setCashEditId(entry.id);
-    setCashForm({...entry,day:String(entry.day).slice(0,10),
+    setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
       movements:entry.movements||[]});
     setCashError('');setView('cash');
   }
   async function saveCashClosing(event){
     event.preventDefault();
-    const invalid=validateCashClosing(cashForm);
-    if(cashForm.sourceFileName&&!cashForm.reviewedImport) invalid.push('Confirme a revisão dos dados importados antes de salvar.');
+    if(cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Marque a conferência ao lado do botão salvar.');
     if(invalid.length){setCashError(invalid.join(' · '));return;}
     if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
-    setCashSaving(true);setCashError('');
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
     try{
-      const clean={...cashForm,day:cashForm.day,register:cashForm.register.trim(),
-        operator:cashForm.operator.trim(),
-        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(cashForm[key]||0).toFixed(2)])),
-        cashCounted:cashForm.cashCounted===''?'':Number(cashForm.cashCounted).toFixed(2),
-        movements:cashForm.movements.map(m=>({
+      const {cashReviewed,...entrySnapshot}=snapshot;
+      const clean={...entrySnapshot,day:snapshot.day,register:snapshot.register.trim(),
+        operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:snapshot.movements.map(m=>({
           type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
         }))};
       const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
       if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
       const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
-      if(listError||!Array.isArray(updated))throw new Error('Fechamento salvo, mas a atualização da lista falhou');
-      setClosings(updated);setCashEditId('');setCashEntryMode('');
-      setToast('Fechamento de caixa registrado com sucesso.');
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashEditId('');setCashEntryMode('');
+      setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
-    finally{setCashSaving(false);}
+    finally{cashSavingRef.current=false;setCashSaving(false);}
   }
   function openManualEntry() {
     if (draft || draftQueue.length) {
@@ -2322,6 +2406,7 @@ export default function Home() {
         if (i !== index) return it;
         const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
         const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
+        if (key === 'name') next.manualName = true;
         // Printed fiscal line totals are independent facts: do not overwrite them
         // when a reviewer fixes the quantity or unit price.
         if (key === 'quantity' || key === 'unitPrice') {
@@ -2455,6 +2540,12 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   function confirmDocument() {
+    if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
+      setError(/[A-Za-z]/.test(draft.supplierCnpj)
+        ? 'CNPJ alfanumérico preservado. Esta versão ainda não valida esse formato; solicite a atualização antes de lançar esta nota.'
+        : 'CNPJ do fornecedor inválido. Confira os dígitos com o emitente da nota antes de lançar.');
+      return;
+    }
     if(draft?.pendingId){
       const id=draft.pendingId;
       const fingerprint=JSON.stringify(cleanPendingDraft(draft));
@@ -2571,8 +2662,8 @@ export default function Home() {
       const netLine = Math.max(0, base - remainingDiscount * ratio +
         draftExtras * serviceRatio + expenseTotal * serviceRatio -
         (discountBase > 0 ? expenseTotal * remainingDiscount / discountBase * serviceRatio : 0));
-      const fiscalCode = normalizeProductCode(it.code);
-      const issuer = String(draft.supplierCnpj || '').replace(/\D/g, '');
+      const fiscalCode = fiscalCodeIdentity(it.code);
+      const issuer = cnpjDigits(draft.supplierCnpj);
       const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
       const index = nextProducts.findIndex((p) => it.productId
         ? p.id === it.productId : p.id === automaticProduct?.id);
@@ -2584,7 +2675,7 @@ export default function Home() {
         const old = nextProducts[index];
         productId = old.id;
         const supplierCodes = [...(old.supplierCodes || [])];
-        if (issuer && fiscalCode && !supplierCodes.some((alias) => alias.cnpj === issuer && normalizeProductCode(alias.code) === fiscalCode))
+        if (issuer && fiscalCode && !supplierCodes.some((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode))
           supplierCodes.push({ cnpj: issuer, code: it.code });
         nextProducts[index] = { ...old, supplierCodes,
           stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
@@ -2603,6 +2694,9 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
+    if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
+      registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
+        ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
@@ -2747,6 +2841,10 @@ export default function Home() {
     return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
+  if (supabase && accessGranted && (mustChangePassword || currentUser?.role === 'superadmin')) {
+    return <main className="tenant-admin-screen"><header><h1>Estoque+ · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
+  }
+
   return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
     <aside className="sidebar" id="primary-navigation">
@@ -2762,6 +2860,7 @@ export default function Home() {
         <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Gestor · Permissões" aria-current={view === 'permissions' ? 'page' : undefined} className={view === 'permissions' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('permissions')}><Icon type="check"/><span>Gestor · Permissões</span></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Estabelecimentos e equipe" aria-current={view === 'administration' ? 'page' : undefined} className={view === 'administration' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('administration')}><Icon type="box"/><span>Estabelecimentos e equipe</span></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
@@ -2820,6 +2919,7 @@ export default function Home() {
           {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
           {/* COUNT HISTORY */}
         </section>}
+        {view === 'administration' && currentUser?.role === 'admin' && <TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={false} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/>}
         {view === 'duplicates' && currentUser?.role === 'admin' && <section className="panel duplicates-panel">
           <div className="panel-head"><div><h2>Auditoria automática do catálogo</h2><p>Executada sempre que o estoque é atualizado. O código é comparado sem zeros iniciais e a descrição é verificada separadamente.</p></div><span className="history-count">{duplicatePairs.length} par(es)</span></div>
           <p className="duplicate-guidance">⚠ Revise estes pares com o documento original. Quando forem o mesmo produto, escolha qual cadastro manter e clique em Consolidar. A operação soma os saldos, preserva os códigos e atualiza os vínculos das notas para manter possíveis estornos. Unidades diferentes exigem correção prévia.</p>
@@ -2856,6 +2956,7 @@ export default function Home() {
         </>}
 
         {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
+          <div className="purchase-print-action"><button className="btn" type="button" disabled={!purchaseList.length} onClick={() => { if (currentUser?.role === 'admin' && purchaseList.length) printPurchasePlan(purchaseData); }}>Imprimir lista de compras</button></div>
           <div className="panel-head"><div><h2>Lista de compras por categoria</h2><p>Compras sugeridas = mínimo − saldo. O preço médio é ponderado pelas quantidades de entradas fiscais anteriores.</p></div><span className="history-count">{purchaseList.length} itens</span></div>
           {purchaseList.length ? <>
             <div className="purchase-overview">
@@ -3019,7 +3120,7 @@ export default function Home() {
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.manualInvoice && <label><span>CNPJ do fornecedor (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/\D/g,'').slice(0,14))} placeholder="14 dígitos"/></label>}<label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
@@ -3047,7 +3148,7 @@ export default function Home() {
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
-                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
+                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -3146,27 +3247,9 @@ export default function Home() {
         {view === 'cash' && <>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
             <button className="btn primary" type="button" disabled={cashImporting}
-              onClick={()=>cashFileRef.current?.click()}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
-            <button className="btn secondary" type="button" onClick={()=>newCashClosing('manual')}>Inserir manualmente</button>
+              onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
-          <section className="panel cash-summary">
-            <div className="panel-head"><div><h2>Faturamento do mês</h2><p>O total de vendas exclui sangrias e suprimentos. As modalidades seguem o relatório de caixa enviado.</p></div>
-              <label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>setCashMonth(e.target.value)}/></label>
-            </div>
-            <div className="cash-stats">
-              <div><small>Faturamento mensal</small><strong>{money(cashMonthly.revenue)}</strong></div>
-              <div><small>Fechamentos</small><strong>{cashMonthly.count}</strong></div>
-              <div><small>Média por fechamento</small><strong>{money(cashMonthly.count?cashMonthly.revenue/cashMonthly.count:0)}</strong></div>
-            </div>
-            <h3>Faturamento diário — {cashMonth}</h3>
-            <div className="cash-chart" aria-label="Gráfico de faturamento por dia">
-              {cashMonthly.daily.length ? cashMonthly.daily.map(p=><div className="cash-bar-column" key={p.day}>
-                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashMonthly.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
-                <small>{p.day.slice(-2)}</small>
-              </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
-            </div>
-          </section>
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
             <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
@@ -3174,14 +3257,15 @@ export default function Home() {
               <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
               <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
             </div>
+            {!cashForm.sourceFileName&&<button className="text-btn" type="button" onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
               <b>Arquivo importado: {cashForm.sourceFileName}</b>
               {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
-              <p>Valores extraídos automaticamente. Confirme no comprovante, especialmente sangrias e suprimentos.</p>
-              <label><input type="checkbox" checked={Boolean(cashForm.reviewedImport)} onChange={e=>changeCashField('reviewedImport',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações com o arquivo.</label>
+              <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
               {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
             </div>}
             <form onSubmit={saveCashClosing}>
+              <fieldset disabled={cashSaving} className="cash-form-fields">
               <div className="meta-fields">
                 <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
                 <label><span>Nº do caixa</span><input required value={cashForm.register} onChange={e=>changeCashField('register',e.target.value)}/></label>
@@ -3199,18 +3283,39 @@ export default function Home() {
                 <button type="button" className="btn secondary" onClick={()=>changeCashField('movements',cashForm.movements.filter((_,j)=>i!==j))}>Remover</button>
               </div>)}
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
-              <label className="field cash-counted"><span>Dinheiro contado no fechamento (opcional)</span><input type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
-              {cashForm.cashCounted!==''&&<p>Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="modal-actions"><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
+              {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              </fieldset>
             </form>
           </section>}
+          <section className="panel cash-summary">
+            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
+              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
+              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+            </div>
+            <div className="cash-stats">
+              <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
+              <div><small>Fechamentos</small><strong>{cashChartData.count}</strong></div>
+              <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
+            </div>
+            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
+            <div className="cash-chart" aria-label="Gráfico interativo de faturamento por dia">
+              {cashChartData.daily.length ? cashChartData.daily.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} onClick={()=>setCashSelectedDay(cashSelectedDay===p.day?'':p.day)}>
+                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashChartData.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
+                <small>{axisDate}</small><small>{weekday}</small>
+              </button>}) : <p>Sem fechamento neste período. Envie um relatório para começar o gráfico.</p>}
+            </div>
+          </section>
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
-            <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>SUPRIMENTOS</th><th>SANGRIAS</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td>{money(totals.inflow)}</td><td>{money(totals.outflow)}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
+            <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
+            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
+
+        {view==='cash'&&cashSelectedDay&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail"><div><b>Total de faturamento do dia</b><strong>{money(cashChartEntries.reduce((sum,e)=>sum+cashTotals(e).revenue,0))}</strong></div>{cashChartEntries.length?cashChartEntries.map(entry=>{const totals=cashTotals(entry);return <div key={entry.id}><b>Caixa {entry.register} · {entry.operator}</b><span>{CASH_CHANNELS.map(([key,label])=>`${label}: ${money(totals.revenues[key])}`).join(' · ')}</span></div>}):<span>Sem detalhes disponíveis.</span>}</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
         <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
@@ -3236,3 +3341,4 @@ export default function Home() {
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }
+

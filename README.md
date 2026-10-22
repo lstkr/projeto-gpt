@@ -123,12 +123,13 @@ Testes: `npm test` e `npm run build`.
 
 ## Relatórios de fechamento de caixa
 
-A tela **Fechamento de caixa** permite registrar o relatório da maquininha/sistema de vendas sem confundir faturamento com movimentações de dinheiro. Campos de faturamento: Cartão crédito POS, Cartão débito POS, Crédito, Débito, Outras e Dinheiro (vendas). Cadastre sangrias e suprimentos individualmente com valor e motivo. O painel calcula faturamento, POS, entradas/saídas de numerário, saldo após movimentações e diferença opcional do numerário contado.
+A tela **Fechamento de caixa** permite registrar o relatório da maquininha/sistema de vendas sem confundir faturamento com movimentações de dinheiro. Campos de faturamento: Cartão crédito POS, Cartão débito POS, Crédito, Débito, Outras e Dinheiro (vendas). Cadastre sangrias e suprimentos individualmente com valor e motivo. O painel calcula faturamento, POS, entradas/saídas de numerário, saldo após movimentações e diferença do dinheiro contado.
 
-Uma tabela separada `public.cash_closings` preserva os fechamentos, sem alterar estoque, documentos fiscais, contas ou senhas. Os RPCs `cash_closings_list` e `cash_closing_save` exigem sessão de usuário válida; colaboradores podem incluir novos caixas, mas somente o **Gestor** pode substituir um fechamento existente. Evita duplicação do mesmo caixa/data.
+Uma tabela separada `private.cash_closings` preserva os fechamentos por unidade, sem alterar estoque, documentos fiscais, contas ou senhas. Os RPCs `cash_closings_list` e `cash_closing_save` exigem sessão válida; funcionários podem incluir caixas, mas somente o **Gestor** pode corrigir um fechamento existente. A autoria é registrada pela sessão no servidor. O dinheiro contado é obrigatório e aceita `R$ 0,00`; a rubrica `SANGRIA - FECHAMENTO DE CAIXA` não entra nas movimentações, enquanto retiradas operacionais continuam consideradas.
 
-A visualização gráfica mostra os faturamentos **diários** do mês escolhido, somando diferentes caixas do mesmo dia, e a visão mensal apresenta faturamento acumulado, quantidade de fechamentos e média por fechamento. Sem dados anteriores o gráfico começa vazio, sem valores fictícios.
+A visualização gráfica mostra faturamentos **diários** do mês ou ano escolhido, somando diferentes caixas do mesmo dia. É possível selecionar um dia para ver o detalhamento por caixa e modalidade. O histórico exibe o faturamento por fechamento, o total do dia e quem registrou; dados antigos permanecem sem autoria conhecida.
 
 **Importante:** o modelo corresponde às rubricas do PDF de 10/10/2026, mas não presume que suprimentos sejam vendas ou que a diferença do caixa digital do PDF represente uma perda financeira. O relatório original indica R$ 569,00 na seção NFC-e, R$ 151,00 em cartões POS e R$ 241,50 tanto em suprimentos quanto em sangrias. O saldo físico depende do momento em que o numerário foi contado.
 
-**Migração necessária:** aplicar `db/cash-closing.sql` no projeto Supabase existente antes da publicação da interface. Nenhum reset de dados ou usuários é necessário.
+**Migrações necessárias:** em banco novo, aplicar os SQLs base na ordem descrita na seção de instalação. No projeto com acesso multinegócio, aplicar `supabase/migrations/20261022020602_cash_closing_integrity.sql` depois da migração de tenants antes de publicar a interface correspondente. A migração preserva os fechamentos existentes e não exige reset de dados ou usuários.
+

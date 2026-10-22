@@ -7,13 +7,15 @@ const document=(supplier,supplierCnpj,items,stockEntries,total=75)=>({supplier,s
 test('nota antiga do mesmo fornecedor e nome vincula produto sem criar cadastro',async()=>{
  const {attachPreviousPurchases,findHistoricalMatches}=await api;
  const catalog=[p('a','Tomate italiano','00412','Hortifruti')];
- const previous=[document('Horti Pelotas','12345678000190',[{name:'TOMATE ITALIANO',code:'00412',unit:'kg',quantity:1,productId:'a'}],
+ const previous=[document('Horti Pelotas','11222333000181',[{name:'TOMATE ITALIANO',code:'00412',unit:'kg',quantity:1,productId:'a'}],
    [{productId:'a',quantity:1,netUnitCost:10}])];
- const draft={supplier:'Horti Pelotas',supplierCnpj:'12345678000190',items:[{name:'Tomate italiano',code:'412',unit:'kg',quantity:3}]};
+ const draft={supplier:'Horti Pelotas',supplierCnpj:'11222333000181',items:[{name:'Tomate italiano',code:'00412',unit:'kg',quantity:3}]};
  assert.equal(findHistoricalMatches(draft,previous,catalog)[0].confident,true);
  const hydrated=attachPreviousPurchases(draft,previous,catalog);
  assert.equal(hydrated.items[0].productId,'a');
  assert.equal(draft.items[0].productId,undefined);
+ const padded={...draft,items:[{...draft.items[0],code:'412'}]};
+ assert.equal(attachPreviousPurchases(padded,previous,catalog).items[0].productId,undefined);
 });
 
 test('fornecedores com CNPJ diferente nao cruzam notas',async()=>{
@@ -21,6 +23,17 @@ test('fornecedores com CNPJ diferente nao cruzam notas',async()=>{
  const docs=[document('Distribuidora','12345678000190',[{name:'LEITE INTEGRAL',code:'123',unit:'l'}],[])];
  const note={supplier:'Distribuidora',supplierCnpj:'99999999000199',items:[{name:'LEITE INTEGRAL',code:'00123',unit:'l'}]};
  assert.deepEqual(findHistoricalMatches(note,docs,[]),[null]);
+});
+
+test('historico sem CNPJ ou com vinculos conflitantes nunca associa automaticamente',async()=>{
+ const {attachPreviousPurchases}=await api;
+ const catalog=[p('a','Tomate','1'),p('b','Tomate','2')];
+ const row={name:'Tomate',code:'001',unit:'kg',productId:'a'};
+ const receipt={supplier:'Horti',supplierCnpj:'11222333000181',items:[{name:'Tomate',code:'001',unit:'kg'}]};
+ const missing=[document('Horti','',[row],[])];
+ assert.equal(attachPreviousPurchases(receipt,missing,catalog).items[0].productId,undefined);
+ const ambiguous=[document('Horti','11222333000181',[row],[]),document('Horti','11222333000181',[{...row,productId:'b'}],[])];
+ assert.equal(attachPreviousPurchases(receipt,ambiguous,catalog).items[0].productId,undefined);
 });
 
 test('OCR com mesmo codigo mas nome ilegivel exige revisao',async()=>{
@@ -80,3 +93,4 @@ test('compras realizadas agrupadas por CNPJ sem misturar fornecedores',async()=>
  assert.equal(list[0].documents.length,2);
  assert.equal(list[0].total,52);
 });
+
