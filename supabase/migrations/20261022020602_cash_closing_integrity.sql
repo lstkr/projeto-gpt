@@ -40,7 +40,7 @@ returns jsonb language plpgsql security definer set search_path=''
 as $function$
 declare
  actor private.app_users%rowtype;
- tenant_id uuid;
+ tenant_uuid uuid;
  saved_id uuid;
  field_name text;
  amount_text text;
@@ -57,7 +57,7 @@ declare
 begin
  perform private.set_tenant_context(p_token);
  actor:=private.require_actor(p_token);
- tenant_id:=private.current_tenant();
+ tenant_uuid:=private.current_tenant();
  if jsonb_typeof(p_entry) is distinct from 'object'
  or length(btrim(coalesce(p_entry->>'operator',''))) not between 1 and 100
  or length(btrim(coalesce(p_entry->>'register',''))) not between 1 and 30
@@ -97,7 +97,7 @@ begin
   ),'[]'::jsonb));
  end if;
  insert into private.cash_closings(tenant_id,day,register,operator,payload,created_by_user_id,updated_by_user_id)
- values (tenant_id,(p_entry->>'day')::date,normalized_register,btrim(p_entry->>'operator'),clean_payload,actor.id,actor.id)
+ values (tenant_uuid,(p_entry->>'day')::date,normalized_register,btrim(p_entry->>'operator'),clean_payload,actor.id,actor.id)
  on conflict(tenant_id,day,register) do update set
    operator=excluded.operator,payload=excluded.payload,updated_at=statement_timestamp(),updated_by_user_id=actor.id
  where actor.role='admin'
