@@ -2273,7 +2273,9 @@ export default function Home() {
           for(const receipt of receipts){
             const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
             parsed.push(await storePendingReceipt(file,mapped));
-            await refreshPending();
+            try { await refreshPending(); } catch (refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
           }
         } catch (e) {
           fileStatus='Conferência manual';
@@ -2283,7 +2285,12 @@ export default function Home() {
             status:'Aguardando preenchimento',
             importWarning:e?.message||'Não foi possível interpretar automaticamente.',
             items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
-          try{parsed.push(await storePendingReceipt(file,fallback));await refreshPending();}
+          try{
+            parsed.push(await storePendingReceipt(file,fallback));
+            try { await refreshPending(); } catch(refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
+          }
           catch(saveError){
             fileStatus='Falhou';
             issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);
