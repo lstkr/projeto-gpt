@@ -37,9 +37,14 @@ export default function TenantAdministration({ invoke, user, mustChangePassword,
     event.preventDefault();
     if (busy) return;
     const form = event.currentTarget;
+    const data = new FormData(form);
+    if (operation === 'inventory_password_change' && data.has('confirmPassword') && data.get('newPassword') !== data.get('confirmPassword')) {
+      setError('A confirmação não corresponde à nova senha.');
+      return;
+    }
     setBusy(true); setError(''); setMessage('');
     try {
-      await invoke(operation, args(new FormData(form)));
+      await invoke(operation, args(data));
       form.reset();
       // Clear password inputs before any subsequent network request.
       if (operation === 'inventory_password_change') await onPasswordChanged();
@@ -61,9 +66,22 @@ export default function TenantAdministration({ invoke, user, mustChangePassword,
   </section>;
 
   return <section className="panel tenant-administration" aria-labelledby="tenant-admin-title">
-    <h2 id="tenant-admin-title">{isDba ? 'Administração DBA' : 'Estabelecimentos e equipe'}</h2>
-    <p>{isDba ? 'Cadastre gestores, unidades e funcionários. O acesso operacional é separado por estabelecimento.' : 'Gerencie os estabelecimentos e funcionários vinculados à sua gestão.'}</p>
+    <h2 id="tenant-admin-title">{isDba ? 'Administração DBA' : canManage ? 'Configurações do gestor' : 'Configurações da conta'}</h2>
+    <p>{isDba ? 'Cadastre gestores, unidades e funcionários. O acesso operacional é separado por estabelecimento.' : canManage ? 'Gerencie sua senha, estabelecimentos e funcionários vinculados à sua gestão.' : 'Atualize sua senha de acesso ao Estoque+.'}</p>
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    <section className="tenant-settings-section" aria-labelledby="own-password-title">
+      <h3 id="own-password-title">Minha senha</h3>
+      <p>Para alterar sua senha, informe a senha atual. Após salvar, você precisará entrar novamente.</p>
+      <form onSubmit={(event) => submit(event, 'inventory_password_change', (data) => ({
+        p_current_password: data.get('currentPassword'),
+        p_new_password: data.get('newPassword')
+      }), '')}>
+        <label>Senha atual<input name="currentPassword" type="password" autoComplete="current-password" required disabled={busy}/></label>
+        <label>Nova senha (12 a 72 caracteres)<input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={72} required disabled={busy}/></label>
+        <label>Confirme a nova senha<input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={72} required disabled={busy}/></label>
+        <button className="btn" type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Alterar minha senha'}</button>
+      </form>
+    </section>
     {!isDba && tenants.length > 0 && <form onSubmit={async (event) => {
       event.preventDefault(); if (busy) return;
       const id = new FormData(event.currentTarget).get('tenantId');
