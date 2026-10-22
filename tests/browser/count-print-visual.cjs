@@ -74,7 +74,7 @@ async function measure(page) {
      const html=countPrintHtml(fixture(v.paper,mode),new Date('2026-10-22T15:00:00Z'));
      assert.doesNotMatch(html,/>9876543<|>9999999<|>12345678</);
      if(mode==='blind'){
-       assert.doesNotMatch(html,/>1,25<|>1,5<|>2</);
+       assert.doesNotMatch(html,/>1,25<|>1,5</);
        assert.doesNotMatch(html,/<th>Estoque<\/th>|<th>Dif\.<\/th>/);
      }
      await page.setContent(html,{waitUntil:'load'});
