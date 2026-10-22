@@ -60,7 +60,7 @@ const closings = [
     await columns.first().waitFor();
     assert.equal(await columns.count(),31,'outubro precisa exibir 31 dias');
     assert.equal(await page.locator('.cash-chart-month .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
-    const amountLabels = await columns.evaluateAll(items=>items.filter(item=>/R\\$\\s*[0-9]/.test(item.innerText)));
+    const amountLabels = await columns.evaluateAll(items=>items.filter(item=>/R\$\s*[0-9]/.test(item.innerText)));
     assert.equal(amountLabels.length,0,'rótulos de moeda não podem ocupar o espaço estreito das colunas');
 
     for (const [width,height] of [[320,700],[375,812],[768,1024],[1024,768],[1366,768],[1920,1080]]) {
@@ -83,13 +83,12 @@ const closings = [
       await page.screenshot({path:path.join(output,'cash-chart-'+width+'.png')});
     }
 
-    const day20 = columns.filter({has:page.locator('[aria-label]')});
     const bar20=page.locator('.cash-chart-month .cash-bar-column[aria-label*="20 de outubro"]');
     await bar20.scrollIntoViewIfNeeded();
     await bar20.hover();
-    assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/R\\$\\s*2\\.175,50/,'o hover deve exibir a receita consolidada do dia');
+    assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/R\$\s*2\.175,50/,'o hover deve exibir a receita consolidada do dia');
     await bar20.focus();
-    assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/2\\.175,50/,'o foco por teclado deve informar o valor');
+    assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/2\.175,50/,'o foco por teclado deve informar o valor');
     await bar20.click();
     await page.getByRole('dialog').waitFor();
     await page.getByRole('button',{name:'Fechar detalhamento do dia'}).click();
