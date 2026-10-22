@@ -55,6 +55,6 @@ test('reject fractional/invalid/unsafe cents instead of silently truncating',asy
   }
   assert.throws(()=>calculateCmv({...base,revenueCents:-10}),RangeError);
   assert.throws(()=>calculateCmv({...base,netPurchasesCents:1.1}),RangeError);
-  assert.throws(()=>calculateCmv({...base,openingStockCents:Number.MAX_SAFE_INTEGER}),RangeError);
+  assert.throws(()=>calculateCmv({...base,openingStockCents:Number.MAX_SAFE_INTEGER,netPurchasesCents:500}),RangeError);
   assert.throws(()=>calculateCmv(null),TypeError);
 });
