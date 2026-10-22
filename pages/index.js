@@ -2273,6 +2273,9 @@ export default function Home() {
           for(const receipt of receipts){
             const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
             parsed.push(await storePendingReceipt(file,mapped));
+            try { await refreshPending(); } catch (refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
           }
         } catch (e) {
           fileStatus='Conferência manual';
@@ -2282,7 +2285,12 @@ export default function Home() {
             status:'Aguardando preenchimento',
             importWarning:e?.message||'Não foi possível interpretar automaticamente.',
             items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
-          try{parsed.push(await storePendingReceipt(file,fallback));}
+          try{
+            parsed.push(await storePendingReceipt(file,fallback));
+            try { await refreshPending(); } catch(refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
+          }
           catch(saveError){
             fileStatus='Falhou';
             issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);
@@ -2299,15 +2307,7 @@ export default function Home() {
         try{await refreshPending();}catch(refreshError){
           issues.push('Notas salvas, mas não foi possível atualizar a lista: '+refreshError.message);
         }
-        if (!draft && !draftQueue.length) {
-          setDraft(parsed[0]);
-          setDraftQueue(parsed.slice(1));
-          setDraftBatch(parsed.length > 1 ? {current: 1, total: parsed.length} : null);
-        } else {
-          // Never overwrite the note the operator is already reviewing.
-          setDraftQueue(previous=>[...previous,...parsed]);
-          setDraftBatch(previous=>previous?{...previous,total:previous.total+parsed.length}:null);
-        }
+        // Keep the active review untouched; newly imported notes appear in the server-backed queue.
         setToast(parsed.length + (parsed.length === 1 ? ' cupom pronto' : ' cupons prontos') + ' para conferência. Nada foi lançado automaticamente.');
       }
       if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
@@ -3017,6 +3017,15 @@ export default function Home() {
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
             <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
           </div>
+          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
+              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
+              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
+            </div>
+            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
+            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
+            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
+          </section>}
           <section className="panel pending-documents-panel">
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
             {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
@@ -3025,21 +3034,11 @@ export default function Home() {
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" disabled={busy} onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
               {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          {busy && uploadBatchProgress && <div className="notice" role="status" aria-live="polite">
-            <b>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos processados</b>
-            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total}
-              aria-label="Progresso dos arquivos fiscais" style={{display:'block',width:'100%',marginTop:8}}/>
-            <p>{uploadBatchProgress.fileName
-              ? 'Em processamento: '+uploadBatchProgress.fileName
-              : 'Preparando arquivos…'} · {uploadBatchProgress.failed} falha(s)</p>
-            <ul>{uploadBatchProgress.files.map((file,i)=><li key={i}>{file.name}: {file.status}</li>)}</ul>
-          </div>}
-          {busy && <div className="notice">{processingType === "xml" ? "Lendo o XML da NF-e e identificando os itens…" : "Reconhecendo texto da imagem" + (ocrProgress ? " — " + ocrProgress + "%" : " — preparando o mecanismo OCR") + "…"}</div>}
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">

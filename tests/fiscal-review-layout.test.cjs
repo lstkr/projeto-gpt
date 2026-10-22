@@ -33,3 +33,18 @@ test('QR expõe chave apenas no cartão identificado, com edição sob demanda',
   assert.ok(review.includes('href="https://github.com/pcelias-ctrl/nfc-e"'));
   assert.ok(review.includes("draft.qrReader?.includes('API externa')"));
 });
+
+test('processamento compacto aparece acima da fila e integra OCR', () => {
+  const progress = documents.indexOf('Arquivos sendo processados');
+  const pending = documents.indexOf('Notas aguardando conferência');
+  assert.ok(progress >= 0 && pending > progress);
+  assert.ok(documents.includes("Reconhecendo texto da imagem"));
+  assert.ok(!documents.includes('uploadBatchProgress.files.map'));
+  assert.ok(!documents.includes('{busy && <div className="notice">{processingType'));
+});
+
+test('notas prontas ficam disponíveis para conferência durante OCR de outras notas', () => {
+  assert.match(documents, /onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
+  assert.doesNotMatch(documents, /disabled=\{busy\} onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
+  assert.ok(view.includes('await refreshPending();'), 'a fila é atualizada durante o processamento');
+});
