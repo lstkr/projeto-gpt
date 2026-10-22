@@ -118,6 +118,11 @@ const closings = [
     assert.match(await printFrame.locator('body').innerText(),/Unidade QA/,'impressão precisa identificar estabelecimento ativo');
     assert.doesNotMatch(await printFrame.locator('body').innerText(),/98765|999999|123456|999998|20.*L/);
     await page.getByRole('button',{name:'Imprimir documento'}).waitFor({state:'visible'});
+    await page.waitForFunction(()=>{
+      const button=[...document.querySelectorAll('.count-print-modal button')]
+        .find(el=>el.textContent?.trim()==='Imprimir documento');
+      return Boolean(button&&!button.disabled);
+    },undefined,{timeout:8000});
     for(const [width,height] of [[320,700],[375,812],[768,1024],[1024,768],[1366,768],[1920,1080]]){
       await page.setViewportSize({width,height});
       const measured=await page.evaluate(()=>{
