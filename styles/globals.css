@@ -782,3 +782,12 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .tenant-settings-section p{margin:8px 0 12px;color:#475569}
 .tenant-settings-section form{margin-bottom:0}
 @media(max-width:600px){.tenant-settings-section{padding:14px}.tenant-settings-section label,.tenant-settings-section .btn{flex-basis:100%;width:100%}}
+
+/* #79: monthly cash chart uses calendar positions, including zero-revenue days */
+.cash-chart-month{gap:4px;justify-content:flex-start}
+.cash-chart-month .cash-bar-column{flex:1 0 30px;min-width:30px;max-width:64px;font-size:10px}
+.cash-chart-month .cash-bar-track{max-width:24px}
+.cash-chart-month .cash-bar-column>span{font-size:10px;white-space:nowrap}
+.cash-chart-month .cash-bar-column.is-empty{cursor:default;opacity:.55}
+.cash-chart-month .cash-bar-column.is-empty .cash-bar-fill{height:0!important}
+@media(max-width:850px){.cash-chart-month .cash-bar-column{flex:0 0 34px}}
