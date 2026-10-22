@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "collection": "Estoque+ private real photo fixtures",
+  "library_path": "/Estoque+/Testes OCR",
+  "photos": 13,
+  "minimum_documents": 14,
+  "fixtures": [
+    {
+      "name": "caixa-2025-10-08.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "divergencia_fisico",
+      "bytes": 763013,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "62d065367fc2b83e3b5b88179b74fa02edd5865dd543f380ba98b1b24fd995d7"
+    },
+    {
+      "name": "caixa-2025-11-04.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "movimentos_modalidades",
+      "bytes": 622103,
+      "width": 864,
+      "height": 1536,
+      "sha256": "8b18bff240f887c097bcc42ed2f5b08ec81baf22b19e321c61d5b37432d2dcb4"
+    },
+    {
+      "name": "caixa-2025-11-08.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "pos_movimentos",
+      "bytes": 606684,
+      "width": 864,
+      "height": 1536,
+      "sha256": "a5760347a0b5ae122e5b10e3fc9ecd87701589db4009266746b226b769c9bf42"
+    },
+    {
+      "name": "caixa-2025-11-11.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "seis_modalidades",
+      "bytes": 627139,
+      "width": 864,
+      "height": 1536,
+      "sha256": "30a54443a65ae10f303222da9337f2bb3510997a47809196de1ef0afecc1796f"
+    },
+    {
+      "name": "caixa-2025-11-14.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "debito_movimentos",
+      "bytes": 631999,
+      "width": 864,
+      "height": 1536,
+      "sha256": "060ce4c5127526beb370814acf42f71c9024a5b4ed86720e9a12fcac7c613eda"
+    },
+    {
+      "name": "caixa-2025-11-25.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "sangria_suprimento",
+      "bytes": 610044,
+      "width": 864,
+      "height": 1536,
+      "sha256": "8176b14bf564699ab9742f6b967a17fdadcafd6806e7970a6c07524b136cf141"
+    },
+    {
+      "name": "caixa-2025-11-26.jpeg",
+      "type": "cash_closing",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "credito_debito_pos",
+      "bytes": 611488,
+      "width": 864,
+      "height": 1536,
+      "sha256": "81e78549bdbed0ad8f0fe3eaa148e5e3763b2f6b26edacf5c0f31201f1b948a7"
+    },
+    {
+      "name": "fiscal-01-ovo.jpeg",
+      "type": "fiscal_document",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "troco_vs_total",
+      "bytes": 694903,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "16d952de9f298bd0e50a1589f08c7ba6b1cd5fb01908bec4382c1e04b5ef7065"
+    },
+    {
+      "name": "fiscal-02-tomate.jpeg",
+      "type": "fiscal_document",
+      "documents": 1,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "produto_por_kg",
+      "bytes": 683927,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "67ddfffb68266da0d0fa18836e1decb808f0b3e8ae7a4e8da2244fde600c3f81"
+    },
+    {
+      "name": "fiscal-03-duas-notas.jpeg",
+      "type": "fiscal_document",
+      "documents": 2,
+      "golden": "user-thermal-golden-20261021.json",
+      "focus": "separar_duas_notas_sem_duplicar",
+      "bytes": 609144,
+      "width": 864,
+      "height": 1536,
+      "sha256": "a0011bda56841d9ac083d75d64a57becc919e79df609298966f4dc6d4118fbe8"
+    },
+    {
+      "name": "fiscal-04-danfe.jpeg",
+      "type": "fiscal_document",
+      "documents": 1,
+      "golden": null,
+      "focus": "danfe_folha",
+      "bytes": 604060,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "d685adc992292cd374af1c0c7b7e3b723fc6ece20fc9dd5156623762be1b809e"
+    },
+    {
+      "name": "fiscal-05-cupom-termico.jpeg",
+      "type": "fiscal_document",
+      "documents": 1,
+      "golden": null,
+      "focus": "cupom_amassado",
+      "bytes": 660161,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "e0deb84e3fa303799795fe99d60ccb4306ad0470dfd93bbf045c5fa06116ce92"
+    },
+    {
+      "name": "fiscal-06-contingencia.jpeg",
+      "type": "fiscal_document",
+      "documents": 1,
+      "golden": null,
+      "focus": "contingencia_qr",
+      "bytes": 911190,
+      "width": 1152,
+      "height": 1536,
+      "sha256": "e83b3b171865b260711e3888d07b11b79fa8785f1b3457974ad795694bf8c7a0"
+    }
+  ],
+  "notice": "User-authorized real fiscal/cash images for internal isolated tests only; originals never in public repository, logs, issues or public CI artifacts."
+}

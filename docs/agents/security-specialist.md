@@ -46,3 +46,7 @@ Responsáveis por alteração: Back-end para API/autorização, Database Archite
 - Testes não realizados e motivo:
 - Gate: **APROVADO | REPROVADO | BLOQUEADO**:
 - Correções, responsáveis e reteste necessário:
+
+## Banco compartilhado de imagens reais autorizado (22/10/2026)
+
+O acervo privado de testes `/Estoque+/Testes OCR` tem 13 fotos/≥14 documentos. Consulte `tests/fixtures/private-real-images-20261022.json`; use `node scripts/verify-private-image-fixtures.cjs /caminho/images` para validar hash em ambiente isolado. **Não inserir originais reais em GitHub Actions, issues, logs ou relatórios públicos**, mesmo com autorização do usuário para testes internos. Para DAST/OCR, impedir uploads a produção e transmissão a provedores externos sem escopo/consentimento específico. Exigir revisão de visibilidade e sanitização de novos artefatos.

@@ -9,3 +9,6 @@ npm-debug.log*
 public/vendor/pdf.worker-*.min.js
 tests/browser/artifacts/
 
+
+# Real fiscal/cash receipts are private manual OCR fixtures, never source-control artifacts.
+tests/fixtures/private-images/
