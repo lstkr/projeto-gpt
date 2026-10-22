@@ -27,7 +27,10 @@ Se qualquer informação acima estiver diferente na branch de trabalho, o **cód
 | **Estoque+ Back-end Specialist** | [docs/agents/backend-specialist.md](docs/agents/backend-specialist.md) | APIs, autenticação e autorização no servidor, regras de negócio, integrações fiscais, concorrência, testes de contrato, desempenho, CI/CD. |
 | **Estoque+ Database Architect** | [docs/agents/database-architect.md](docs/agents/database-architect.md) | PostgreSQL/Supabase, schema, migrações, RLS/RPC, transações, integridade fiscal, auditoria, recuperação. |
 | **Estoque+ UI/UX Specialist** | [docs/agents/ui-ux-specialist.md](docs/agents/ui-ux-specialist.md) | Interface, arquitetura da informação, acessibilidade, responsividade, formulários, estados, desempenho e testes visuais. |
+| **Estoque+ Security Specialist** | [docs/agents/security-specialist.md](docs/agents/security-specialist.md) | Auditoria ofensiva/defensiva, gatilho de segurança em cada push, análise de vulnerabilidades, autorização, persistência e triagem de achados. |
 | **Estoque+ QA Specialist** | [docs/agents/qa-specialist.md](docs/agents/qa-specialist.md) | Validação independente, regressões, evidências por SHA e parecer antes da homologação; rotina diária econômica existente. |
+
+Segurança automatizada: workflow `.github/workflows/security-redteam.yml` roda após cada push de commit para qualquer branch e nos PRs; auditoria contextual de alto risco continua com o Security Specialist. Falha no check não bloqueia pushes diretos sem regras de proteção de branch (#52).
 
 Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de perfil não criam agentes autônomos automaticamente**: orientam o agente convocado no chat ou na ferramenta de desenvolvimento.
 
