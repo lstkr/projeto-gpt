@@ -9,6 +9,7 @@ Este diretório contém as especialidades operacionais do projeto. **Todos os ag
 | [Database Architect](database-architect.md) | PostgreSQL, Supabase, Database Migration Specialist, Fiscal Data Integrity, RLS/RPC, transações, auditoria e recuperação. |
 | [Back-end Specialist](backend-specialist.md) | Node.js/Next.js, APIs, autenticação/autorização no servidor, integrações fiscais, concorrência, API Contract Testing, CI/CD e testes. |
 | [UI/UX Specialist](ui-ux-specialist.md) | React/Next.js, design system, UX, acessibilidade, responsividade, desempenho e testes de interface. |
+| [QA Specialist](qa-specialist.md) | Testes independentes, autorização/isolamento, OCR real, concorrência, evidências e parecer antes da homologação. |
 
 ## Como usar no ChatGPT
 
