@@ -545,9 +545,12 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-stats>div{border-radius:10px;border:1px solid #e3eadd;background:#f5f9f2;padding:14px;display:grid;gap:8px}
 .cash-stats small{color:#697a69;font-size:11px}
 .cash-stats strong{font-size:22px;color:#2e6647}
-.cash-chart{display:flex;align-items:end;gap:9px;min-height:215px;overflow-x:auto;padding:12px 5px;border-bottom:1px solid #dce8dd}
+.cash-chart{display:flex;align-items:flex-end;gap:9px;min-height:215px;overflow-x:auto;padding:12px 5px;border-bottom:1px solid #dce8dd}
 .cash-bar-column{min-width:58px;flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:9px;color:#6b806e}
-.cash-bar-track{height:155px;width:100%;max-width:44px;display:flex;align-items:end}
+.cash-bar-column{border:0;background:transparent;padding:0;cursor:pointer;font:inherit}
+.cash-bar-column:hover .cash-bar-fill,.cash-bar-column.is-selected .cash-bar-fill{background:#2e6647}
+.cash-bar-column:focus-visible{outline:2px solid #2e6647;outline-offset:3px;border-radius:5px}
+.cash-bar-track{height:155px;width:100%;max-width:44px;display:flex;align-items:flex-end}
 .cash-bar-fill{width:100%;background:#60866c;border-radius:5px 5px 0 0}
 .cash-entry h3{font-size:14px;color:#3e6149;margin:19px 0 12px}
 .cash-overview{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:13px;background:#eff6ed;border-radius:8px;margin:12px 0;color:#385f42;font-size:12px}
@@ -556,6 +559,18 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-movement-row{display:grid;grid-template-columns:145px 120px minmax(170px,1fr) auto;gap:9px;margin:10px 0}
 .cash-movement-row input,.cash-movement-row select{min-width:0;border:1px solid #d9e4db;border-radius:6px;padding:9px;font:inherit}
 .cash-counted{max-width:360px;display:grid;gap:6px;margin:16px 0}
+.cash-save-row{display:flex;align-items:center;justify-content:flex-end;gap:18px;flex-wrap:wrap;margin-top:18px}
+.cash-save-row label{display:flex;align-items:center;gap:8px;font-size:12px;color:#465b49}
+.cash-form-fields{border:0;margin:0;padding:0;min-width:0}
+.cash-chart-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.cash-scope-toggle{display:flex;border:1px solid #d7e3d8;border-radius:8px;padding:3px;background:#f6f9f5}
+.cash-scope-toggle button{border:0;border-radius:5px;padding:8px 12px;background:transparent;color:#526b56;cursor:pointer}
+.cash-scope-toggle button.is-active{background:#3e7650;color:#fff}
+.cash-day-detail{display:grid;gap:9px;margin-top:14px;padding:14px;border:1px solid #dce8dd;border-radius:9px;background:#f8fbf7}
+.cash-day-detail>div{display:grid;gap:4px}
+.cash-day-detail>div+div{padding-top:9px;border-top:1px solid #e1e9e2}
+.cash-day-detail span{font-size:12px;color:#586b5b;line-height:1.6}
+.cash-day-detail strong{color:#2e6647}
 @media(max-width:750px){.cash-stats{grid-template-columns:1fr}.cash-movement-row{grid-template-columns:1fr 1fr}.cash-movement-row input[aria-label="Motivo da movimentação"]{grid-column:1 / -1}.cash-movement-row .btn{grid-column:1 / -1}}
 
 .cash-file-import{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px;border:1px dashed #91b398;border-radius:10px;background:#f4faf3;margin:10px 0 15px}

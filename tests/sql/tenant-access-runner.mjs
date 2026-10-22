@@ -20,7 +20,8 @@ for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-rece
  'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
  'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
  'supabase/migrations/20261021232050_tenant_access.sql',
- 'supabase/migrations/20261021233206_count_guard_search_path.sql']) {
+ 'supabase/migrations/20261021233206_count_guard_search_path.sql',
+ 'supabase/migrations/20261022020602_cash_closing_integrity.sql']) {
  try {
   const source=await fs.readFile(file,'utf8');
   if(file.endsWith('_tenant_access.sql')) {
@@ -58,9 +59,22 @@ assert.notEqual(switched.session_token,token);
 await assert.rejects(()=>scalar('select public.inventory_get($1) result',[token]),/Sessão inválida|Sessao invalida/);
 token=switched.session_token;
 assert.deepEqual((await scalar('select public.inventory_get($1) result',[token])).products,[]);
-const cash={day:'2026-10-21',register:'01',operator:'Test',movements:[]};
-assert.equal((await scalar('select public.cash_closing_save($1,$2::jsonb) result',[token,JSON.stringify(cash)])).ok,true);
-assert.equal((await scalar('select public.cash_closings_list($1) result',[token])).length,1);
+const cash={day:'2026-10-21',register:'01',operator:'Test',cashCounted:'0.00',cashReviewed:true,
+ movements:[{type:'sangria',amount:'10.00',reason:'SANGRIA - FECHAMENTO DE CAIXA'}],
+ createdBy:{id:'spoofed',displayName:'Spoofed'},id:'spoofed'};
+const savedCash=await scalar('select public.cash_closing_save($1,$2::jsonb) result',[token,JSON.stringify(cash)]);
+assert.equal(savedCash.ok,true);
+assert.equal(savedCash.createdBy.displayName,'Test Manager');
+assert.equal(savedCash.updatedBy.displayName,'Test Manager');
+const listedCash=await scalar('select public.cash_closings_list($1) result',[token]);
+assert.equal(listedCash.length,1);
+assert.equal(listedCash[0].createdBy.displayName,'Test Manager');
+assert.equal(listedCash[0].movements.length,0);
+for(const value of [undefined,'',null,'-1','1.234']) {
+ const invalid={...cash};
+ if(value===undefined)delete invalid.cashCounted;else invalid.cashCounted=value;
+ await assert.rejects(()=>scalar('select public.cash_closing_save($1,$2::jsonb) result',[token,JSON.stringify(invalid)]),/dinheiro contado|Fechamento inválido|Valor de faturamento inválido/i);
+}
 const pending=await scalar('select public.pending_receipt_create($1,$2,$3,$4,$5::jsonb) result',[
  token,'fixture.png','image/png','eA==','{}']);
 assert.equal(pending.ok,true);
@@ -72,6 +86,17 @@ assert.equal(employeeLogin.must_change_password,true);
 await assert.rejects(()=>scalar('select public.inventory_get($1) result',[employeeLogin.session_token]),/Troque sua senha/);
 assert.equal((await scalar('select public.inventory_password_change($1,$2,$3) result',[
  employeeLogin.session_token,'test-only-employee-password','test-only-replaced-password'])).ok,true);
+await assert.rejects(()=>scalar('select public.cash_closing_save($1,$2::jsonb) result',[
+ employeeLogin.session_token,JSON.stringify({...cash,register:'01 '})]),/Somente o Gestor pode alterar/);
+const employeeCash={day:'2026-10-21',register:'02 ',operator:'Test Employee',cashCounted:'0.00',movements:[]};
+const employeeSaved=await scalar('select public.cash_closing_save($1,$2::jsonb) result',[
+ employeeLogin.session_token,JSON.stringify(employeeCash)]);
+assert.equal(employeeSaved.createdBy.displayName,'Test Employee');
+const managerCorrection=await scalar('select public.cash_closing_save($1,$2::jsonb) result',[
+ token,JSON.stringify({...employeeCash,register:'02',operator:'Corrected'})]);
+assert.equal(managerCorrection.createdBy.displayName,'Test Employee');
+assert.equal(managerCorrection.updatedBy.displayName,'Test Manager');
+assert.equal((await scalar('select public.cash_closings_list($1) result',[token])).length,2);
 await assert.rejects(()=>scalar('select public.inventory_directory($1) result',[employeeLogin.session_token]),/Operação não autorizada/);
 await assert.rejects(()=>scalar('select public.inventory_select_tenant($1,$2) result',[
  employeeLogin.session_token,'00000000-0000-4000-8000-000000000001']),/Sem acesso/);
@@ -80,6 +105,10 @@ await assert.rejects(()=>scalar('select public.inventory_user_create($1,$2,$3,$4
 const back=await scalar('select public.inventory_select_tenant($1,$2) result',[
  token,'00000000-0000-4000-8000-000000000001']);
 assert.equal((await scalar('select public.inventory_get($1) result',[back.session_token])).products[0].id,'test-product');
+const correctedCash=await scalar('select public.cash_closing_save($1,$2::jsonb) result',[
+ back.session_token,JSON.stringify({...cash,register:'01',createdBy:{id:'spoofed',displayName:'Spoofed'}})]);
+assert.equal(correctedCash.createdBy.displayName,'Test Manager');
+assert.equal(correctedCash.updatedBy.displayName,'Test Manager');
 assert.deepEqual(await scalar('select public.cash_closings_list($1) result',[back.session_token]),[]);
 assert.deepEqual(await scalar('select public.pending_receipts_list($1) result',[back.session_token]),[]);
 assert.deepEqual(await scalar('select public.pending_receipt_file($1,$2) result',[back.session_token,pending.id]),{});
@@ -119,5 +148,4 @@ assert.deepEqual(freshDbaTenants.tenants,[]);
 console.log('PASS full test reset clears custom accounts/data, preserves Supabase-managed schemas, and allows fresh DBA bootstrap');
 console.log('PASS tenant inventory/cash/pending isolation, token revocation, first-password gate, role escalation, employee isolation, private grants, identity collisions');
 await db.close();
-
 
