@@ -27,6 +27,7 @@ Se qualquer informação acima estiver diferente na branch de trabalho, o **cód
 | **Estoque+ Back-end Specialist** | [docs/agents/backend-specialist.md](docs/agents/backend-specialist.md) | APIs, autenticação e autorização no servidor, regras de negócio, integrações fiscais, concorrência, testes de contrato, desempenho, CI/CD. |
 | **Estoque+ Database Architect** | [docs/agents/database-architect.md](docs/agents/database-architect.md) | PostgreSQL/Supabase, schema, migrações, RLS/RPC, transações, integridade fiscal, auditoria, recuperação. |
 | **Estoque+ UI/UX Specialist** | [docs/agents/ui-ux-specialist.md](docs/agents/ui-ux-specialist.md) | Interface, arquitetura da informação, acessibilidade, responsividade, formulários, estados, desempenho e testes visuais. |
+| **Estoque+ QA Specialist** | [docs/agents/qa-specialist.md](docs/agents/qa-specialist.md) | Validação independente, regressões, evidências por SHA e parecer antes da homologação; rotina diária econômica existente. |
 
 Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de perfil não criam agentes autônomos automaticamente**: orientam o agente convocado no chat ou na ferramenta de desenvolvimento.
 
@@ -79,7 +80,7 @@ Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de p
 3. Manter dados de produção intactos e não usar notas fiscais reais identificáveis nos fixtures públicos.
 
 **Depois**
-1. Executar `npm test` e `npm run build` quando o ambiente permitir. `npm run build` já chama os testes por configuração do `package.json`.
+1. Executar `npm test` e `npm run build` quando o ambiente permitir. Na configuração atual, `npm run build` não executa a suíte: rodar `npm test` separadamente.
 2. Em mudanças de SQL, revisar privilégios/RLS, testar migração e consultas representativas em ambiente não produtivo; não assumir que testes Node substituem testes de banco.
 3. Verificar os diffs, contratos e comportamento das telas/rotas impactadas; usar revisão e CI antes de merge/deploy.
 4. Relatar **arquivos alterados, motivo, testes efetivamente executados e respectivos resultados, riscos, pendências, efeitos de deploy e rollback**. Diferenciar claramente “não executado” de “aprovado”.
