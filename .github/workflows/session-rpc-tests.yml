@@ -5,6 +5,7 @@ permissions:
   contents: read
 jobs:
   postgres:
+    name: Native session / PostgreSQL ${{ matrix.postgres }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -10,6 +10,7 @@ concurrency:
 
 jobs:
   postgres:
+    name: Fiscal integrity / PostgreSQL ${{ matrix.postgres }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
