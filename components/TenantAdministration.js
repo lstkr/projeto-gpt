@@ -91,6 +91,20 @@ export default function TenantAdministration({ invoke, user, mustChangePassword,
         <label>Estabelecimento<select name="tenantId" required disabled={busy}><option value="">Selecione uma unidade</option>{directory.establishments.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}</option>)}</select></label>
         <button className="btn" disabled={busy}>Autorizar unidade</button>
       </form></>}
+      <h3>Recuperação de acesso</h3>
+      <p>Defina uma senha temporária para um usuário autorizado. As sessões anteriores serão encerradas e uma nova senha será exigida no próximo acesso.</p>
+      <form onSubmit={(event) => submit(event, 'inventory_admin_password_reset', (data) => ({
+        p_user_id: data.get('userId'),
+        p_temporary_password: data.get('temporaryPassword')
+      }), 'Senha provisória definida. Informe-a ao usuário por um canal privado.')} >
+        <label>Usuário<select name="userId" required disabled={busy}>
+          <option value="">Selecione um usuário</option>
+          {directory.users.filter((record) => record.active && (isDba || record.role === 'employee')).map((record) =>
+            <option key={record.id} value={record.id}>{record.displayName} ({record.username})</option>)}
+        </select></label>
+        <label>Nova senha provisória (12 a 72 caracteres)<input name="temporaryPassword" type="password" minLength={12} maxLength={72} autoComplete="new-password" required disabled={busy}/></label>
+        <button className="btn" disabled={busy}>Redefinir senha e encerrar sessões</button>
+      </form>
       <h3>Usuários cadastrados</h3><ul>{directory.users.map((record) => <li key={record.id}>{record.displayName} · {record.username} · {record.role === 'superadmin' ? 'DBA' : record.role === 'admin' ? 'Gestor' : 'Funcionário'}{record.active ? '' : ' · Inativo'}</li>)}</ul>
     </>}
   </section>;
