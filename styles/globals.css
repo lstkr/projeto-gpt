@@ -791,3 +791,24 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-chart-month .cash-bar-column.is-empty{cursor:default;opacity:.55}
 .cash-chart-month .cash-bar-column.is-empty .cash-bar-fill{height:0!important}
 @media(max-width:850px){.cash-chart-month .cash-bar-column{flex:0 0 34px}}
+
+/* Legible daily cash closing detail, responsive and without changes to accounting. */
+.cash-day-dialog{width:min(920px,calc(100vw - 32px));max-width:920px;max-height:min(88vh,950px);overflow:auto}
+.cash-day-detail{display:flex;flex-direction:column;gap:22px;padding:20px 0}
+.cash-day-summary{display:flex;flex-direction:column;gap:6px;padding:22px 24px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:14px}
+.cash-day-summary>span{font-size:14px;font-weight:650;color:#334155}
+.cash-day-summary strong{font-size:clamp(27px,4vw,36px);line-height:1.2;color:#0f172a}
+.cash-day-summary small{color:#64748b}
+.cash-day-registers{display:grid;gap:18px}
+.cash-day-register-card{background:#fff;border:1px solid #d8e0ea;border-radius:14px;padding:20px;min-width:0}
+.cash-day-register-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 20px;padding-bottom:15px;border-bottom:1px solid #e2e8f0}
+.cash-day-register-head h3{margin:0;font-size:18px;color:#0f172a}
+.cash-day-register-head span{font-size:14px;color:#475569}
+.cash-day-channels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
+.cash-day-channel{min-width:0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px}
+.cash-day-channel dt{color:#475569;font-size:13px;line-height:1.4}
+.cash-day-channel dd{margin:5px 0 0;font-size:19px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cash-day-register-total{display:flex;justify-content:space-between;gap:16px;align-items:center;padding-top:16px;border-top:1px solid #e2e8f0}
+.cash-day-register-total strong{font-size:20px;color:#0f172a;font-variant-numeric:tabular-nums}
+.cash-day-empty{padding:16px}
+@media(max-width:620px){.cash-day-dialog{width:calc(100vw - 18px);max-height:94vh}.cash-day-detail{gap:14px;padding:12px 0}.cash-day-summary{padding:18px}.cash-day-register-card{padding:14px}.cash-day-channels{grid-template-columns:minmax(0,1fr);gap:8px}.cash-day-channel{display:flex;align-items:center;justify-content:space-between;gap:12px}.cash-day-channel dd{font-size:17px;text-align:right;margin:0}}

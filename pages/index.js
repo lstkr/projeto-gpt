@@ -3325,7 +3325,25 @@ export default function Home() {
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail"><div><b>Total de faturamento do dia</b><strong>{money(cashChartEntries.reduce((sum,e)=>sum+cashTotals(e).revenue,0))}</strong></div>{cashChartEntries.length?cashChartEntries.map(entry=>{const totals=cashTotals(entry);return <div key={entry.id}><b>Caixa {entry.register} · {entry.operator}</b><span>{CASH_CHANNELS.map(([key,label])=>`${label}: ${money(totals.revenues[key])}`).join(' · ')}</span></div>}):<span>Sem detalhes disponíveis.</span>}</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>}
+        {view==='cash'&&cashSelectedDay&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+  <div className="cash-day-summary">
+    <span>Total de faturamento do dia</span>
+    <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
+    <small>{cashChartEntries.length} {cashChartEntries.length===1?'caixa registrado':'caixas registrados'}</small>
+  </div>
+  <div className="cash-day-registers">
+    {cashChartEntries.length?cashChartEntries.map(entry=>{
+      const totals=cashTotals(entry);
+      return <article className="cash-day-register-card" key={entry.id}>
+        <div className="cash-day-register-head">
+          <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>
+        </div>
+        <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
+        <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
+      </article>;
+    }):<p className="cash-day-empty">Sem detalhes disponíveis.</p>}
+  </div>
+</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
         <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
