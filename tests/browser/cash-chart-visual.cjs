@@ -11,6 +11,16 @@ if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw new Er
 const output = path.join(__dirname, 'artifacts');
 fs.mkdirSync(output, { recursive: true });
 
+const printProducts = [
+  {id:'qa-milk',name:'Leite integral',sku:'000123',unit:'L',category:'Frios',
+   stock:20,cost:98765,valuation:999999},
+  {id:'qa-beans',name:'Café em grãos',sku:'CAF-001',unit:'kg',category:'Cafés',
+   stock:2.5,cost:123456,valuation:999998}
+];
+const printCounts = [{id:'qa-count-1',completedAt:'2026-10-20T15:00:00Z',
+  by:'QA',items:[{productId:'qa-milk',name:'Leite integral',expected:20,counted:19},
+    {productId:'qa-beans',name:'Café em grãos',expected:2.5,counted:3}]}];
+
 const closings = [
   {id:'chart-10',day:'2026-10-10',register:'001',operator:'QA',cartaoCredito:569,movements:[]},
   {id:'chart-17',day:'2026-10-17',register:'001',operator:'QA',cartaoCredito:783,movements:[]},
@@ -40,7 +50,7 @@ const closings = [
         user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},
         role:'admin',tenants:[{id:'qa-unit',name:'Unidade QA'}],activeTenantId:'qa-unit',mustChangePassword:false
       };
-      else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:[],movements:[],documents:[]};
+      else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:printProducts,movements:[],documents:[],stockCounts:printCounts};
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
       else if (name === 'cash_closings_list') data = closings;
@@ -96,6 +106,48 @@ const closings = [
     await page.locator('.cash-chart-controls input[type=month]').fill('2028-02');
     assert.equal(await columns.count(),29,'fevereiro bissexto precisa mostrar 29 dias');
     assert.equal(await columns.filter({has:page.locator('.cash-bar-fill')}).count(),29);
+
+    // Stock count printing: previews must remain readable, modal and isolated.
+    await page.getByRole('button',{name:'Contagem de estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Abrir prévia de impressão'}).click();
+    const printDialog=page.getByRole('dialog',{name:/Prévia de impressão/});
+    await printDialog.waitFor();
+    const printFrame=page.frameLocator('iframe[title="Documento da contagem para impressão"]');
+    assert.equal(await printFrame.locator('tbody tr').count(),2);
+    assert.match(await printFrame.locator('h1').textContent(),/Contagem cega/);
+    assert.doesNotMatch(await printFrame.locator('body').innerText(),/98765|999999|123456|999998|20.*L/);
+    await page.getByRole('button',{name:'Imprimir documento'}).waitFor({state:'visible'});
+    for(const [width,height] of [[320,700],[375,812],[768,1024],[1024,768],[1366,768],[1920,1080]]){
+      await page.setViewportSize({width,height});
+      const measured=await page.evaluate(()=>{
+        const overlay=document.querySelector('.overlay');
+        const dialog=overlay?.querySelector('[role=dialog]');
+        const frame=dialog?.querySelector('iframe');
+        if(!overlay||!dialog||!frame)return {missing:true};
+        const box=dialog.getBoundingClientRect();
+        return {missing:false,
+          outOfBounds:box.left < -2 || box.right > innerWidth+2,
+          clippedPreview:frame.clientWidth===0||frame.clientHeight===0,
+          pageOverflow:document.documentElement.scrollWidth>innerWidth+2
+        };
+      });
+      assert.equal(measured.missing,false,'prévia ausente em '+width+'px');
+      assert.equal(measured.outOfBounds,false,'modal fora da tela em '+width+'px');
+      assert.equal(measured.clippedPreview,false,'iframe cortado em '+width+'px');
+      assert.equal(measured.pageOverflow,false,'rolagem horizontal indevida em '+width+'px');
+      await page.screenshot({path:path.join(output,'count-preview-'+width+'.png')});
+    }
+    await page.getByRole('button',{name:'Fechar prévia'}).click();
+    await page.getByLabel('Tipo de documento de contagem').selectOption('differences');
+    await page.getByRole('button',{name:'Abrir prévia de impressão'}).click();
+    await page.getByRole('dialog',{name:/Prévia de impressão/}).waitFor();
+    assert.match(await printFrame.locator('h1').textContent(),/Relatório de conferência/);
+    assert.match(await printFrame.locator('body').innerText(),/19/);
+    assert.doesNotMatch(await printFrame.locator('body').innerText(),/98765|999999|123456|999998/);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog',{name:/Prévia de impressão/}).count(),0,'Escape deve fechar a prévia');
+    console.log('PASS print preview: blind/differences, role-aware sheet, keyboard and six viewports');
+
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');
     await context.close();
