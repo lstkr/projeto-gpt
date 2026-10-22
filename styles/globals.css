@@ -787,7 +787,12 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-chart-month{gap:4px;justify-content:flex-start}
 .cash-chart-month .cash-bar-column{flex:1 0 30px;min-width:30px;max-width:64px;font-size:10px}
 .cash-chart-month .cash-bar-track{max-width:24px}
-.cash-chart-month .cash-bar-column>span{font-size:10px;white-space:nowrap}
+.cash-chart-inspector{display:flex;align-items:center;gap:12px;justify-content:flex-start;flex-wrap:wrap;min-height:38px;padding:8px 10px;margin:8px 0;background:#f6faf6;border:1px solid #e1eae1;border-radius:8px;color:#57705e;font-size:12px;line-height:1.4}
+.cash-chart-inspector strong{font-size:15px;color:#2e6647;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cash-chart .cash-bar-column .cash-bar-track{position:relative}
+.cash-chart .cash-bar-column:disabled{color:#9fac9e}
+.cash-chart-month .cash-bar-column{gap:6px}
+.cash-chart-month .cash-bar-column small{font-size:10px;line-height:1.2;font-variant-numeric:tabular-nums}
 .cash-chart-month .cash-bar-column.is-empty{cursor:default;opacity:.55}
 .cash-chart-month .cash-bar-column.is-empty .cash-bar-fill{height:0!important}
 @media(max-width:850px){.cash-chart-month .cash-bar-column{flex:0 0 34px}}
