@@ -25,8 +25,14 @@ begin
  assert token<>old_token;
  begin perform public.inventory_get(old_token); raise exception 'Old token accepted'; exception when invalid_authorization_specification then null; end;
  assert jsonb_array_length(public.inventory_get(token)->'products')=0;
- result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"01","operator":"Synthetic","movements":[]}'::jsonb);
+ result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"01","operator":"Synthetic","cashCounted":"0.00","createdBy":{"id":"spoofed","displayName":"Spoofed"},"movements":[]}'::jsonb);
  assert (result->>'ok')::boolean;
+ assert result->'createdBy'->>'displayName'='Synthetic Manager';
+ assert public.cash_closings_list(token)->0->'createdBy'->>'displayName'='Synthetic Manager';
+ begin
+  perform public.cash_closing_save(token,'{"day":"2026-10-22","register":"01","operator":"Synthetic","movements":[]}'::jsonb);
+  raise exception 'Cash count was not required' using errcode='XX000';
+ exception when sqlstate '22023' then null; end;
  result:=public.pending_receipt_create(token,'fixture.png','image/png','eA==','{}'::jsonb); pending:=(result->>'id')::uuid;
  result:=public.inventory_user_create(token,'sql.employee','Synthetic Employee','synthetic-employee-only','employee',tenant);
  assert (result->>'ok')::boolean;
@@ -34,6 +40,15 @@ begin
  assert (result->>'must_change_password')::boolean;
  begin perform public.inventory_get(employee_token); raise exception 'Password gate bypassed'; exception when insufficient_privilege then null; end;
  result:=public.inventory_password_change(employee_token,'synthetic-employee-only','synthetic-new-password'); assert (result->>'ok')::boolean;
+ begin
+  perform public.cash_closing_save(employee_token,'{"day":"2026-10-21","register":"01 ","operator":"Synthetic Employee","cashCounted":"0","movements":[]}'::jsonb);
+  raise exception 'Employee overwrote a registered cash close' using errcode='XX000';
+ exception when insufficient_privilege then null; end;
+ result:=public.cash_closing_save(employee_token,'{"day":"2026-10-21","register":"02 ","operator":"Synthetic Employee","cashCounted":"0","movements":[]}'::jsonb);
+ assert result->'createdBy'->>'displayName'='Synthetic Employee';
+ result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb);
+ assert result->'createdBy'->>'displayName'='Synthetic Employee';
+ assert result->'updatedBy'->>'displayName'='Synthetic Manager';
  for i in 1..8 loop
   result:=public.inventory_password_change(employee_token,'incorrect-password','synthetic-other-new-password');
   assert not (result->>'ok')::boolean;
@@ -50,7 +65,7 @@ begin
  assert public.pending_receipt_file(token,pending)='{}'::jsonb;
  begin perform public.pending_receipt_save(token,pending,'{}'::jsonb,1); raise exception 'Cross tenant pending write unexpectedly accepted' using errcode='XX000'; exception when sqlstate '22023' then null; end;
  begin perform public.pending_receipt_cancel(token,pending); raise exception 'Cross tenant pending cancel unexpectedly accepted' using errcode='XX000'; exception when sqlstate '22023' then null; end;
- result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"01","operator":"Synthetic","movements":[]}'::jsonb);
+ result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"01","operator":"Synthetic","cashCounted":"0.00","movements":[]}'::jsonb);
  assert (result->>'ok')::boolean;
  assert jsonb_array_length(public.cash_closings_list(token))=1;
  begin perform private.inventory_get_impl(token); raise exception 'Private grant bypass'; exception when insufficient_privilege then null; end;

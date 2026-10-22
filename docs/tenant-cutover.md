@@ -6,7 +6,7 @@ O ensaio local também executou `db/operations/backup-test-reset.sql`, `reset-te
 
 ## Modelo e compatibilidade
 
-`supabase/migrations/20261021232050_tenant_access.sql` deve ser aplicada após todas as migrações anteriores e os SQLs de permissões, pendências e caixa. É transacional. Não reaplicar `db/schema.sql` em banco existente. A migração preserva contas, hashes, documentos, produtos, IDs e sessões existentes, vinculando-os à unidade inicial. A autenticação continua própria; `auth.users` não participa.
+`supabase/migrations/20261021232050_tenant_access.sql` deve ser aplicada após todas as migrações anteriores e os SQLs de permissões, pendências e caixa. É transacional. Não reaplicar `db/schema.sql` em banco existente. A migração preserva contas, hashes, documentos, produtos, IDs e sessões existentes, vinculando-os à unidade inicial. A autenticação continua própria; `auth.users` não participa. A migração posterior `20261022020602_cash_closing_integrity.sql` acrescenta autoria e validações nos fechamentos e deve ser aplicada em seguida, sem resetar dados.
 
 O estoque, as pendências e o caixa passam ao schema `private`; views atualizáveis em `public` limitam as operações à unidade autenticada. Cada RPC de dados sobrescreve o contexto transacional com a unidade da sessão validada e seu vínculo; DBA não acessa estoque. As tabelas privadas e implementações deixam de ser executáveis pelos papéis API. As funções públicas de encaminhamento executam como proprietário confiável, com `search_path` vazio.
 
@@ -49,4 +49,3 @@ Os scripts operacionais de backup e restauração continuam disponíveis para um
 Falha durante migração causa rollback transacional. Depois de uso multinegócio, reverter para singleton descarta isolamento; portanto **não existe down migration automática**. Recuperação exige manutenção, backup novo, restauração integral ensaiada no projeto isolado e aplicação conjunta da versão de aplicativo compatível. Não voltar apenas o front-end para versão sem seleção de unidade ou troca obrigatória.
 
 Referências: [funções e privilégios Supabase](https://supabase.com/docs/guides/database/functions), [Row Level Security](https://supabase.com/docs/guides/database/postgres/row-level-security).
-

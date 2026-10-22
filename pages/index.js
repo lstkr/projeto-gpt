@@ -9,7 +9,7 @@ import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
-import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly } from '../lib/cash-closing.mjs';
+import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
@@ -1210,6 +1210,7 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
+  const cashSavingRef=useRef(false);
   const [cashEntryMode,setCashEntryMode]=useState(''); // '', upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
@@ -1217,10 +1218,12 @@ export default function Home() {
   const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
+  const [cashChartScope,setCashChartScope]=useState('month');
+  const [cashSelectedDay,setCashSelectedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
-    dinheiroVendas:'0',cashCounted:'',movements:[]
+    dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]
   });
   const [stockCounts,setStockCounts]=useState([]);
   const [countSettings,setCountSettings]=useState(COUNT_DEFAULTS);
@@ -1282,12 +1285,15 @@ export default function Home() {
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
   const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+    view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useAccessibleDialog(activeDialog, () => {
     if (mergePair) {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
+    } else if (view === 'cash' && cashSelectedDay) {
+      setCashSelectedDay('');
     } else {
       setModal('');
     }
@@ -1657,6 +1663,9 @@ export default function Home() {
     const [year,month]=cashMonth.split('-').map(Number);
     return aggregateCashMonthly(closings,year,month);
   },[closings,cashMonth]);
+  const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
+  const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
+  const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
@@ -1799,47 +1808,58 @@ export default function Home() {
     }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
     finally{setCashImporting(false);}
   }
-  function changeCashField(key,value){setCashForm(prev=>({...prev,[key]:value}));setCashError('');}
+  function changeCashField(key,value){setCashForm(prev=>{
+    const next={...prev,[key]:value};
+    if(key==='cashReviewed')next.reviewedImport=prev.sourceFileName?Boolean(value):false;
+    else if(key==='reviewedImport')next.cashReviewed=Boolean(value);
+    else{next.cashReviewed=false;if(prev.sourceFileName)next.reviewedImport=false;}
+    return next;
+  });setCashError('');}
   function newCashClosing(mode='manual'){
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
     setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
-      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]});
+      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
     setCashError('');
   }
   function editCashClosing(entry){
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEntryMode('edit');
     setCashEditId(entry.id);
-    setCashForm({...entry,day:String(entry.day).slice(0,10),
+    setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
       movements:entry.movements||[]});
     setCashError('');setView('cash');
   }
   async function saveCashClosing(event){
     event.preventDefault();
-    const invalid=validateCashClosing(cashForm);
-    if(cashForm.sourceFileName&&!cashForm.reviewedImport) invalid.push('Confirme a revisão dos dados importados antes de salvar.');
+    if(cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Marque a conferência ao lado do botão salvar.');
     if(invalid.length){setCashError(invalid.join(' · '));return;}
     if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
-    setCashSaving(true);setCashError('');
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
     try{
-      const clean={...cashForm,day:cashForm.day,register:cashForm.register.trim(),
-        operator:cashForm.operator.trim(),
-        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(cashForm[key]||0).toFixed(2)])),
-        cashCounted:cashForm.cashCounted===''?'':Number(cashForm.cashCounted).toFixed(2),
-        movements:cashForm.movements.map(m=>({
+      const {cashReviewed,...entrySnapshot}=snapshot;
+      const clean={...entrySnapshot,day:snapshot.day,register:snapshot.register.trim(),
+        operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:snapshot.movements.map(m=>({
           type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
         }))};
       const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
       if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
       const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
-      if(listError||!Array.isArray(updated))throw new Error('Fechamento salvo, mas a atualização da lista falhou');
-      setClosings(updated);setCashEditId('');setCashEntryMode('');
-      setToast('Fechamento de caixa registrado com sucesso.');
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashEditId('');setCashEntryMode('');
+      setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
-    finally{setCashSaving(false);}
+    finally{cashSavingRef.current=false;setCashSaving(false);}
   }
   function openManualEntry() {
     if (draft || draftQueue.length) {
@@ -3227,27 +3247,9 @@ export default function Home() {
         {view === 'cash' && <>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
             <button className="btn primary" type="button" disabled={cashImporting}
-              onClick={()=>cashFileRef.current?.click()}><Icon type="plus" size={17}/> Registrar novo fechamento</button>
-            <button className="btn secondary" type="button" onClick={()=>newCashClosing('manual')}>Inserir manualmente</button>
+              onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
-          <section className="panel cash-summary">
-            <div className="panel-head"><div><h2>Faturamento do mês</h2><p>O total de vendas exclui sangrias e suprimentos. As modalidades seguem o relatório de caixa enviado.</p></div>
-              <label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>setCashMonth(e.target.value)}/></label>
-            </div>
-            <div className="cash-stats">
-              <div><small>Faturamento mensal</small><strong>{money(cashMonthly.revenue)}</strong></div>
-              <div><small>Fechamentos</small><strong>{cashMonthly.count}</strong></div>
-              <div><small>Média por fechamento</small><strong>{money(cashMonthly.count?cashMonthly.revenue/cashMonthly.count:0)}</strong></div>
-            </div>
-            <h3>Faturamento diário — {cashMonth}</h3>
-            <div className="cash-chart" aria-label="Gráfico de faturamento por dia">
-              {cashMonthly.daily.length ? cashMonthly.daily.map(p=><div className="cash-bar-column" key={p.day}>
-                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashMonthly.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
-                <small>{p.day.slice(-2)}</small>
-              </div>) : <p>Sem fechamento neste mês. Registre um caixa abaixo para começar o gráfico.</p>}
-            </div>
-          </section>
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
             <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
@@ -3255,14 +3257,15 @@ export default function Home() {
               <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
               <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
             </div>
+            {!cashForm.sourceFileName&&<button className="text-btn" type="button" onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
               <b>Arquivo importado: {cashForm.sourceFileName}</b>
               {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
-              <p>Valores extraídos automaticamente. Confirme no comprovante, especialmente sangrias e suprimentos.</p>
-              <label><input type="checkbox" checked={Boolean(cashForm.reviewedImport)} onChange={e=>changeCashField('reviewedImport',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações com o arquivo.</label>
+              <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
               {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
             </div>}
             <form onSubmit={saveCashClosing}>
+              <fieldset disabled={cashSaving} className="cash-form-fields">
               <div className="meta-fields">
                 <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
                 <label><span>Nº do caixa</span><input required value={cashForm.register} onChange={e=>changeCashField('register',e.target.value)}/></label>
@@ -3280,18 +3283,39 @@ export default function Home() {
                 <button type="button" className="btn secondary" onClick={()=>changeCashField('movements',cashForm.movements.filter((_,j)=>i!==j))}>Remover</button>
               </div>)}
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
-              <label className="field cash-counted"><span>Dinheiro contado no fechamento (opcional)</span><input type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
-              {cashForm.cashCounted!==''&&<p>Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="modal-actions"><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
+              {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              </fieldset>
             </form>
           </section>}
+          <section className="panel cash-summary">
+            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
+              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
+              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+            </div>
+            <div className="cash-stats">
+              <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
+              <div><small>Fechamentos</small><strong>{cashChartData.count}</strong></div>
+              <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
+            </div>
+            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
+            <div className="cash-chart" aria-label="Gráfico interativo de faturamento por dia">
+              {cashChartData.daily.length ? cashChartData.daily.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} onClick={()=>setCashSelectedDay(cashSelectedDay===p.day?'':p.day)}>
+                <span>{money(p.revenue)}</span><div className="cash-bar-track"><div className="cash-bar-fill" style={{height:(Math.max(3,p.revenue/Math.max(...cashChartData.daily.map(d=>d.revenue),1)*100))+'%'}}/></div>
+                <small>{axisDate}</small><small>{weekday}</small>
+              </button>}) : <p>Sem fechamento neste período. Envie um relatório para começar o gráfico.</p>}
+            </div>
+          </section>
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
-            <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>SUPRIMENTOS</th><th>SANGRIAS</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td>{money(totals.inflow)}</td><td>{money(totals.outflow)}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
+            <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
+            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
+
+        {view==='cash'&&cashSelectedDay&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail"><div><b>Total de faturamento do dia</b><strong>{money(cashChartEntries.reduce((sum,e)=>sum+cashTotals(e).revenue,0))}</strong></div>{cashChartEntries.length?cashChartEntries.map(entry=>{const totals=cashTotals(entry);return <div key={entry.id}><b>Caixa {entry.register} · {entry.operator}</b><span>{CASH_CHANNELS.map(([key,label])=>`${label}: ${money(totals.revenues[key])}`).join(' · ')}</span></div>}):<span>Sem detalhes disponíveis.</span>}</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
         <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>

@@ -7,12 +7,13 @@ test('fechamento do PDF: faturamento 569 não inclui movimentações',async()=>{
    cartaoCredito:130,cartaoDebito:21,credito:181,debito:72,outras:165,
    movements:[{type:'suprimento',amount:238.50,reason:'Abertura'},
      {type:'suprimento',amount:3,reason:'Troco'},
-     {type:'sangria',amount:241.5,reason:'Fechamento'}]});
+     {type:'sangria',amount:241.5,reason:'SANGRIA - FECHAMENTO DE CAIXA'}]});
  assert.equal(totals.revenue,569);
  assert.equal(totals.pos,151);
  assert.equal(totals.inflow,241.5);
- assert.equal(totals.outflow,241.5);
- assert.equal(totals.cashExpected,0);
+ assert.equal(totals.outflow,0);
+ assert.equal(totals.cashExpected,241.5);
+ assert.equal(totals.movements.length,2);
 });
 test('dinheiro de vendas afeta faturamento mas suprimento nao',async()=>{
  const {cashTotals}=await utils;
@@ -35,3 +36,33 @@ test('rejeita movimentações sem motivo e valores inválidos',async()=>{
  assert.ok(validateCashClosing({...base,cartaoCredito:-1,movements:[]}).length);
  assert.ok(validateCashClosing({...base,movements:[{type:'sangria',amount:20,reason:'Retirada'}]}).length);
 });
+
+test('dinheiro contado é obrigatório e aceita zero explícito',async()=>{
+ const {validateCashClosing}=await utils;
+ const base={day:'2026-10-10',register:'003',operator:'ADMIN',movements:[],cashCounted:'0'};
+ assert.equal(validateCashClosing(base).length,0);
+ for(const value of ['',null,undefined,'-1','1.234'])
+  assert.ok(validateCashClosing({...base,cashCounted:value}).some(message=>message.includes('dinheiro contado')||message.includes('Valor físico')));
+});
+
+test('sangria do encerramento é ignorada, retirada operacional segue contabilizada',async()=>{
+ const {cashTotals}=await utils;
+ const result=cashTotals({dinheiroVendas:100,movements:[
+  {type:'sangria',amount:100,reason:'SANGRIA - FECHAMENTO DE CAIXA - total do envelope'},
+  {type:'sangria',amount:15,reason:'Retirada para pagamento'}]});
+ assert.equal(result.outflow,15);
+ assert.equal(result.cashExpected,85);
+ assert.equal(result.movements.length,1);
+});
+
+test('agrupa fechamento anual por data',async()=>{
+ const {aggregateCashYearly}=await utils;
+ const result=aggregateCashYearly([
+  {day:'2026-01-02',credito:10},{day:'2026-01-02',credito:2},
+  {day:'2026-02-05',credito:4},{day:'2025-12-31',credito:50}
+ ],2026);
+ assert.equal(result.count,3);
+ assert.equal(result.revenue,16);
+ assert.deepEqual(result.daily.map(d=>[d.day,d.revenue]),[['2026-01-02',12],['2026-02-05',4]]);
+});
+
