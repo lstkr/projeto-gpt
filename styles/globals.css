@@ -817,3 +817,21 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-day-register-total strong{font-size:20px;color:#0f172a;font-variant-numeric:tabular-nums}
 .cash-day-empty{padding:16px}
 @media(max-width:620px){.cash-day-dialog{width:calc(100vw - 18px);max-height:94vh}.cash-day-detail{gap:14px;padding:12px 0}.cash-day-summary{padding:18px}.cash-day-register-card{padding:14px}.cash-day-channels{grid-template-columns:minmax(0,1fr);gap:8px}.cash-day-channel{display:flex;align-items:center;justify-content:space-between;gap:12px}.cash-day-channel dd{font-size:17px;text-align:right;margin:0}}
+
+
+/* Count print dialog: scroll within the document preview, never the whole page. */
+.count-print-actions{margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:12px}
+.count-print-actions>h3{margin:0 0 6px}
+.count-print-actions>p{margin:0 0 12px;color:#66766c;font-size:12px}
+.count-print-controls{display:flex;flex-wrap:wrap;align-items:end;gap:12px}
+.count-print-controls label{display:flex;flex:1 1 180px;min-width:0;flex-direction:column;gap:6px}
+.count-print-controls select{min-height:42px;min-width:0;max-width:100%;padding:8px;border:1px solid var(--line);border-radius:8px}
+.count-print-controls button{min-height:42px}
+.count-print-modal{width:min(900px,94vw);max-height:92vh;display:flex;flex-direction:column;gap:10px}
+.count-print-modal h2{margin:0}
+.count-print-preview-scroll{min-height:170px;flex:1 1 auto;overflow:auto;border:1px solid #cbd5e1;background:#f3f5f3;padding:10px}
+.count-print-frame{display:block;background:white;border:1px solid #dce1dc;margin:0 auto;height:56vh;max-height:610px}
+.count-print-a4{width:min(100%,794px)}
+.count-print-thermal58{width:min(100%,230px)}
+.count-print-thermal80{width:min(100%,318px)}
+@media(max-width:480px){.count-print-modal{width:96vw;max-height:94vh;padding:12px}.count-print-preview-scroll{padding:5px}.count-print-controls label,.count-print-controls button{flex:1 1 100%}}
