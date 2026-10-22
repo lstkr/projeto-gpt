@@ -1,0 +1,49 @@
+name: Cash chart visual QA
+on:
+  pull_request:
+    paths:
+      - 'pages/index.js'
+      - 'styles/globals.css'
+      - 'tests/browser/cash-chart-visual.cjs'
+      - '.github/workflows/cash-chart-visual.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chart-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://visual-fixture.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: synthetic-ci-key-no-real-access
+      ESTOQUE_BROWSER_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install isolated browser runner
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Build Next.js fixture
+        run: npm run build
+      - name: Start isolated local server
+        run: |
+          npm run start > /tmp/estoque-visual-server.log 2>&1 &
+          node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
+      - name: Verify layout across viewports
+        run: node tests/browser/cash-chart-visual.cjs
+      - name: Preserve screenshots when QA fails
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cash-chart-visual-evidence
+          path: |
+            tests/browser/artifacts/
+            /tmp/estoque-visual-server.log
+          retention-days: 7
