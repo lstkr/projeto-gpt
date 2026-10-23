@@ -33,6 +33,10 @@ test('fiscal confirmation keeps human approval and derives displayed authorship 
   assert.match(page,/Conferi todo o documento e autorizo a entrada no estoque/);
   assert.match(page,/Usuário autenticado: ' \+ authenticatedReviewerName/);
   assert.match(page,/delete documentToSave\.checkedBy/);
+  assert.match(page,/pendingAttributionRef\.current\.set\(documentId/);
+  assert.match(page,/setSaveStatus\('Sincronizado'\);\s*const acknowledgedAttributions/);
+  assert.match(page,/checkedByVerified: true/);
+  assert.match(page,/pendingAttributionRef\.current\.delete\(documentId\)/);
 });
 test('history distinguishes server-verified authorship from legacy text', () => {
   assert.match(page,/checkedByVerified === true/);
