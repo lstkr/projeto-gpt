@@ -35,7 +35,7 @@ begin
   -- More than 4 MB is rejected before signature parsing.
   begin
     perform public.cash_report_create(token_a,gen_random_uuid(),gen_random_uuid(),'oversize.pdf',
-      'application/pdf',replace(encode(decode(repeat('41',4000001),'hex'),'base64'),E'\\n',''));
+      'application/pdf',replace(encode(decode(repeat('41',4000001),'hex'),'base64'),E'\n',''));
     raise exception 'oversize file unexpectedly accepted' using errcode='XX000';
   exception when sqlstate '22023' then null; end;
 
