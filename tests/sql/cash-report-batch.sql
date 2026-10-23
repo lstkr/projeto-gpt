@@ -5,6 +5,7 @@ do $tests$
 declare
   token_a text;
   token_b text;
+  employee_token text;
   tenant_b uuid;
   batch_id uuid:=gen_random_uuid();
   retry_batch uuid:=gen_random_uuid();
@@ -29,6 +30,13 @@ begin
     perform public.cash_report_create(token_a,gen_random_uuid(),gen_random_uuid(),'bad.pdf',
       'application/pdf',invalid_base64);
     raise exception 'invalid PDF signature unexpectedly accepted' using errcode='XX000';
+  exception when sqlstate '22023' then null; end;
+
+  -- More than 4 MB is rejected before signature parsing.
+  begin
+    perform public.cash_report_create(token_a,gen_random_uuid(),gen_random_uuid(),'oversize.pdf',
+      'application/pdf',replace(encode(decode(repeat('41',4000001),'hex'),'base64'),E'\\n',''));
+    raise exception 'oversize file unexpectedly accepted' using errcode='XX000';
   exception when sqlstate '22023' then null; end;
 
   result:=public.cash_report_create(token_a,batch_id,file_one,'report-one.pdf','application/pdf',pdf_base64);
@@ -90,6 +98,24 @@ begin
   report_list:=public.cash_reports_list(token_a);
   assert exists(select 1 from jsonb_array_elements(report_list) p
     where p->>'id'=report_two::text and p->>'state'='pending' and p->>'hasOriginal'='true');
+
+  -- Another employee in the same tenant cannot edit or post a manager-owned draft.
+  result:=public.inventory_user_create(token_a,'cash.fixture.employee','Cash Fixture Employee',
+    'synthetic-cash-password','employee','00000000-0000-4000-8000-000000000001');
+  assert coalesce((result->>'ok')::boolean,false), 'create synthetic employee';
+  result:=public.inventory_login('cash.fixture.employee','synthetic-cash-password');
+  employee_token:=result->>'session_token';
+  assert coalesce((result->>'must_change_password')::boolean,false);
+  result:=public.inventory_password_change(employee_token,'synthetic-cash-password','synthetic-cash-password-next');
+  assert coalesce((result->>'ok')::boolean,false);
+  begin
+    perform public.cash_report_save(employee_token,report_two,'{}'::jsonb,2);
+    raise exception 'non-owner edited another user report' using errcode='XX000';
+  exception when insufficient_privilege then null; end;
+  begin
+    perform public.cash_report_post(employee_token,report_two,2,'employee-post-key');
+    raise exception 'non-owner posted another user report' using errcode='XX000';
+  exception when insufficient_privilege then null; end;
 
   -- Tenant B receives no list, metadata, or original bytes for tenant A.
   result:=public.inventory_establishment_create(token_a,'Synthetic cash-report tenant');
