@@ -44,6 +44,8 @@ create policy deny_fiscal_document_attribution
 do $patch$
 declare
   definition text;
+  original_security boolean;
+  original_config text[];
   declaration_anchor text := $declaration_anchor$  posted_ids uuid[] := array[]::uuid[];$declaration_anchor$;
   declaration_replacement text := $declaration_replacement$  posted_ids uuid[] := array[]::uuid[];
   active_tenant uuid;$declaration_replacement$;
@@ -138,6 +140,13 @@ declare
 
   update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;$write_replacement$;
 begin
+  select p.prosecdef, p.proconfig into original_security, original_config
+    from pg_catalog.pg_proc p
+   where p.oid = 'private.inventory_save_impl(text,jsonb)'::regprocedure;
+  if not found or not original_security
+     or not exists (select 1 from unnest(coalesce(original_config,'{}'::text[])) c where c like 'search_path=%') then
+    raise exception 'Fiscal attribution requires SECURITY DEFINER with a fixed search_path';
+  end if;
   definition := pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure);
   if position(declaration_anchor in definition)=0
      or position(session_anchor in definition)=0
@@ -148,6 +157,14 @@ begin
   definition := replace(definition,session_anchor,session_replacement);
   definition := replace(definition,write_anchor,write_replacement);
   execute definition;
+  if not exists (
+    select 1 from pg_catalog.pg_proc p
+     where p.oid = 'private.inventory_save_impl(text,jsonb)'::regprocedure
+       and p.prosecdef = original_security
+       and p.proconfig is not distinct from original_config
+  ) then
+    raise exception 'Fiscal attribution changed inventory_save_impl security attributes';
+  end if;
 end;
 $patch$;
 
