@@ -194,6 +194,7 @@ returns jsonb language plpgsql security definer set search_path=''
 as $function$
 declare
   actor private.app_users%rowtype;
+  tenant_uuid uuid;
   existing private.pending_cash_reports%rowtype;
   warning_values text[]:='{}'::text[];
 begin
@@ -272,6 +273,7 @@ declare
 begin
   perform private.set_tenant_context(p_token);
   actor:=private.require_actor(p_token);
+  tenant_uuid:=private.current_tenant();
   if length(btrim(coalesce(p_idempotency_key,''))) not between 1 and 128
      or p_expected_revision is null or p_expected_revision<1 then
     raise exception 'Chave de repetição ou revisão inválidas.' using errcode='22023';
@@ -296,6 +298,51 @@ begin
   end if;
   if existing.draft->>'cashReviewed' is distinct from 'true' then
     raise exception 'Confirme a conferência individual antes de lançar.' using errcode='42501';
+  end if;
+  if coalesce(existing.draft->>'day','') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}
+  if coalesce((save_result->>'ok')::boolean,false) is not true then
+    raise exception 'Não foi possível registrar o faturamento.' using errcode='22023';
+  end if;
+  result:=save_result||jsonb_build_object('cashReportId',p_id,'cashReportRevision',existing.revision+1,
+    'idempotentRetry',false);
+  update private.pending_cash_reports
+     set state='posted',file_bytes=null,post_idempotency_key=p_idempotency_key,
+         post_result=result,posted_at=statement_timestamp(),revision=revision+1,
+         updated_at=statement_timestamp()
+   where id=p_id;
+  return result;
+end;
+$function$;
+
+revoke all on function public.cash_report_create(text,uuid,uuid,text,text,text) from public;
+revoke all on function public.cash_reports_list(text) from public;
+revoke all on function public.cash_report_file(text,uuid) from public;
+revoke all on function public.cash_report_save(text,uuid,jsonb,bigint) from public;
+revoke all on function public.cash_report_cancel(text,uuid,bigint) from public;
+revoke all on function public.cash_report_post(text,uuid,bigint,text) from public;
+grant execute on function public.cash_report_create(text,uuid,uuid,text,text,text) to anon,authenticated;
+grant execute on function public.cash_reports_list(text) to anon,authenticated;
+grant execute on function public.cash_report_file(text,uuid) to anon,authenticated;
+grant execute on function public.cash_report_save(text,uuid,jsonb,bigint) to anon,authenticated;
+grant execute on function public.cash_report_cancel(text,uuid,bigint) to anon,authenticated;
+grant execute on function public.cash_report_post(text,uuid,bigint,text) to anon,authenticated;
+
+notify pgrst,'reload schema';
+commit;
+
+     or length(btrim(coalesce(existing.draft->>'register',''))) not between 1 and 30 then
+    raise exception 'Data ou caixa inválido no rascunho.' using errcode='22023';
+  end if;
+  -- cash_closing_save is an upsert for Gestores; serialize and reject duplicate keys here
+  -- so a second uploaded file cannot silently overwrite an already posted close.
+  lock table private.cash_closings in exclusive mode;
+  if exists (
+    select 1 from private.cash_closings c
+     where c.tenant_id=tenant_uuid
+       and c.day=(existing.draft->>'day')::date
+       and c.register=regexp_replace(btrim(existing.draft->>'register'),'\\s+',' ','g')
+  ) then
+    raise exception 'Já existe faturamento para esta data e caixa. Revise o fechamento existente antes de lançar outro arquivo.' using errcode='23505';
   end if;
   save_result:=public.cash_closing_save(p_token,existing.draft);
   if coalesce((save_result->>'ok')::boolean,false) is not true then
