@@ -7,6 +7,7 @@ import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { canStartFiscalFinalReview, canConfirmFiscalDocument } from '../lib/fiscal-confirmation.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
@@ -1661,9 +1662,7 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const readyForFinalReview = Boolean(draft?.items?.length &&
-    receiptReviewRows.every((row) => row.done) &&
-    (!totalsRequireReview || draft.totalsReviewed));
+  const readyForFinalReview = canStartFiscalFinalReview(draft, receiptReviewRows);
   const cashMonthly=useMemo(()=>{
     const [year,month]=cashMonth.split('-').map(Number);
     return aggregateCashMonthly(closings,year,month);
@@ -1723,7 +1722,7 @@ export default function Home() {
       fileName:'Nota digitada manualmente',
       supplier:'', supplierCnpj:'', invoiceNumber:'',
       date:new Date().toLocaleDateString('pt-BR'),
-      checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
+      checkedBy:'', finalReviewed:false, reviewedItems:{},
       items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
     });
@@ -1732,8 +1731,7 @@ export default function Home() {
   function selectManualInvoiceProduct(index, id) {
     const product=products.find((p)=>p.id===id);
     setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[d.items[index]?.lineId]:false},
-      finalReviewed:false,totalsReviewed:false,
-      items:d.items.map((it,i)=>i===index && product
+      finalReviewed:false,items:d.items.map((it,i)=>i===index && product
         ? {...it,productId:product.id,name:product.name,code:product.sku,
            unit:product.unit,unitPrice:Number(product.cost)||0,
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
@@ -2410,15 +2408,13 @@ export default function Home() {
 
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
-    setDraft((d) => d ? ({ ...d, [key]: number, totalsReviewed: false,
-      finalReviewed: false, officialVerified: false }) : d);
+    setDraft((d) => d ? ({ ...d, [key]: number, finalReviewed: false, officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
       reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
-      finalReviewed: false, totalsReviewed: false,
-      officialVerified: false,
+      finalReviewed: false, officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
         const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
@@ -2485,8 +2481,7 @@ export default function Home() {
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
-              officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
-              officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
+              officialTotal: totals.total, reviewedItems: {}, officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
               items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
               officialApplied: true, finalReviewed:false, officialVerified:true,
               subtotal: totals.subtotal ?? d.subtotal,
@@ -2525,8 +2520,7 @@ export default function Home() {
       officialCompared: true,
       officialVerified: false, officialApplied: false,
       officialOrigin: 'texto-manual',
-      reviewedItems: {}, totalsReviewed: false,
-      officialSubtotal: totals.subtotal,
+      reviewedItems: {}, finalReviewed: false, officialSubtotal: totals.subtotal,
       officialDiscount: totals.discount,
       officialTotal: totals.total
     }));
@@ -2543,7 +2537,7 @@ export default function Home() {
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
         return { ...item, itemDiscount: Number(item.itemDiscount ?? match?.ocr?.itemDiscount ?? 0) };
       }),
-      reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
+      reviewedItems: {}, finalReviewed:false,
       officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
       discount: d.officialDiscount ?? d.discount,
@@ -2578,13 +2572,9 @@ export default function Home() {
       setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
       return;
     }
-    if (totalsRequireReview && !draft?.totalsReviewed) {
-      setError('Confira e marque os totais destacados antes de registrar a nota.');
-      return;
-    }
     if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
-    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
-      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    if (!canConfirmFiscalDocument(draft, receiptReviewRows)) {
+      setError('Conclua a conferência de itens, totais e responsável no quadro de confirmação final.'); return;
     }
     if (draft.manualInvoice) {
       if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
@@ -2714,7 +2704,7 @@ export default function Home() {
     if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
@@ -3218,7 +3208,7 @@ export default function Home() {
                     </td>
                     <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
-                      totalsReviewed: false, finalReviewed: false, officialVerified: false
+                      finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
                 })}</tbody>
@@ -3238,19 +3228,11 @@ export default function Home() {
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
             {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>{draftTotal < 0 ? 'O desconto não pode ultrapassar o subtotal acrescido dos encargos.' : 'O total líquido calculado ('+money(draftTotal)+') difere do valor extraído do documento ('+money(reportedFiscalTotal)+'). Confira subtotal, desconto e acréscimos antes de confirmar.'}</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
-            {totalsRequireReview && <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
-              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-                <input type="checkbox" checked={Boolean(draft.totalsReviewed)}
-                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked, finalReviewed:false }))}/>
-                <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
-              </label>
-              <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
-            </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
-              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? (totalsRequireReview ? 'Revise os itens, totais e divergências sinalizadas antes da confirmação final.' : 'Itens revisados. Identifique quem realizou a verificação.') : 'Conclua a revisão dos itens destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
-                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
+                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>{totalsRequireReview ? 'Conferi o documento, inclusive os totais e divergências sinalizadas, e autorizo a entrada no estoque.' : 'Conferi todo o documento e autorizo a entrada no estoque.'}</span></label>
                 <label className="field review-final-person"><span>Quem conferiu todos os itens *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável pela conferência"/></label>
               </div>
             </section>
