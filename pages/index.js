@@ -2258,7 +2258,12 @@ export default function Home() {
     }
     setPendingPreview(null);
   }
-  useEffect(()=>()=>closePendingPreview(),[]);
+  useEffect(()=>()=>{
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+  },[]);
   async function viewPendingOriginal(row){
     if(!supabase||!accessCode)return;
     try{
