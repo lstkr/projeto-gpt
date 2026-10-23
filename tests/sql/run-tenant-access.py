@@ -34,7 +34,23 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     if migration.name.endswith('_tenant_access.sql'):
         sql("insert into private.app_users(username,password_hash,role,display_name) values ('recovery.fixture',extensions.crypt('synthetic-recovery-password',extensions.gen_salt('bf',4)),'admin','Recovery Fixture')")
         before = sql("select password_hash from private.app_users where username='recovery.fixture'")
-        fault = re.sub(r'commit;\s*
+        migration_text = migration.read_text(encoding='utf8')
+        fault = migration_text.rsplit('commit;',1)[0] + "do $$ begin raise exception 'injected cutover failure'; end $$; commit;"
+        run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
+        assert run.returncode != 0 and 'injected cutover failure' in run.stderr
+        assert sql("select password_hash from private.app_users where username='recovery.fixture'") == before
+        assert sql("select to_regclass('private.establishments') is null") == 't'
+        assert sql("select to_regclass('public.shared_inventory') is not null") == 't'
+        print('PASS failed cutover rolls back schema and preserves credentials')
+    if migration.name == '20261023013000_fiscal_document_server_attribution.sql':
+        migration_text = migration.read_text(encoding='utf8')
+        fault = migration_text.rsplit('commit;',1)[0] + "do $$ begin raise exception 'injected attribution failure'; end $$; commit;"
+        run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
+        assert run.returncode != 0 and 'injected attribution failure' in run.stderr
+        assert sql("select to_regclass('private.fiscal_document_attribution') is null") == 't'
+        definition = sql("select pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)")
+        assert 'checkedByVerified' not in definition and 'active_tenant' not in definition
+        print('PASS failed fiscal-attribution migration rolls back table and RPC patch')
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
