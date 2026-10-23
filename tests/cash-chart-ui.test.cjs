@@ -1,11 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const { summarizeCashMonthly } = require('../lib/cash-chart-references.mjs');
+const cashChartReferences = import('../lib/cash-chart-references.mjs');
 const page = fs.readFileSync('pages/index.js', 'utf8');
 const styles = fs.readFileSync('styles/globals.css', 'utf8');
 
-test('monthly references ignore missing, malformed and negative daily values', () => {
+test('monthly references ignore missing, malformed and negative daily values', async () => {
+  const { summarizeCashMonthly } = await cashChartReferences;
   assert.equal(summarizeCashMonthly([]), null);
   assert.equal(summarizeCashMonthly(null), null);
   assert.equal(summarizeCashMonthly([
@@ -16,7 +17,8 @@ test('monthly references ignore missing, malformed and negative daily values', (
   ]), null);
 });
 
-test('monthly references include only launched days and include registered zero-value days', () => {
+test('monthly references include only launched days and include registered zero-value days', async () => {
+  const { summarizeCashMonthly } = await cashChartReferences;
   assert.deepEqual(summarizeCashMonthly([
     { day: '2026-10-10', revenue: 95.5 },
     { day: '2026-10-03', revenue: 0 },
@@ -28,7 +30,8 @@ test('monthly references include only launched days and include registered zero-
   });
 });
 
-test('single-day month and tied values use a stable shared reference', () => {
+test('single-day month and tied values use a stable shared reference', async () => {
+  const { summarizeCashMonthly } = await cashChartReferences;
   assert.deepEqual(summarizeCashMonthly([{ day: '2026-10-22', revenue: 17.25 }]), {
     minimum: { day: '2026-10-22', revenue: 17.25 },
     maximum: { day: '2026-10-22', revenue: 17.25 }
