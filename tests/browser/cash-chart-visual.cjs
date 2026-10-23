@@ -3,6 +3,7 @@
 // ESTOQUE_BROWSER_URL=http://127.0.0.1:3000 PLAYWRIGHT_MODULE=playwright node tests/browser/cash-chart-visual.cjs
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const { performance } = require('node:perf_hooks');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -181,9 +182,16 @@ const closings = [
     console.log('PASS print preview: blind/differences, role-aware sheet, keyboard and six viewports');
 
     // Revocation from another client: no manual logout click is permitted.
+    // Measure from remote revocation to visible login; a 9 s timeout masked SLA misses.
+    // This measures an online localhost mock, not real network latency.
+    const revokedAt=performance.now();
     sessionRevokedForQA=true;
     // No user action, click or focus event: the periodic watcher must act alone.
-    await page.getByLabel('Login',{exact:true}).waitFor({timeout:9000});
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const logoutLatencyMs=performance.now()-revokedAt;
+    assert.ok(logoutLatencyMs<=2500,
+      'remote revocation must reach the visible login in ~2.5 s; observed '+logoutLatencyMs.toFixed(0)+' ms');
+    console.log('QA revocation heartbeat-to-login latency: '+logoutLatencyMs.toFixed(0)+' ms');
     assert.ok(checksAfterRevocation>=1,'navegador deve verificar token expirado');
     assert.equal(writesAfterRevocation,0,'nenhum salvamento pode ser iniciado depois da detecção');
     const persisted=await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session'));
@@ -192,6 +200,26 @@ const closings = [
       'uma conta desconectada não deve manter ações de estoque');
     assert.match(await page.locator('body').innerText(),/Sua sessão foi encerrada|conta foi desativada/);
     console.log('PASS client revocation: forced logout, no token, no inventory actions');
+
+    // Focus should trigger immediate validation, without waiting for a timer tick.
+    // Reauthenticate only in this synthetic fixture; never use production tokens.
+    sessionRevokedForQA=false;
+    await page.getByLabel('Login',{exact:true}).fill('synthetic.qa');
+    await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
+    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
+    const focusStartedAt=performance.now();
+    sessionRevokedForQA=true;
+    await page.evaluate(()=>{
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const focusLogoutLatencyMs=performance.now()-focusStartedAt;
+    assert.ok(focusLogoutLatencyMs<=2500,
+      'returning focus should force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session')),null);
+    console.log('QA focus-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
 
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');
