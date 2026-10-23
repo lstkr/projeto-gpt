@@ -155,7 +155,12 @@ assert worker_token!=worker_token_two, 'Separate logins must issue distinct toke
 for token in [worker_token, worker_token_two]:
     assert sql("select (public.inventory_validate_session('%s')->>'valid')::text"%token)=='true'
 baseline=sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
-inflight=open_writer("select (public.inventory_get('%s')->>'revision') is not null;"%worker_token)
+# Preserve the exact synthetic inventory contents while exercising a real
+# in-flight mutation; no blind clearing of stock/documents in the test.
+baseline_state=sql("select state::text from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
+assert baseline is not None and baseline.isdigit() and baseline_state
+safe_state=baseline_state.replace("'", "''")
+inflight=open_writer("select public.inventory_save('%s','%s'::jsonb);"%(worker_token,safe_state))
 # Both independent tokens hold transaction-scoped session locks.
 inflight_second=open_writer("select (public.inventory_validate_session('%s')->>'valid')::boolean;"%worker_token_two)
 stopper=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
@@ -170,6 +175,9 @@ try:
     assert sql("select active from private.app_users where id='%s'"%target_id)=='t', \
       'Account deactivated before earlier authorized RPC committed'
     commit_writer(inflight)
+    # A protected write committed BEFORE deactivation is allowed; its revision
+    # must be durable while the other session still holds its transaction lock.
+    assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==str(int(baseline)+1), 'In-flight authorized save did not commit before account inactivation'
     time.sleep(0.15)
     assert stopper.poll() is None, 'Deactivation committed while the second token held an authorized RPC'
     commit_writer(inflight_second)
@@ -191,8 +199,8 @@ for revoked_token in (worker_token,worker_token_two):
         denied=subprocess.run(psql,input="set role anon;\n"+statement,text=True,capture_output=True,timeout=10)
         assert denied.returncode != 0 and ('28000' in denied.stderr or 'Sessão inválida' in denied.stderr), \
           'Revoked account accepted a protected operation: '+denied.stderr[:250]
-assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==baseline
-print('PASS inactive tokens immediately denied: validate/get/save, no write after revoke')
+assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==str(int(baseline)+1), 'Revoked tokens changed the inventory after account inactivation'
+print('PASS authorized in-flight save commits before deactivation, and revoked tokens cannot save after commit')
 print('PASS deactivation waits for in-flight authorized RPC to finish')
 
 # Race 2: login transaction must hold the account row lock until its newly
