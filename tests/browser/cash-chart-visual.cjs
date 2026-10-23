@@ -208,18 +208,22 @@ const closings = [
     await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
     await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
-    const focusStartedAt=performance.now();
+    // Exercise a real tab visibility/focus transition, not manually dispatched events.
+    // Hidden tabs can have their intervals throttled by the browser.
+    const backgroundTab=await context.newPage();
+    await backgroundTab.goto('about:blank');
+    await backgroundTab.bringToFront();
+    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500});
     sessionRevokedForQA=true;
-    await page.evaluate(()=>{
-      document.dispatchEvent(new Event('visibilitychange'));
-      window.dispatchEvent(new Event('focus'));
-    });
+    const focusStartedAt=performance.now();
+    await page.bringToFront();
     await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
     const focusLogoutLatencyMs=performance.now()-focusStartedAt;
     assert.ok(focusLogoutLatencyMs<=2500,
-      'returning focus should force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+      'returning a hidden tab to focus should force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
     assert.equal(await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session')),null);
-    console.log('QA focus-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+    await backgroundTab.close();
+    console.log('QA real tab-focus-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
 
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');
