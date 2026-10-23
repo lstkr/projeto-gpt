@@ -69,7 +69,7 @@ Não executar reset, mescla automática, SQL destrutivo ou alteração de usuár
 | [#85](https://github.com/lstkr/projeto-gpt/issues/85) | P2 | Backend | Aberta — CMV parent; #97 fechado, #98 → #99 pendentes. |
 | [#77](https://github.com/lstkr/projeto-gpt/issues/77) | P2 | Backend | Aberta — Edição de usuários parent; #102 → #103/PR #115. |
 | [#70](https://github.com/lstkr/projeto-gpt/issues/70) | P1 | Backend / DBA | Aberta — Integridade/autoria de caixa: homologar implantação e aceite; autoria fiscal nova em #119 é outro fluxo. |
-| [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | UI/UX / Frontend | Aberta — Layout/histórico de caixa: manter aceite residual e regressão em #50/#90; não duplicar pedido anterior. |
+| [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | UI/UX / Frontend | Aberta — agora inclui nome Faturamento, referências máximo/mínimo, rótulo por barra e modal compacto, além do escopo original; QA #50/#90. |
 | [#63](https://github.com/lstkr/projeto-gpt/issues/63) | P1 plano; P2 evolução | Backend / DBA | Aberta — Identidade/nome e produtos legados; plano/dry-run/backup/testes antes de execução; #62. |
 | [#62](https://github.com/lstkr/projeto-gpt/issues/62) | P1 plano; P2 evolução | DBA / Backend | Aberta — CNPJ/fornecedores legados; diagnóstico e migração reversível sujeitos a aprovação. |
 | [#58](https://github.com/lstkr/projeto-gpt/issues/58) | P1 | Backend / UI/UX | Aberta — Conferência durante OCR/lotes; implementação anterior não substitui testes de concorrência em #50/#104. |
@@ -92,3 +92,27 @@ Pedidos anteriores de navegação: #75 (Configurações) e #82 (Permissões no p
 - Risco: fotografia de status envelhece; conferir GitHub antes de implementar. Conflitos em pages/index.js exigem integração sequencial de PRs de UI.
 - Deploy: sem ação de deploy nesta rodada; não confundir merge documental com implantação funcional. Rollback documental: reverter o commit desta PR; futuros planos de dados exigem rollback próprio validado.
 - Regra de continuidade CTO: a cada nova ToDoList/Roadmap, confrontar código + tickets/PRs existentes, reaproveitar issues quando houver sobreposição, definir um DRI, revisores, prioridade, dependências e critérios de aceite antes de integrar.
+
+
+## CTO — faturamento, gráfico e nova rodada de implementação (22/10/2026)
+
+O gestor relatou avanço na inserção de notas, ainda sob testes manuais. Isso é sinal de progresso, não homologação encerrada. O teste manual do gestor e o aceite independente do QA permanecem separados.
+
+| Pedido | Issue | Prioridade | Distribuição e dependências |
+| --- | --- | --- | --- |
+| Inserção de notas, testes ainda em curso | [#50](https://github.com/lstkr/projeto-gpt/issues/50) | P1 homologação | QA/Integração acompanha; Frontend/Backend/DBA corrigem falhas atribuídas; usar #58/#68/#118/#119 e dados sintéticos. |
+| Gráfico: máximo/mínimo mensal, valor da barra por hover e acessibilidade | [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | UI/UX DRI, Revenue Dashboard Frontend Engineer executor, Backend revisa cálculo e QA visual; hover equivalente por teclado/toque; dias com lançamentos definidos como base. |
+| Renomear “Fechamento de caixa” para “Faturamento” | [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | Mesma mudança coesa de navegação/cabeçalho/mensagens; preservar contratos e permissões. |
+| Upload de vários PDFs e fotos, processamento e rascunhos por arquivo | [#123](https://github.com/lstkr/projeto-gpt/issues/123) | P1 | Backend DRI, Revenue Ingestion Engineer; DBA para contrato de persistência; QA concorrência, limites e idempotência. Referências fechadas #55/#56 e concorrência #58. |
+| Fila “Faturamentos pendentes”, conferência simultânea e retomada | [#124](https://github.com/lstkr/projeto-gpt/issues/124) | P1 | UI/UX DRI, Revenue Workflow Frontend Engineer; integra após contrato #123. QA teclado/mobile, falhas parciais e preservação do rascunho ativo. |
+| Enxugar detalhamento financeiro | [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | UI/UX + Frontend organiza modal com menos rolagem, responsivo; Backend revisa reconciliação dos valores. |
+
+A sequência para entrega do lote é #123 contrato/processamento → #124 interface integrada; exploração de protótipo pode ocorrer antes, mas não lançar nem combinar automaticamente documentos de faturamento. Cada documento tem revisão própria, totais extraídos com confiança explícita e confirmação humana. Se dois arquivos corresponderem ao mesmo período/caixa, é necessária reconciliação explícita antes de somar.
+
+A issue #69 preserva os critérios anteriores de histórico e navegação de gráfico e agora inclui novos pontos desta rodada. Issues #55/#56 estão concluídas para arquivo individual; não serão duplicadas/reabertas.
+
+### Estado do portfólio após a atualização
+
+A consulta anterior encontrou 21 issues e 1 PR abertos. Foram criadas #116–#121, #68 foi reaberta por ajuste residual, e agora foram abertas #123/#124. Total esperado na rodada atual: **30 issues abertas e 2 PRs abertos** (#115 e #122); confirmar ao começar cada execução. #115 continua draft e bloqueado pela implantação/homologação descrita no próprio PR. O PR documental #122 agrega as issues e este adendo; suas verificações precisam rodar novamente no SHA atualizado.
+
+Atribuições neste roadmap são responsabilidades funcionais e nomes de engenharia por especialidade, não contas de usuários inventadas no GitHub. Criar PR separada por issue/camada quando houver mudança concreta; associar PR ao número da issue e passar evidência ao QA. Resolver todos em paralelo quando contratos permitirem; serializar mudanças concorrentes em pages/index.js e a integração de #123/#124.
