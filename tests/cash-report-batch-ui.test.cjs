@@ -25,9 +25,9 @@ test('cash report UI consumes only versioned pending-report RPCs and keeps manua
   const page=fs.readFileSync('pages/index.js','utf8');
   for(const name of ['cash_report_create','cash_reports_list','cash_report_file','cash_report_save','cash_report_cancel','cash_report_post']) assert.ok(page.includes(name),name);
   assert.match(page,/type="file"[^>]*multiple/);
-  assert.match(page,/onSubmit=\{saveCashClosing\}/);
+  assert.match(page,/onSubmit=\{cashEntryMode==='report-review'\?savePendingCashReport:saveCashClosing\}/);
   assert.match(page,/cash_report_post/);
   assert.match(page,/Faturamentos pendentes/);
   assert.match(page,/Abrir original/);
-  assert.match(page,/Baixar original/);
+  assert.match(page,/Baixar original/);\n  assert.match(page,/cashReportPreview\\.mime==='application\\/pdf'/);\n  assert.match(page,/cashReportFileMatchesMime/);
 });
