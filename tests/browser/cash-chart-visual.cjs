@@ -213,7 +213,8 @@ const closings = [
     const backgroundTab=await context.newPage();
     await backgroundTab.goto('about:blank');
     await backgroundTab.bringToFront();
-    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500});
+    // requestAnimationFrame is suspended in background tabs; poll on a timer.
+    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500,polling:100});
     sessionRevokedForQA=true;
     const focusStartedAt=performance.now();
     await page.bringToFront();
