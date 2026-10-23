@@ -6,6 +6,7 @@ import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
+import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
@@ -1280,6 +1281,7 @@ export default function Home() {
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
+  const sessionRevokedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
   const receiptOcrWorkerRef = useRef(null);
   const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
@@ -1408,7 +1410,12 @@ export default function Home() {
       setAccessLoaded(true);
       if (token) loadSharedInventory(token);
       else {
-        setAccessMessage('');
+        let logoutNotice='';
+        try {
+          logoutNotice=sessionStorage.getItem('projeto-gpt-session-message')||'';
+          sessionStorage.removeItem('projeto-gpt-session-message');
+        } catch (_) {}
+        setAccessMessage(logoutNotice);
         setAccessGranted(false);
         setDataReady(false);
       }
@@ -1430,13 +1437,67 @@ export default function Home() {
     setDataReady(true);
   }, [supabase]);
 
+  // Session revocation is enforced on every RPC by the database. This
+  // watcher only changes the UI state and clears the local token promptly.
+  // No Realtime grants and no private tables are exposed to the browser.
+  useEffect(() => {
+    if (!supabase || !accessCode || !accessGranted) return;
+    let live=true;
+    let pending=false;
+    sessionRevokedRef.current=false;
+    async function verifySession() {
+      if (!live || pending || sessionRevokedRef.current || document.hidden) return;
+      pending=true;
+      try {
+        const {data,error}=await supabase.rpc('inventory_validate_session',{
+          p_session_token:accessCode
+        });
+        if (!live || sessionRevokedRef.current) return;
+        if (sessionHealth({data,error}) === 'revoked') {
+          // Mark synchronously before triggering any state changes/re-render.
+          sessionRevokedRef.current=true;
+          try {
+            sessionStorage.removeItem('projeto-gpt-session');
+            sessionStorage.removeItem('projeto-gpt-access');
+            sessionStorage.setItem('projeto-gpt-session-message',
+              'Sua sessão foi encerrada ou sua conta foi desativada. Entre novamente.');
+          } catch (_) {}
+          setAccessGranted(false);
+          setDataReady(false);
+          setAccessCode('');
+          setCurrentUser(null);
+          setDraft(null);
+          setDraftQueue([]);
+          setSaveStatus('');
+          // A full reload destroys stale timers and in-flight component state.
+          window.location.replace(window.location.pathname + window.location.search);
+        }
+      } catch (_) {
+        // Offline is not proof of deactivation. The server independently
+        // rejects all mutations with an inactive/revoked token.
+      } finally { pending=false; }
+    }
+    const timer=window.setInterval(verifySession,SESSION_CHECK_INTERVAL_MS);
+    const onFocus=()=>{void verifySession();};
+    const onVisible=()=>{if (!document.hidden) void verifySession();};
+    window.addEventListener('focus',onFocus);
+    document.addEventListener('visibilitychange',onVisible);
+    void verifySession();
+    return ()=>{
+      live=false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus',onFocus);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
+  },[supabase,accessCode,accessGranted]);
+
   useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
   }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
-    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin') return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin' || sessionRevokedRef.current) return;
     if (skipNextSyncRef.current) {
       skipNextSyncRef.current = false;
       return;
@@ -1446,6 +1507,7 @@ export default function Home() {
       // Serialize snapshots: each save uses the revision acknowledged by Supabase.
       // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+        if (sessionRevokedRef.current) return;
         const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
           p_session_token: accessCode,
           p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
@@ -1478,7 +1540,7 @@ export default function Home() {
   const administrationGuardRef = useRef(null);
   administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
   const invokeAdministration = useCallback(async (name, args) => {
-    if (!supabase || !accessCode) throw new Error('Sessão necessária.');
+    if (!supabase || !accessCode || sessionRevokedRef.current) throw new Error('Sessão necessária.');
     if (name === 'inventory_select_tenant') {
       // Only a stable view can switch. Token rotation at the database prevents
       // delayed requests from the previous unit from crossing this boundary.
