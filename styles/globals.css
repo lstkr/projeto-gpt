@@ -177,6 +177,16 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .feature-tags { display: flex; flex-wrap: wrap; gap: 14px; }
 .feature-tags span { display: inline-flex; align-items: center; gap: 4px; color: #718872; font-size: 9px; font-weight: 650; }
 .history-panel { margin-top: 17px; }
+.history-filters { display: grid; grid-template-columns: minmax(240px, 1.25fr) minmax(170px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 10px; padding: 13px 19px 8px; }
+.history-filters label { display: flex; flex-direction: column; gap: 5px; color: #68766a; font-size: 10px; font-weight: 650; }
+.history-filters label > span { display: flex; align-items: center; gap: 6px; }
+.history-filters input { min-width: 0; width: 100%; padding: 8px 9px; border: 1px solid #dfe6dc; border-radius: 7px; color: #445247; background: #fff; font: inherit; }
+.history-clear { min-height: 34px; white-space: nowrap; }
+.history-filter-note { margin: 0 19px 8px; color: #77847a; font-size: 10px; line-height: 1.5; }
+.history-author { color: #77847a; font-size: 10px; }
+.history-author.verified-author { color: #39794b; font-weight: 650; }
+@media (max-width: 760px) { .history-filters { grid-template-columns: 1fr 1fr; padding-inline: 13px; } .history-filter-note { margin-inline: 13px; } }
+@media (max-width: 480px) { .history-filters { grid-template-columns: 1fr; } }
 .history-count { display: inline-flex; padding: 6px 8px; color: #7c8c7e; border-radius: 7px; background: #f3f6f0; font-size: 9px; white-space: nowrap; }
 .empty-docs { display: flex; align-items: center; flex-direction: column; padding: 35px 20px 40px; text-align: center; }
 .empty-file { display: grid; place-items: center; width: 51px; height: 51px; margin-bottom: 14px; border-radius: 15px; color: #78957d; background: #eef4eb; }
