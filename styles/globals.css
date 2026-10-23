@@ -838,3 +838,36 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 
 /* The mobile sidebar/backdrop sits at z-index 25/24; printable modal must remain above it. */
 .count-print-overlay{z-index:40}
+
+
+/* Pending faturamento queue: compact cards, readable status and mobile actions. */
+.cash-report-queue{margin-bottom:16px}
+.cash-report-progress{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:11px 16px;color:#395d43;background:#f1f7ef;border-top:1px solid #e5eee2;font-size:12px}
+.cash-report-progress span{overflow-wrap:anywhere}
+.cash-report-list{display:grid;gap:0}
+.cash-report-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:14px 18px;border-top:1px solid #edf0eb;align-items:center}
+.cash-report-copy{display:grid;gap:5px;min-width:0}
+.cash-report-copy>b{font-size:12px;color:#405248;overflow-wrap:anywhere}
+.cash-report-copy>span{font-size:11px;color:#748177;line-height:1.45;overflow-wrap:anywhere}
+.cash-report-copy .cash-report-error{color:#9c3c32;font-weight:650}
+.cash-report-copy .cash-report-warning{color:#886523}
+.cash-report-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}
+.cash-report-actions .btn{min-height:35px;padding:0 10px;font-size:10px}
+.cash-report-preview-backdrop{z-index:45}
+.cash-report-preview{width:min(900px,calc(100vw - 28px));max-width:900px;max-height:92vh;display:flex;flex-direction:column;gap:12px}
+.cash-report-preview .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.cash-report-preview .modal-head h2{margin:0;font-size:17px}
+.cash-report-preview-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.cash-report-preview-actions span{min-width:0;overflow-wrap:anywhere;color:#68776c;font-size:11px}
+.cash-report-preview iframe,.cash-report-preview img{display:block;width:100%;height:min(68vh,700px);object-fit:contain;border:1px solid #e4e9e3;border-radius:8px;background:#f7f8f5}
+@media(max-width:760px){
+  .cash-report-card{grid-template-columns:minmax(0,1fr);gap:10px;padding:13px}
+  .cash-report-actions{justify-content:flex-start}
+  .cash-report-actions .btn{flex:1 1 130px;white-space:normal}
+  .cash-report-preview{max-height:94vh}
+  .cash-report-preview iframe,.cash-report-preview img{height:65vh}
+}
+@media(max-width:420px){
+  .cash-report-actions .btn{flex-basis:100%}
+  .cash-report-preview-actions .btn{flex:1 1 100%}
+}
