@@ -15,7 +15,7 @@ test('cash report bytes round-trip and download names cannot carry paths or acti
   const { encodeCashReportBase64, decodeCashReportBase64, cashReportSafeDownloadName } = await import('../lib/cash-report-ui.mjs');
   const bytes=Uint8Array.from([0,1,127,128,255]);
   assert.deepEqual(decodeCashReportBase64(encodeCashReportBase64(bytes)),bytes);
-  assert.equal(cashReportSafeDownloadName('../relatorio.pdf'),'_relatorio.pdf');
+  assert.equal(cashReportSafeDownloadName('../relatorio.pdf'),'relatorio.pdf');
   assert.equal(cashReportSafeDownloadName('nota.svg'),'nota.svg');
   assert.throws(()=>decodeCashReportBase64(''),/Arquivo inválido/);
 });
@@ -29,5 +29,7 @@ test('cash report UI consumes only versioned pending-report RPCs and keeps manua
   assert.match(page,/cash_report_post/);
   assert.match(page,/Faturamentos pendentes/);
   assert.match(page,/Abrir original/);
-  assert.match(page,/Baixar original/);\n  assert.match(page,/cashReportPreview\\.mime==='application\\/pdf'/);\n  assert.match(page,/cashReportFileMatchesMime/);
+  assert.match(page,/Baixar original/);
+  assert.ok(page.includes("cashReportPreview.mime==='application/pdf'"));
+  assert.ok(page.includes('cashReportFileMatchesMime'));
 });
