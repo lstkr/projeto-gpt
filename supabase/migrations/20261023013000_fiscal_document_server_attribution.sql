@@ -60,7 +60,7 @@ declare
     or jsonb_typeof(p_state->'products') <> 'array'
     or jsonb_typeof(p_state->'movements') <> 'array'
     or jsonb_typeof(p_state->'documents') <> 'array' then$session_replacement$;
-  write_anchor text := $write_anchor$  update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;$write_anchor$;
+  write_anchor text := $write_anchor$update public.shared_inventory set state = p_state, updated_at = saved_at where id = true;$write_anchor$;
   write_replacement text := $write_replacement$  -- The JSON snapshot stays backward compatible; author fields are overwritten
   -- only for documents created in this transaction. Old records remain untouched.
   select coalesce(jsonb_agg(
