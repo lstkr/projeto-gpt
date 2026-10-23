@@ -46,9 +46,7 @@ declare
   definition text;
   declaration_anchor text := $declaration_anchor$  posted_ids uuid[] := array[]::uuid[];$declaration_anchor$;
   declaration_replacement text := $declaration_replacement$  posted_ids uuid[] := array[]::uuid[];
-  active_tenant uuid;
-  cleaned_documents jsonb;
-  cleaned_movements jsonb;$declaration_replacement$;
+  active_tenant uuid;$declaration_replacement$;
   session_anchor text := $session_anchor$  if p_state is null or jsonb_typeof(p_state) <> 'object'
     or jsonb_typeof(p_state->'products') <> 'array'
     or jsonb_typeof(p_state->'movements') <> 'array'
