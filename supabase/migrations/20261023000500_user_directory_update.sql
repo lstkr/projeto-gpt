@@ -4,8 +4,8 @@ begin;
 
 create table if not exists private.app_user_edit_audit(
  id bigint generated always as identity primary key,
- actor_id uuid not null references private.app_users(id),
- target_id uuid not null references private.app_users(id),
+ actor_id uuid not null,
+ target_id uuid not null,
  changed_at timestamptz not null default statement_timestamp(),
  old_username text not null,
  new_username text not null,
