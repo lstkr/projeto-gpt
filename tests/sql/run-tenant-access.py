@@ -146,12 +146,18 @@ insert into private.tenant_memberships(user_id,tenant_id,role)
  from private.app_users where username='qa.revocation';
 """)
 worker_token=sql("select public.inventory_login('qa.revocation','synthetic-revocation-only')->>'session_token'")
+# A separate browser/device must have an independently revocable session.
+worker_token_two=sql("select public.inventory_login('qa.revocation','synthetic-revocation-only')->>'session_token'")
 manager_token=sql("select public.inventory_login('qa.manager','synthetic-manager-password')->>'session_token'")
 target_id=sql("select id from private.app_users where username='qa.revocation'")
-assert len(worker_token)==64 and len(manager_token)==64
-assert sql("select (public.inventory_validate_session('%s')->>'valid')::text"%worker_token)=='true'
+assert len(worker_token)==64 and len(worker_token_two)==64 and len(manager_token)==64
+assert worker_token!=worker_token_two, 'Separate logins must issue distinct tokens'
+for token in [worker_token, worker_token_two]:
+    assert sql("select (public.inventory_validate_session('%s')->>'valid')::text"%token)=='true'
 baseline=sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
 inflight=open_writer("select (public.inventory_get('%s')->>'revision') is not null;"%worker_token)
+# Both independent tokens hold transaction-scoped session locks.
+inflight_second=open_writer("select (public.inventory_validate_session('%s')->>'valid')::boolean;"%worker_token_two)
 stopper=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,text=True)
 try:
@@ -164,23 +170,27 @@ try:
     assert sql("select active from private.app_users where id='%s'"%target_id)=='t', \
       'Account deactivated before earlier authorized RPC committed'
     commit_writer(inflight)
+    time.sleep(0.15)
+    assert stopper.poll() is None, 'Deactivation committed while the second token held an authorized RPC'
+    commit_writer(inflight_second)
     _,stop_error=stopper.communicate(timeout=10)
     assert stopper.returncode==0,stop_error
 finally:
-    for proc in (inflight,stopper):
+    for proc in (inflight,inflight_second,stopper):
         if proc.poll() is None:
             proc.kill()
 assert sql("select active from private.app_users where id='%s'"%target_id)=='f'
 assert sql("select count(*) from private.app_sessions where user_id='%s' and revoked_at is null"%target_id)=='0'
-for statement in [
-    "select public.inventory_validate_session('%s');"%worker_token,
-    "select public.inventory_get('%s');"%worker_token,
-    ("select public.inventory_save('%s'," %worker_token)+
-       """'{"products":[],"documents":[],"movements":[],"revision":0}'::jsonb);""",
-]:
-    denied=subprocess.run(psql,input="set role anon;\n"+statement,text=True,capture_output=True,timeout=10)
-    assert denied.returncode != 0 and ('28000' in denied.stderr or 'Sessão inválida' in denied.stderr), \
-      'Revoked account accepted a protected operation: '+denied.stderr[:250]
+for revoked_token in (worker_token,worker_token_two):
+    for statement in [
+        "select public.inventory_validate_session('%s');"%revoked_token,
+        "select public.inventory_get('%s');"%revoked_token,
+        ("select public.inventory_save('%s'," %revoked_token)+
+           """'{"products":[],"documents":[],"movements":[],"revision":0}'::jsonb);""",
+    ]:
+        denied=subprocess.run(psql,input="set role anon;\n"+statement,text=True,capture_output=True,timeout=10)
+        assert denied.returncode != 0 and ('28000' in denied.stderr or 'Sessão inválida' in denied.stderr), \
+          'Revoked account accepted a protected operation: '+denied.stderr[:250]
 assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==baseline
 print('PASS inactive tokens immediately denied: validate/get/save, no write after revoke')
 print('PASS deactivation waits for in-flight authorized RPC to finish')
