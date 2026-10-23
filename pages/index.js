@@ -14,6 +14,7 @@ import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggre
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
+import { getPendingReceiptPreviewType, safePendingReceiptFilename } from '../lib/pending-receipt-preview.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -1266,6 +1267,8 @@ export default function Home() {
   const [draftQueue, setDraftQueue] = useState([]);
   const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
+  const [pendingPreview, setPendingPreview] = useState(null);
+  const pendingPreviewUrlRef = useRef('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
@@ -1287,11 +1290,13 @@ export default function Home() {
 
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
-  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' : pendingPreview ? 'pending-preview' :
     view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useAccessibleDialog(activeDialog, () => {
-    if (mergePair) {
+    if (pendingPreview) {
+      closePendingPreview();
+    } else if (mergePair) {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
@@ -2246,6 +2251,14 @@ export default function Home() {
     setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
+  function closePendingPreview(){
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+    setPendingPreview(null);
+  }
+  useEffect(()=>()=>closePendingPreview(),[]);
   async function viewPendingOriginal(row){
     if(!supabase||!accessCode)return;
     try{
@@ -2254,10 +2267,16 @@ export default function Home() {
       const binary=atob(data.base64);
       const dataBytes=new Uint8Array(binary.length);
       for(let i=0;i<binary.length;i++)dataBytes[i]=binary.charCodeAt(i);
-      const url=URL.createObjectURL(new Blob([dataBytes],{type:data.mime||'application/octet-stream'}));
-      const anchor=document.createElement('a');anchor.href=url;anchor.download=data.fileName||'original';
-      anchor.click();setTimeout(()=>URL.revokeObjectURL(url),15000);
-    }catch(e){setError(e.message);}
+      const previewType=getPendingReceiptPreviewType(data.mime,dataBytes);
+      const safeType=previewType||'application/octet-stream';
+      const url=URL.createObjectURL(new Blob([dataBytes],{type:safeType}));
+      if(pendingPreviewUrlRef.current)URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current=url;
+      setPendingPreview({
+        url,fileName:safePendingReceiptFilename(data.fileName),mime:previewType,
+        previewable:Boolean(previewType)
+      });
+    }catch(e){setError(e?.message||'Não foi possível abrir o arquivo original.');}
   }
   async function uploadFiles(selectedFiles) {
     const files = Array.from(selectedFiles || []);
@@ -3030,10 +3049,9 @@ export default function Home() {
           </div>)}
         </section>}
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
-          <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
-          </div>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div>
+            <div className="notice document-privacy-note" role="note"><span><b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.</span></div>
+          </div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
               <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
@@ -3050,13 +3068,13 @@ export default function Home() {
             {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
-              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
+              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Visualizar arquivo</button>
               {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
               {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
+          {error && <div className="error" role="alert"><Icon type="alert" size={18}/><span>{error}</span><button type="button" aria-label="Dispensar erro" onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
@@ -3379,6 +3397,19 @@ export default function Home() {
     </div>}
     {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
     {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {pendingPreview && <div className="overlay pending-file-overlay" onMouseDown={(event)=>{if(event.target===event.currentTarget)closePendingPreview();}}>
+      <section className="modal pending-file-dialog" role="dialog" aria-modal="true" aria-labelledby="pending-file-title">
+        <div className="modal-heading"><div><div className="eyebrow">ARQUIVO ORIGINAL</div><h2 id="pending-file-title">Visualização do arquivo</h2><p>{pendingPreview.fileName}</p></div>
+          <button type="button" className="close-btn" aria-label="Fechar visualização do arquivo" onClick={closePendingPreview}><Icon type="close"/></button></div>
+        {pendingPreview.previewable ? <div className="pending-file-preview">
+          {pendingPreview.mime==='application/pdf'
+            ? <iframe title={'Pré-visualização do PDF '+pendingPreview.fileName} src={pendingPreview.url}/>
+            : <img alt={'Pré-visualização do arquivo '+pendingPreview.fileName} src={pendingPreview.url}/>}
+        </div> : <div className="notice" role="status">Este formato não pode ser pré-visualizado com segurança. Você ainda pode baixar o arquivo original.</div>}
+        <div className="modal-actions"><a className="btn secondary" href={pendingPreview.url} download={pendingPreview.fileName}>Baixar arquivo original</a>
+          <button type="button" className="btn primary" onClick={closePendingPreview}>Fechar</button></div>
+      </section>
+    </div>}
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }
