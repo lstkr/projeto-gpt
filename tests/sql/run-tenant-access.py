@@ -185,6 +185,39 @@ assert sql("select state->>'revision' from private.tenant_inventory where tenant
 print('PASS inactive tokens immediately denied: validate/get/save, no write after revoke')
 print('PASS deactivation waits for in-flight authorized RPC to finish')
 
+# Race 2: login transaction must hold the account row lock until its newly
+# created token is committed; deactivation then catches that token in its sweep.
+sql("""
+insert into private.app_users(username,password_hash,role,display_name)
+ values ('qa.loginrace',extensions.crypt('synthetic-login-race-only',
+ extensions.gen_salt('bf',4)),'employee','Login Race QA');
+insert into private.tenant_memberships(user_id,tenant_id,role)
+ select id,'00000000-0000-4000-8000-000000000001','employee'
+ from private.app_users where username='qa.loginrace';
+""")
+login_target=sql("select id from private.app_users where username='qa.loginrace'")
+login_tx=open_writer("select (public.inventory_login('qa.loginrace','synthetic-login-race-only')->>'ok')='true';")
+deactivate=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,text=True)
+try:
+    deactivate.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
+        "select public.inventory_user_update('%s','%s','qa.loginrace','Login Race QA',false);\ncommit;\n"
+        %(manager_token,login_target))
+    deactivate.stdin.flush()
+    time.sleep(0.3)
+    assert deactivate.poll() is None,'Deactivation raced past an in-flight login'
+    commit_writer(login_tx)
+    _,stderr=deactivate.communicate(timeout=10)
+    assert deactivate.returncode==0,stderr
+finally:
+    for proc in (login_tx,deactivate):
+        if proc.poll() is None:
+            proc.kill()
+assert sql("select count(*) from private.app_sessions where user_id='%s' and revoked_at is null"%login_target)=='0'
+assert sql("select (public.inventory_login('qa.loginrace','synthetic-login-race-only')->>'ok')::text")=='false'
+print('PASS login vs deactivation is serialized; no newly active orphan session')
+
+
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
 sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
