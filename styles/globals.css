@@ -798,25 +798,25 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 @media(max-width:850px){.cash-chart-month .cash-bar-column{flex:0 0 34px}}
 
 /* Legible daily cash closing detail, responsive and without changes to accounting. */
-.cash-day-dialog{width:min(920px,calc(100vw - 32px));max-width:920px;max-height:min(88vh,950px);overflow:auto}
-.cash-day-detail{display:flex;flex-direction:column;gap:22px;padding:20px 0}
-.cash-day-summary{display:flex;flex-direction:column;gap:6px;padding:22px 24px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:14px}
-.cash-day-summary>span{font-size:14px;font-weight:650;color:#334155}
-.cash-day-summary strong{font-size:clamp(27px,4vw,36px);line-height:1.2;color:#0f172a}
-.cash-day-summary small{color:#64748b}
-.cash-day-registers{display:grid;gap:18px}
-.cash-day-register-card{background:#fff;border:1px solid #d8e0ea;border-radius:14px;padding:20px;min-width:0}
-.cash-day-register-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 20px;padding-bottom:15px;border-bottom:1px solid #e2e8f0}
-.cash-day-register-head h3{margin:0;font-size:18px;color:#0f172a}
-.cash-day-register-head span{font-size:14px;color:#475569}
-.cash-day-channels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
-.cash-day-channel{min-width:0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px}
-.cash-day-channel dt{color:#475569;font-size:13px;line-height:1.4}
-.cash-day-channel dd{margin:5px 0 0;font-size:19px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.cash-day-register-total{display:flex;justify-content:space-between;gap:16px;align-items:center;padding-top:16px;border-top:1px solid #e2e8f0}
-.cash-day-register-total strong{font-size:20px;color:#0f172a;font-variant-numeric:tabular-nums}
-.cash-day-empty{padding:16px}
-@media(max-width:620px){.cash-day-dialog{width:calc(100vw - 18px);max-height:94vh}.cash-day-detail{gap:14px;padding:12px 0}.cash-day-summary{padding:18px}.cash-day-register-card{padding:14px}.cash-day-channels{grid-template-columns:minmax(0,1fr);gap:8px}.cash-day-channel{display:flex;align-items:center;justify-content:space-between;gap:12px}.cash-day-channel dd{font-size:17px;text-align:right;margin:0}}
+.cash-day-dialog{width:min(720px,calc(100vw - 32px));max-width:720px;max-height:min(82vh,760px);overflow:auto;padding:16px 18px}
+.cash-day-detail{display:flex;flex-direction:column;gap:12px;padding:10px 0}
+.cash-day-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3px 12px;padding:12px 16px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:12px}
+.cash-day-summary>span{font-size:13px;font-weight:650;color:#334155}
+.cash-day-summary strong{grid-column:2;grid-row:1 / span 2;font-size:clamp(22px,3vw,30px);line-height:1.2;color:#0f172a}
+.cash-day-summary small{color:#64748b;font-size:11px}
+.cash-day-registers{display:grid;gap:10px}
+.cash-day-register-card{background:#fff;border:1px solid #d8e0ea;border-radius:12px;padding:12px;min-width:0}
+.cash-day-register-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 14px;padding-bottom:9px;border-bottom:1px solid #e2e8f0}
+.cash-day-register-head h3{margin:0;font-size:16px;color:#0f172a}
+.cash-day-register-head span{font-size:12px;color:#475569}
+.cash-day-channels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.cash-day-channel{min-width:0;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px}
+.cash-day-channel dt{color:#475569;font-size:12px;line-height:1.35}
+.cash-day-channel dd{margin:4px 0 0;font-size:16px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.cash-day-register-total{display:flex;justify-content:space-between;gap:12px;align-items:center;padding-top:9px;border-top:1px solid #e2e8f0}
+.cash-day-register-total strong{font-size:18px;color:#0f172a;font-variant-numeric:tabular-nums}
+.cash-day-empty{padding:12px}
+@media(max-width:620px){.cash-day-dialog{width:calc(100vw - 18px);max-height:94vh;padding:12px}.cash-day-detail{gap:10px;padding:8px 0}.cash-day-summary{padding:10px 12px}.cash-day-summary strong{font-size:22px}.cash-day-register-card{padding:10px}.cash-day-channels{grid-template-columns:minmax(0,1fr);gap:6px}.cash-day-channel{display:flex;align-items:center;justify-content:space-between;gap:12px}.cash-day-channel dd{font-size:15px;text-align:right;margin:0}}
 
 
 /* Count print dialog: scroll within the document preview, never the whole page. */
@@ -838,3 +838,41 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 
 /* The mobile sidebar/backdrop sits at z-index 25/24; printable modal must remain above it. */
 .count-print-overlay{z-index:40}
+
+
+/* #68: compact upload progress; full per-file outcomes stay available on demand. */
+.fiscal-upload-progress{max-width:860px;margin:8px auto;padding:12px 16px;display:grid;gap:8px}
+.fiscal-upload-progress-head{display:flex;justify-content:space-between;align-items:center;gap:8px 16px;flex-wrap:wrap}
+.fiscal-upload-progress-head h2{font-size:15px;margin:0}
+.fiscal-upload-progress-head>strong{font-size:13px;color:#385f42;font-variant-numeric:tabular-nums}
+.fiscal-upload-progress>progress{display:block;width:100%;height:8px;margin:0;accent-color:#2e6647}
+.fiscal-upload-current{display:flex;align-items:center;gap:4px 14px;flex-wrap:wrap;color:#526657;font-size:12px;line-height:1.45}
+.fiscal-upload-current-file{min-width:0;overflow-wrap:anywhere}
+.fiscal-upload-failures{padding:2px 7px;border-radius:999px;background:#f8e9e5;color:#8b3027}
+.fiscal-upload-file-details>summary{width:max-content;max-width:100%;padding:4px 0;color:#355f42;font-size:12px;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.fiscal-upload-file-details>ul{display:grid;gap:4px;max-height:112px;overflow:auto;margin:4px 0 0;padding:0;list-style:none}
+.fiscal-upload-file-details li{display:flex;justify-content:space-between;gap:12px;padding:5px 8px;background:#f7f9f6;border-radius:5px;font-size:11px}
+.fiscal-upload-file-details li>span{min-width:0;overflow-wrap:anywhere}
+.fiscal-upload-file-details li.is-failed{background:#fff3f0;color:#8b3027}
+.fiscal-upload-progress :focus-visible,.fiscal-upload-file-details summary:focus-visible{outline:2px solid #2e6647;outline-offset:3px}
+
+/* Monthly min/max references and a value label that follows hover, focus, and touch. */
+.cash-month-reference-legend{display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;margin:0 0 8px;color:#465b49;font-size:12px;line-height:1.45}
+.cash-reference-rule{flex-basis:100%;color:#68796d;font-size:11px}
+.cash-reference-item{display:inline-flex;align-items:center;gap:5px}
+.cash-reference-item b{font-variant-numeric:tabular-nums}
+.cash-reference-swatch{width:20px;border-top:2px dashed;display:inline-block}
+.cash-reference-swatch.is-maximum{border-color:#b45a36}
+.cash-reference-swatch.is-minimum{border-color:#436d9a}
+.cash-reference-swatch.is-equal{border-color:#62776a}
+.cash-chart-month{padding-top:30px;min-height:233px}
+.cash-chart .cash-bar-column{position:relative}
+.cash-chart .cash-bar-column.is-highlighted{z-index:5}
+.cash-chart .cash-bar-track{overflow:visible}
+.cash-chart .cash-bar-fill{position:relative;z-index:1}
+.cash-reference-line{position:absolute;left:-5px;right:-5px;height:0;border-top:2px dashed;pointer-events:none;z-index:2}
+.cash-reference-line.is-maximum{border-color:#b45a36}
+.cash-reference-line.is-minimum{border-color:#436d9a}
+.cash-bar-value{position:absolute;left:50%;z-index:4;transform:translateX(-50%);padding:3px 5px;border-radius:4px;background:#214a37;color:#fff;font-size:10px;font-weight:700;line-height:1.25;white-space:nowrap;font-variant-numeric:tabular-nums;box-shadow:0 2px 5px rgba(20,45,29,.2);pointer-events:none}
+.cash-bar-column:focus-visible .cash-bar-value{outline:2px solid #f2c66d;outline-offset:2px}
+@media(max-width:850px){.cash-month-reference-legend{gap:5px 10px}.cash-reference-rule{font-size:10px}.cash-bar-value{font-size:9px}}
