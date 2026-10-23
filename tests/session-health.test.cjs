@@ -16,5 +16,6 @@ test('temporary service failures must not be mistaken for a revoked account',asy
  const {sessionHealth,SESSION_CHECK_INTERVAL_MS}=await mod;
  assert.equal(sessionHealth({error:{code:'PGRST502',message:'connection failed'}}),'unavailable');
  assert.equal(sessionHealth({error:{message:'Failed to fetch'}}),'unavailable');
- assert.ok(SESSION_CHECK_INTERVAL_MS>=1000&&SESSION_CHECK_INTERVAL_MS<=5000);
+ assert.ok(SESSION_CHECK_INTERVAL_MS>=750&&SESSION_CHECK_INTERVAL_MS<=1200,
+   'heartbeat must leave time for RPC latency and UI navigation inside ~2.5 s');
 });
