@@ -1913,7 +1913,9 @@ export default function Home() {
   function openCashReportReview(report){
     if(!report?.draft){setCashReportErrors(current=>({...current,[report.id]:'Este arquivo ainda não tem dados reconhecidos. Tente a leitura novamente.'}));return;}
     setCashReportActive({id:report.id,revision:Number(report.revision||1)});
-    setCashForm({...cashForm,...report.draft,cashReviewed:false,reviewedImport:false,
+    const emptyDraft={day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),
+      register:'',operator:'',cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]};
+    setCashForm({...emptyDraft,...report.draft,cashReviewed:false,reviewedImport:false,
       sourceFileName:report.fileName,sourceText:''});
     setCashImportText('');
     setCashImportWarnings(Array.isArray(report.warnings)?report.warnings:(report.draft.importWarnings||[]));
@@ -1922,8 +1924,8 @@ export default function Home() {
   async function savePendingCashDraft(){
     if(!cashReportActive)return;
     const snapshot=JSON.parse(JSON.stringify(cashForm));
-    const invalid=validateCashClosing({...snapshot,cashReviewed:false});
-    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    const invalidValues=CASH_CHANNELS.filter(([key])=>snapshot[key]!==''&&!Number.isFinite(Number(snapshot[key])));
+    if(invalidValues.length){setCashError('Corrija os valores numéricos antes de salvar o rascunho.');return;}
     setCashSaving(true);setCashError('');
     try{
       const {cashReviewed,...rest}=snapshot;
@@ -1982,6 +1984,7 @@ export default function Home() {
         p_expected_revision:Number(report.revision||1)});
       if(error||!data?.ok)throw new Error(error?.message||'Não foi possível cancelar a pendência.');
       await refreshCashReports();setCashReportErrors(current=>({...current,[report.id]:''}));
+      if(cashReportActive?.id===report.id){setCashReportActive(null);setCashEntryMode('');}
       setToast('Pendência cancelada. O histórico de faturamento não foi alterado.');
     }catch(error){setCashError(error?.message||'Não foi possível cancelar. Somente o autor ou o Gestor podem cancelar esta pendência.');}
   }
@@ -3091,7 +3094,7 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
+        <button aria-label="Faturamento" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
@@ -3487,7 +3490,7 @@ export default function Home() {
             {cashReports.length ? <div className="cash-report-list">{cashReports.map((report)=><article className="cash-report-card" key={report.id}>
               <div className="cash-report-copy"><b>{report.fileName||'Faturamento sem nome'}</b><span>{report.state==='uploaded'?'Aguardando leitura':report.state==='failed'?'Leitura com falha':'Aguardando conferência'}{report.updatedAt?' · Atualizado '+new Date(report.updatedAt).toLocaleString('pt-BR'):''}{report.duplicateWarning?' · Arquivo semelhante já enviado; não foi combinado':''}</span>
                 {cashReportErrors[report.id]&&<span className="cash-report-error" role="status">{cashReportErrors[report.id]}</span>}
-                {(report.warnings||[]).map((warning,index)=><span className="cash-report-warning" key={index}>{warning}</span>)}
+                {(Array.isArray(report.warnings)?report.warnings:[]).map((warning,index)=><span className="cash-report-warning" key={index}>{warning}</span>)}
               </div>
               <div className="cash-report-actions"><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void previewCashReport(report)}>Abrir original</button><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void downloadCashReport(report)}>Baixar original</button>
                 {report.draft&&<button type="button" className="btn primary" onClick={()=>openCashReportReview(report)}>Revisar</button>}
