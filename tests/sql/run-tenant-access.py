@@ -44,6 +44,7 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/revocation-contract.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
 credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
 for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
@@ -132,6 +133,57 @@ finally:
         writer.kill()
 assert sql(f"select count(*) from private.tenant_inventory where tenant_id in ('{tenant_a}','{tenant_b}') and state->>'revision'='2'") == '2'
 print('PASS concurrent different-tenant saves with equal revisions finish independently')
+
+# Revocation concurrency: an in-flight authorized RPC holds a session lock
+# until its transaction ends; the manager deactivation cannot commit before it.
+# This exercises actual SQL row locking across independent PG connections.
+sql("""
+insert into private.app_users(username,password_hash,role,display_name)
+values ('qa.revocation',extensions.crypt('synthetic-revocation-only',
+ extensions.gen_salt('bf',4)),'employee','Revocation QA');
+insert into private.tenant_memberships(user_id,tenant_id,role)
+ select id,'00000000-0000-4000-8000-000000000001','employee'
+ from private.app_users where username='qa.revocation';
+""")
+worker_token=sql("select public.inventory_login('qa.revocation','synthetic-revocation-only')->>'session_token'")
+manager_token=sql("select public.inventory_login('qa.manager','synthetic-manager-password')->>'session_token'")
+target_id=sql("select id from private.app_users where username='qa.revocation'")
+assert len(worker_token)==64 and len(manager_token)==64
+assert sql("select (public.inventory_validate_session('%s')->>'valid')::text"%worker_token)=='true'
+baseline=sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
+inflight=open_writer("select (public.inventory_get('%s')->>'revision') is not null;"%worker_token)
+stopper=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,text=True)
+try:
+    stopper.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
+      "select public.inventory_user_update('%s','%s','qa.revocation','Revocation QA',false);\ncommit;\n"
+      %(manager_token,target_id))
+    stopper.stdin.flush()
+    time.sleep(0.3)
+    assert stopper.poll() is None, 'Deactivation incorrectly completed while RPC transaction held session'
+    assert sql("select active from private.app_users where id='%s'"%target_id)=='t', \
+      'Account deactivated before earlier authorized RPC committed'
+    commit_writer(inflight)
+    _,stop_error=stopper.communicate(timeout=10)
+    assert stopper.returncode==0,stop_error
+finally:
+    for proc in (inflight,stopper):
+        if proc.poll() is None:
+            proc.kill()
+assert sql("select active from private.app_users where id='%s'"%target_id)=='f'
+assert sql("select count(*) from private.app_sessions where user_id='%s' and revoked_at is null"%target_id)=='0'
+for statement in [
+    "select public.inventory_validate_session('%s');"%worker_token,
+    "select public.inventory_get('%s');"%worker_token,
+    ("select public.inventory_save('%s'," %worker_token)+
+       """'{"products":[],"documents":[],"movements":[],"revision":0}'::jsonb);""",
+]:
+    denied=subprocess.run(psql,input="set role anon;\n"+statement,text=True,capture_output=True,timeout=10)
+    assert denied.returncode != 0 and ('28000' in denied.stderr or 'Sessão inválida' in denied.stderr), \
+      'Revoked account accepted a protected operation: '+denied.stderr[:250]
+assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==baseline
+print('PASS inactive tokens immediately denied: validate/get/save, no write after revoke')
+print('PASS deactivation waits for in-flight authorized RPC to finish')
 
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
