@@ -60,7 +60,7 @@ test('cash labels, chart values, references and modal stay accessible', () => {
 });
 
 test('compact fiscal progress preserves per-file status and reports failures', () => {
-  assert.match(page, /className="fiscal-upload-progress"/);
+  assert.match(page, /className="(?:panel )?fiscal-upload-progress"/);
   assert.match(page, /role="status" aria-live="polite" aria-atomic="true"/);
   assert.match(page, /Ver andamento dos \{uploadBatchProgress\.total\} arquivos/);
   assert.match(page, /uploadBatchProgress\.files\.map/);
