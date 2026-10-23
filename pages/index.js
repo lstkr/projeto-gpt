@@ -7,6 +7,7 @@ import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { filterDocumentHistory, formatDocumentIssueDate } from '../lib/document-history.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
@@ -1206,6 +1207,7 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [historyFilters, setHistoryFilters] = useState({ from: '', to: '', supplier: '', author: '' });
   const [suppliers, setSuppliers] = useState([]);
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
@@ -1618,6 +1620,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const filteredHistoryDocuments = filterDocumentHistory(documents, historyFilters);
   const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
@@ -3303,9 +3306,27 @@ export default function Home() {
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument}><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </section>}
-          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{' · ' + (pendingAttributionRef.current.has(d.id)
-              ? 'Autoria aguardando confirmação do servidor'
-              : fiscalDocumentAuthorText(d))}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
+          <section className="panel history-panel">
+            <div className="panel-head"><div><h2>Histórico de documentos</h2><p>Notas lançadas no estoque.</p></div><span className="history-count">{filteredHistoryDocuments.length} de {documents.length}</span></div>
+            <div className="history-filters" aria-label="Filtros do histórico">
+              <label>Data do documento (fuso local)<span><input type="date" value={historyFilters.from} onChange={(event)=>setHistoryFilters((current)=>({...current,from:event.target.value}))} aria-label="Data inicial do documento"/><span aria-hidden="true">até</span><input type="date" value={historyFilters.to} onChange={(event)=>setHistoryFilters((current)=>({...current,to:event.target.value}))} aria-label="Data final do documento"/></span></label>
+              <label>Fornecedor ou CNPJ<input type="search" value={historyFilters.supplier} onChange={(event)=>setHistoryFilters((current)=>({...current,supplier:event.target.value}))} placeholder="Buscar no texto disponível" aria-label="Filtrar por fornecedor ou CNPJ"/></label>
+              <label>Autor ou situação<input type="search" value={historyFilters.author} onChange={(event)=>setHistoryFilters((current)=>({...current,author:event.target.value}))} placeholder="Nome, legado ou não informado" aria-label="Filtrar por autor ou situação da autoria"/></label>
+              <button type="button" className="btn secondary history-clear" onClick={()=>setHistoryFilters({from:'',to:'',supplier:'',author:''})} disabled={!historyFilters.from&&!historyFilters.to&&!historyFilters.supplier&&!historyFilters.author}>Limpar filtros</button>
+            </div>
+            <p className="history-filter-note">A data e o fornecedor usam somente os valores já salvos no documento. Filtro por data/hora real de lançamento e vínculo canônico de fornecedor aguardam campos validados pelo servidor. A autoria legada não é tratada como autenticada.</p>
+            {documents.length && filteredHistoryDocuments.length ? filteredHistoryDocuments.map((d) => <div className="history-row" key={d.id}>
+              <span className="history-file"><Icon type="file" size={19}/></span>
+              <span className="history-copy"><b>{d.supplier || 'Fornecedor não identificado'}</b>
+                <small>{d.supplierCnpj ? 'CNPJ ' + d.supplierCnpj + ' · ' : ''}{d.invoiceNumber ? 'Nº ' + d.invoiceNumber : 'Número não informado'}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}</small>
+                <span className={'history-author' + (d.checkedByVerified === true ? ' verified-author' : '')}>{pendingAttributionRef.current.has(d.id) ? 'Autoria aguardando confirmação do servidor' : fiscalDocumentAuthorText(d)}</span>
+              </span>
+              <span className="history-date">{formatDocumentIssueDate(d.date) || 'Data do documento indisponível'}</span>
+              <span className="status ok-status"><i/>{d.status}</span>
+              {currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}
+              <button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button>
+            </div>) : documents.length ? <div className="empty-docs"><b>Nenhum documento corresponde aos filtros</b><button type="button" className="btn secondary" onClick={()=>setHistoryFilters({from:'',to:'',supplier:'',author:''})}>Limpar filtros</button></div> : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens.</p></div>}
+          </section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
         </>}
 
