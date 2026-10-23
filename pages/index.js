@@ -1876,7 +1876,7 @@ export default function Home() {
       else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
       setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
       setCashEditId('');setCashEntryMode('');
-      setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
+      setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Faturamento registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
     finally{cashSavingRef.current=false;setCashSaving(false);}
   }
@@ -3045,7 +3045,7 @@ export default function Home() {
             <div className="fiscal-upload-current" role="status" aria-live="polite" aria-atomic="true">
               <span className="fiscal-upload-current-file"><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</span>
               <span>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}</span>
-              {uploadBatchProgress.failed>0&&<strong className="fiscal-upload-failures" role="alert">{uploadBatchProgress.failed} {uploadBatchProgress.failed===1?'falha':'falhas'}</strong>}
+              {uploadBatchProgress.failed>0&&<strong className="fiscal-upload-failures">{uploadBatchProgress.failed} {uploadBatchProgress.failed===1?'falha':'falhas'}</strong>}
             </div>
             <details className="fiscal-upload-file-details">
               <summary>Ver andamento dos {uploadBatchProgress.total} arquivos</summary>
@@ -3363,7 +3363,7 @@ export default function Home() {
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO FINANCEIRO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
   <div className="cash-day-summary">
     <span>Total de faturamento do dia</span>
     <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
