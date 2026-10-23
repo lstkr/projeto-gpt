@@ -14,6 +14,7 @@ import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggre
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
+import { adaptiveBinarizeImageData } from '../lib/receipt-image-preprocess.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -2076,7 +2077,12 @@ export default function Home() {
             if (needsRetry) {
               receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
               await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-              const alternateResult = await worker.recognize(canvases[index]);
+              const retryCanvas = canvases[index];
+              const retryContext = retryCanvas.getContext('2d', { willReadFrequently: true });
+              const retryImage = retryContext.getImageData(0, 0, retryCanvas.width, retryCanvas.height);
+              adaptiveBinarizeImageData(retryImage);
+              retryContext.putImageData(retryImage, 0, 0);
+              const alternateResult = await worker.recognize(retryCanvas);
               alternateText = alternateResult.data.text || '';
               alternateItems = parseReceiptOcr(alternateText);
             }
