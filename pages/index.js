@@ -2704,7 +2704,7 @@ export default function Home() {
     if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems finalReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
