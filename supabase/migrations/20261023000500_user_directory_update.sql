@@ -56,6 +56,9 @@ begin
  end if;
  -- Protect the only remaining active manager for each of their units.
  if target_user.role='admin' and target_user.active and not p_active then
+  -- Serialize deactivations across managers. Concurrent updates of two different
+  -- manager rows must never leave a tenant without any active manager.
+  perform pg_catalog.pg_advisory_xact_lock(80421827610500::bigint);
   if exists (
    select 1 from private.tenant_memberships membership
    where membership.user_id=target_user.id and membership.role='admin'
