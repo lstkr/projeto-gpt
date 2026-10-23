@@ -9,6 +9,9 @@ select id,'00000000-0000-4000-8000-000000000001',role from private.app_users whe
 insert into private.establishments(id,name) values('00000000-0000-4000-8000-0000000000ed','Other Unit QA');
 insert into private.tenant_memberships(user_id,tenant_id,role)
 select id,'00000000-0000-4000-8000-0000000000ed','employee' from private.app_users where username='qa.other';
+insert into private.establishments(id,name) values('00000000-0000-4000-8000-0000000000ef','Exclusive QA');
+insert into private.tenant_memberships(user_id,tenant_id,role)
+select id,'00000000-0000-4000-8000-0000000000ef','admin' from private.app_users where username='qa.manager';
 -- Cross-tenant target ID is explicitly selected before privilege downgrade using a fixture helper.
 set role anon;
 do $$
@@ -26,6 +29,14 @@ begin
   raise exception 'Employee escalated privileges'; exception when insufficient_privilege then null; end;
  begin perform public.inventory_user_update(manager_token,outsider,'qa.other','outsider',true);
   raise exception 'Cross tenant edit accepted'; exception when insufficient_privilege then null; end;
+ -- A DBA cannot deactivate the last manager of an establishment.
+ begin
+  perform public.inventory_user_update(
+   public.inventory_login('admin.master','synthetic-superadmin-changed')->>'session_token',
+   '00000000-0000-4000-8000-0000000000fa'::uuid,
+   'qa.manager','Manager QA',false);
+  raise exception 'Last manager deactivation accepted';
+ exception when insufficient_privilege then null; end;
  result:=public.inventory_user_update(manager_token,worker,'QA.WORKER.RENAMED','Worker Renamed',true);
  assert result->>'changed'='true';
  assert (public.inventory_directory(manager_token)->>'users') is not null;
