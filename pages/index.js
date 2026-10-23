@@ -1162,6 +1162,7 @@ export default function Home() {
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
   const authenticatedReviewerName = currentUser?.display_name || currentUser?.username || 'Usuário autenticado';
+  const pendingAttributionRef = useRef(new Map());
   const [activeTenantName,setActiveTenantName]=useState('');
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [fiscalPermissions,setFiscalPermissions]=useState(null);
@@ -1465,6 +1466,21 @@ export default function Home() {
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
+          const acknowledgedAttributions = Array.from(pendingAttributionRef.current.entries());
+          if (acknowledgedAttributions.length) {
+            const authorsByDocument = new Map(acknowledgedAttributions);
+            const authorsByMovement = new Map(acknowledgedAttributions.flatMap(([, attribution]) =>
+              attribution.movementIds.map((movementId) => [movementId, attribution.displayName])));
+            setDocuments((current) => current.map((document) => {
+              const attribution = authorsByDocument.get(document.id);
+              return attribution ? { ...document, checkedBy: attribution.displayName, checkedByVerified: true } : document;
+            }));
+            setMovements((current) => current.map((movement) => {
+              const author = authorsByMovement.get(movement.id);
+              return author ? { ...movement, by: author, byVerified: true } : movement;
+            }));
+            acknowledgedAttributions.forEach(([documentId]) => pendingAttributionRef.current.delete(documentId));
+          }
           // Mark processed only after the shared stock snapshot was committed.
           for(const completed of documents.filter(d=>d.pendingReceiptId)){
             if(pendingMarking.current.has(completed.pendingReceiptId))continue;
@@ -2723,6 +2739,10 @@ export default function Home() {
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
     delete documentToSave.checkedBy;
+    pendingAttributionRef.current.set(documentId, {
+      displayName: authenticatedReviewerName,
+      movementIds: stockEntries.map((entry) => entry.movementId)
+    });
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       id: documentId, stockEntries,
