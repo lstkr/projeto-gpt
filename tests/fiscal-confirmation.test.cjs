@@ -28,6 +28,6 @@ test('removing the duplicate checkbox preserves divergence warnings and edit inv
   assert.match(source, /Conferi o documento, inclusive os totais e divergências sinalizadas, e autorizo a entrada no estoque/);
   assert.match(source, /financialWarnings\.length && !window\.confirm/);
   assert.match(source, /finalReviewed: key === 'checkedBy' \? d\.finalReviewed : false/);
-  assert.match(source, /finalReviewed: false,?\s*officialVerified: false/);
-  assert.match(source, /finalReviewed: false,\s*officialVerified: false,\s*items:/);
+  assert.match(source, /finalReviewed:\s*false,\s*officialVerified:\s*false/);
+  assert.match(source, /finalReviewed:\s*false,\s*officialVerified:\s*false,\s*items:/);
 });
