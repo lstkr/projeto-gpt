@@ -128,3 +128,33 @@ Os dois anexos se alinham aos exemplos privados fiscal-04 (DANFE) e fiscal-06 (c
 - Prioridade P0 não autoriza ignorar conferência humana. Qualquer item/código/unidade/quantidade/valor incerto permanece revisável; erro de totais não pode ser aprovado silenciosamente.
 
 CI da PR #125 ainda está em execução. Testes locais: 152 aprovados; build local concluiu em Node 24 (projeto pede 22). O roteiro completo de campos, comparação antes/depois, golden anonimizado e homologação pixel-a-pixel seguem pendentes sob #104.
+
+
+## CTO — estado atualizado dos PRs e implementação (#116–#124, 23/10/2026)
+
+Esta fotografia substitui as contagens e os estados anteriores deste documento. Consultada a branch main e os PRs remotos; issues continuam abertas até o aceite integral de cada camada.
+
+| PR | Issue(s) | Estado observado | Gate / limite |
+| --- | --- | --- | --- |
+| [#125](https://github.com/lstkr/projeto-gpt/pull/125) | #104 P0 | Aberto, draft | Testes sintéticos/build local relatados no próprio PR; validação privada por pixels dos dois documentos e CI observável ainda pendentes. |
+| [#126](https://github.com/lstkr/projeto-gpt/pull/126) | #116/#117 | Aberto, draft | UI de privacidade e visualização; QA manual de tipos, permissão, teclado e viewport ainda pendente. |
+| [#127](https://github.com/lstkr/projeto-gpt/pull/127) | #68/#69 | Aberto, draft | UI de faturamento; QA visual/manual ainda pendente. |
+| [#128](https://github.com/lstkr/projeto-gpt/pull/128) | #119 backend | Aberto, draft | Migração server-side proposta; PG15/17 e revisão Backend/DBA ainda são gates; não aplicada. |
+| [#129](https://github.com/lstkr/projeto-gpt/pull/129) | #121 | Aberto, draft | Avaliação de naming/diretrizes somente documental; parcialmente atende #121, sem decisão de marca/domínio e sem encerrar a issue. |
+| [#130](https://github.com/lstkr/projeto-gpt/pull/130) | #118 | Aberto, draft | UI remove checkbox redundante; contrato fiscal e QA de regressão ainda precisam de aceite. |
+| [#131](https://github.com/lstkr/projeto-gpt/pull/131) | #119 frontend | Aberto, draft | Depende de #128. Após revisão, autoria só é marcada verificada depois de leitura `inventory_get` e correspondência com sessão/usuário; falha de leitura deixa autoria pendente. Não altera banco/API. Teste focalizado 5/5 passou e há build local bem-sucedido no snapshot isolado; CI do SHA atual mostra Actions falhando sem steps/logs (404 BlobNotFound) e status Vercel por limite de builds. Isto não comprova falha de código nem CI verde. |
+| [#134](https://github.com/lstkr/projeto-gpt/pull/134) | #123 backend | Aberto, draft | RPC/armazenamento de relatórios pendentes de faturamento; testes PostgreSQL 15/17 não executados localmente e CI/homologação são gates. #124 continua separado e dependente deste contrato. |
+| [#136](https://github.com/lstkr/projeto-gpt/pull/136) | #120 frontend | Aberto, draft; baseado na branch #131 | Filtros locais por data fiscal disponível, texto fornecedor/CNPJ e autoria/situação. Não inventa data de lançamento, identidade canônica ou legado. Testes focados 7/7 e build Next no snapshot isolado passaram; suíte ampla da cópia mista falha em fixtures de #126/#127 ausentes, e os workflows remotos estão sem steps/logs (404 BlobNotFound) com Vercel limitado. |
+| [#133](https://github.com/lstkr/projeto-gpt/pull/133) | #132 | Aberto | Mudança de segurança de sessões; revisar sequência com as migrações #114 antes de qualquer implantação. |
+| [#115](https://github.com/lstkr/projeto-gpt/pull/115) | #103/#77 | Aberto, draft | Condicionado à aplicação autorizada e homologação da RPC #114. |
+
+### Pendências que não podem ser declaradas concluídas
+
+- #120 permanece parcial: o histórico não recebe timestamp real de lançamento do servidor; `importedAt` é texto local sem ano e `date` indica data do documento. A interface chama o campo pelo significado disponível. É necessário contrato Backend/DBA para data/hora server-side antes de satisfazer integralmente esse critério.
+- Fornecedor/CNPJ em #120 usa somente os valores já presentes no JSON do documento. #62/#63 seguem abertas; não há vínculo canônico validado nem migração de dados. Não alterar ou consolidar cadastros por esta interface.
+- #121 continua aberta: PR #129 é avaliação documental parcial, sem decisão do gestor ou pesquisa legal/domínio.
+- #119 não está concluída até #128 passar validações e revisão Backend/DBA, #131 integrar com base compatível e QA confirmar a autoria em sessão real.
+- #104 continua P0. Não promover #125 por testes sintéticos ou build sem OCR privado por pixel e conferência humana.
+- #123/#124 continuam separados: #124 pode começar sobre o contrato proposto em #134, mas não muda API/schema e não libera publicação antes dos checks, revisão e homologação.
+
+Nenhuma PR desta lista foi mergeada por esta atualização; nenhuma migration ou deploy foi executado. Em #131 e #136, o status de CI foi inspecionado: Actions reportam failure com jobs sem steps e os logs não estão disponíveis (404 BlobNotFound); o status Vercel reporta rate limit de builds por 24h. Não classificar esses resultados como testes de aplicação reprovados ou CI aprovada.
