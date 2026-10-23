@@ -1441,7 +1441,7 @@ export default function Home() {
   // watcher only changes the UI state and clears the local token promptly.
   // No Realtime grants and no private tables are exposed to the browser.
   useEffect(() => {
-    if (!supabase || !accessCode || !accessGranted) return;
+    if (!supabase || !accessCode || !accessGranted || currentUser?.role==='superadmin') return;
     let live=true;
     let pending=false;
     sessionRevokedRef.current=false;
@@ -1489,7 +1489,7 @@ export default function Home() {
       window.removeEventListener('focus',onFocus);
       document.removeEventListener('visibilitychange',onVisible);
     };
-  },[supabase,accessCode,accessGranted]);
+  },[supabase,accessCode,accessGranted,currentUser?.role]);
 
   useEffect(() => {
     if (!loaded || supabase) return;
