@@ -13,6 +13,7 @@ import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/s
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
+import { cashReportMimeFromBytes, cashReportSafeDownloadName, decodeCashReportBase64, encodeCashReportBase64, cashReportFileMatchesMime } from '../lib/cash-report-ui.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
@@ -1210,6 +1211,12 @@ export default function Home() {
   const pendingRevisions=useRef(new Map());
 
   const [closings,setClosings]=useState([]);
+  const [cashReports,setCashReports]=useState([]);
+  const [cashReportActive,setCashReportActive]=useState(null);
+  const [cashReportProgress,setCashReportProgress]=useState(null);
+  const [cashReportErrors,setCashReportErrors]=useState({});
+  const [cashReportPreview,setCashReportPreview]=useState(null);
+  const cashReportIdempotencyRef=useRef(new Map());
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
   const cashSavingRef=useRef(false);
@@ -1287,12 +1294,14 @@ export default function Home() {
 
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
-  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+  const activeDialog = cashReportPreview ? 'cash-report-preview' : mergePair ? 'merge' : detailDoc ? 'details' :
     view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useAccessibleDialog(activeDialog, () => {
     if (mergePair) {
       if (!mergeBusy) setMergePair(null);
+    } else if (cashReportPreview) {
+      setCashReportPreview(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
     } else if (view === 'cash' && cashSelectedDay) {
@@ -1347,6 +1356,8 @@ export default function Home() {
 
     const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
     if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
+    const {data:reportList,error:reportLoadError}=await supabase.rpc('cash_reports_list',{p_token:token});
+    if(!reportLoadError && Array.isArray(reportList)) setCashReports(reportList);
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
@@ -1577,7 +1588,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Faturamento','Envie relatórios, confira cada fechamento e acompanhe a evolução.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1770,6 +1781,212 @@ export default function Home() {
       await task.destroy();
     }
   }
+  function cashReportUuid(){
+    if(!globalThis.crypto?.getRandomValues)throw new Error('Este navegador não permite criar um identificador seguro para o lote.');
+    const bytes=globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+    const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+  }
+  async function refreshCashReports(){
+    if(!supabase||!accessCode)return [];
+    const {data,error}=await supabase.rpc('cash_reports_list',{p_token:accessCode});
+    if(error||!Array.isArray(data))throw new Error(error?.message||'Não foi possível atualizar a fila de faturamentos pendentes.');
+    setCashReports(data);return data;
+  }
+  async function readCashReportText(file){
+    const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
+    if(fileKind==='pdf'){
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const base64=encodeCashReportBase64(bytes);
+      const response=await fetch('/api/cash-extract',{method:'POST',
+        headers:{'content-type':'application/json','x-estoque-session':accessCode},
+        body:JSON.stringify({base64})});
+      const parsed=await response.json();
+      if(response.ok)return parsed.text||'';
+      if(response.status===422){
+        try{return await readCashPdfWithOcr(file);}
+        catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
+          '. Leitura OCR alternativa também falhou: '+ocrError.message+
+          '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
+      }
+      throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
+    }
+    if(fileKind==='image'){
+      const {createWorker}=await import('tesseract.js');
+      const worker=await createWorker('por');
+      try{
+        await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+        const result=await worker.recognize(file);return result.data.text||'';
+      }finally{await worker.terminate();}
+    }
+    throw new Error('Tipo de arquivo inválido. Use PDF, JPG, PNG ou WEBP.');
+  }
+  async function getCashReportFile(reportId){
+    if(!supabase||!accessCode)throw new Error('Entre no sistema para acessar o original.');
+    const {data,error}=await supabase.rpc('cash_report_file',{p_token:accessCode,p_id:reportId});
+    if(error||!data?.base64)throw new Error(error?.message||'O original não está disponível nesta pendência.');
+    const bytes=decodeCashReportBase64(data.base64);
+    if(!cashReportFileMatchesMime(data.mime,bytes))throw new Error('O conteúdo não corresponde ao tipo declarado; o arquivo não será aberto.');
+    return {...data,bytes,fileName:cashReportSafeDownloadName(data.fileName)};
+  }
+  async function previewCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      setCashReportPreview({url,mime:file.mime,fileName:file.fileName,id:report.id});
+      setCashError('');
+    }catch(error){setCashError(error?.message||'Não foi possível abrir o original.');}
+  }
+  async function downloadCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      const link=document.createElement('a');link.href=url;link.download=file.fileName;link.rel='noopener';link.click();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){setCashError(error?.message||'Não foi possível baixar o original.');}
+  }
+  async function processCashReport(report){
+    setCashReportErrors(current=>({...current,[report.id]:''}));
+    setCashReportProgress(current=>({...current,activeFile:report.fileName,stage:'Lendo o documento'}));
+    try{
+      const original=await getCashReportFile(report.id);
+      const file=new File([original.bytes],original.fileName,{type:original.mime});
+      const text=await readCashReportText(file);
+      const parsed=parseCashReport(text);
+      const draft={...parsed,sourceFileName:original.fileName,sourceText:'',cashReviewed:false,
+        reviewedImport:false,cashCounted:'',importWarnings:Array.isArray(parsed.importWarnings)?parsed.importWarnings:[]};
+      setCashReportProgress(current=>({...current,stage:'Salvando rascunho'}));
+      const {data,error}=await supabase.rpc('cash_report_save',{
+        p_token:accessCode,p_id:report.id,p_draft:draft,p_expected_revision:Number(report.revision||1)
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar o rascunho reconhecido.');
+      await refreshCashReports();
+      setCashReportErrors(current=>({...current,[report.id]:''}));
+    }catch(error){
+      setCashReportErrors(current=>({...current,[report.id]:error?.message||'Falha ao ler o documento.'}));
+      throw error;
+    }
+  }
+  async function uploadCashReportBatch(event){
+    const files=Array.from(event.target.files||[]);event.target.value='';
+    if(!files.length)return;
+    if(files.length>5){setCashError('Selecione até 5 arquivos por lote.');return;}
+    if(!supabase||!accessCode){setCashError('Entre no sistema para enviar faturamentos.');return;}
+    const batchId=cashReportUuid();
+    setCashError('');setCashImporting(true);
+    setCashReportProgress({total:files.length,completed:0,activeFile:'',stage:'Enviando arquivos'});
+    const failures=[];
+    try{
+      for(let index=0;index<files.length;index++){
+        const file=files[index];
+        setCashReportProgress({total:files.length,completed:index,activeFile:file.name,stage:'Validando e enviando'});
+        try{
+          if(file.size>4000000)throw new Error('Arquivo acima do limite de 4 MB.');
+          const bytes=new Uint8Array(await file.arrayBuffer());
+          const mime=cashReportMimeFromBytes(bytes);
+          if(!mime)throw new Error('Arquivo sem assinatura PDF/JPEG/PNG/WEBP válida.');
+          const {data,error}=await supabase.rpc('cash_report_create',{
+            p_token:accessCode,p_batch_id:batchId,p_file_id:cashReportUuid(),
+            p_file_name:file.name.slice(0,180),p_mime:mime,p_base64:encodeCashReportBase64(bytes)
+          });
+          if(error||!data?.ok||!data?.id)throw new Error(error?.message||'O servidor não aceitou este arquivo.');
+          const record={id:data.id,revision:Number(data.revision||1),fileName:file.name};
+          await refreshCashReports();
+          try{await processCashReport(record);}
+          catch(error){failures.push(file.name+': '+(error?.message||'Falha na leitura.'));}
+        }catch(error){failures.push(file.name+': '+(error?.message||'Falha no envio.'));}
+      }
+      setCashReportProgress({total:files.length,completed:files.length,activeFile:'',stage:'Lote concluído'});
+      await refreshCashReports();
+      if(failures.length)setCashError('Alguns arquivos precisam de nova tentativa: '+failures.join(' · '));
+      else setToast(files.length+' faturamento(s) enviado(s) para revisão individual.');
+    }catch(error){setCashError(error?.message||'Não foi possível processar o lote.');}
+    finally{setCashImporting(false);window.setTimeout(()=>setCashReportProgress(null),1800);}
+  }
+  async function retryCashReport(report){
+    setCashReportProgress({total:1,completed:0,activeFile:report.fileName,stage:'Tentando leitura novamente'});
+    try{await processCashReport(report);setToast('Documento lido. Abra a pendência para conferir.');}
+    catch(error){setCashError(error?.message||'Falha ao tentar novamente.');}
+    finally{setCashReportProgress(null);}
+  }
+  function openCashReportReview(report){
+    if(!report?.draft){setCashReportErrors(current=>({...current,[report.id]:'Este arquivo ainda não tem dados reconhecidos. Tente a leitura novamente.'}));return;}
+    setCashReportActive({id:report.id,revision:Number(report.revision||1)});
+    setCashForm({...cashForm,...report.draft,cashReviewed:false,reviewedImport:false,
+      sourceFileName:report.fileName,sourceText:''});
+    setCashImportText('');
+    setCashImportWarnings(Array.isArray(report.warnings)?report.warnings:(report.draft.importWarnings||[]));
+    setCashEditId('');setCashEntryMode('report-review');setCashError('');setView('cash');
+  }
+  async function savePendingCashDraft(){
+    if(!cashReportActive)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing({...snapshot,cashReviewed:false});
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:snapshot.cashCounted===''?'':Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:false,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data,error}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar a pendência.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(data.revision||cashReportActive.revision+1)});
+      await refreshCashReports();setToast('Rascunho salvo. O faturamento ainda não foi lançado.');
+    }catch(error){setCashError(error?.message||'Falha ao salvar o rascunho.');}
+    finally{setCashSaving(false);}
+  }
+  async function savePendingCashReport(event){
+    event.preventDefault();if(!cashReportActive||cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Confirme a revisão individual deste faturamento.');
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    if(!supabase||!accessCode){setCashError('Entre novamente para lançar este faturamento.');return;}
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:true,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data:saved,error:saveError}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(saveError||!saved?.ok)throw new Error(saveError?.message||'Não foi possível salvar o rascunho revisado.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(saved.revision||cashReportActive.revision+1)});
+      const key=cashReportIdempotencyRef.current.get(cashReportActive.id)||cashReportUuid();
+      cashReportIdempotencyRef.current.set(cashReportActive.id,key);
+      const {data:posted,error:postError}=await supabase.rpc('cash_report_post',{p_token:accessCode,p_id:cashReportActive.id,
+        p_expected_revision:Number(saved.revision||cashReportActive.revision+1),p_idempotency_key:key});
+      if(postError||!posted?.ok)throw new Error(postError?.message||'O rascunho foi salvo, mas não foi lançado.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      await refreshCashReports();
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashEntryMode('');setCashReportActive(null);
+      setToast('Faturamento conferido e lançado.');
+    }catch(error){
+      await refreshCashReports().catch(()=>{});
+      setCashError(error?.message||'Falha ao lançar o faturamento. Revise e tente novamente.');
+    }finally{cashSavingRef.current=false;setCashSaving(false);}
+  }
+  async function cancelCashReport(report){
+    if(!window.confirm('Cancelar esta pendência? O faturamento não será lançado.'))return;
+    try{
+      const {data,error}=await supabase.rpc('cash_report_cancel',{p_token:accessCode,p_id:report.id,
+        p_expected_revision:Number(report.revision||1)});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível cancelar a pendência.');
+      await refreshCashReports();setCashReportErrors(current=>({...current,[report.id]:''}));
+      setToast('Pendência cancelada. O histórico de faturamento não foi alterado.');
+    }catch(error){setCashError(error?.message||'Não foi possível cancelar. Somente o autor ou o Gestor podem cancelar esta pendência.');}
+  }
+  useEffect(()=>()=>{if(cashReportPreview?.url)URL.revokeObjectURL(cashReportPreview.url);},[cashReportPreview?.url]);
+
   async function importCashReport(event){
     const file=event.target.files?.[0];
     if(!file)return;
@@ -2874,15 +3091,16 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
+        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
     </aside>
-    <main className="main"><input ref={cashFileRef} type="file"
-      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden
-      onChange={e=>void importCashReport(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+    <main className="main"><input ref={cashFileRef} type="file" multiple
+      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" hidden
+      onChange={e=>void uploadCashReportBatch(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+      {cashReportPreview&&<div className="modal-backdrop cash-report-preview-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setCashReportPreview(null);}}><section className="modal cash-report-preview" role="dialog" aria-modal="true" aria-label="Prévia do faturamento"><div className="modal-head"><h2>Prévia do arquivo</h2><button type="button" className="icon-btn" aria-label="Fechar prévia" onClick={()=>setCashReportPreview(null)}>×</button></div><div className="cash-report-preview-actions"><a className="btn secondary" href={cashReportPreview.url} download={cashReportPreview.fileName} rel="noopener">Baixar original</a><span>{cashReportPreview.fileName}</span></div>{cashReportPreview.mime==='application/pdf'?<iframe title="Prévia do PDF" src={cashReportPreview.url}/>:<img src={cashReportPreview.url} alt={'Prévia do documento '+cashReportPreview.fileName}/>}</section></div>}
       <header className="topbar">
         <div className="topbar-start">
           <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
@@ -3262,17 +3480,32 @@ export default function Home() {
         </>}
 
         {view === 'cash' && <>
+          <section className="panel cash-report-queue" aria-labelledby="pending-cash-title">
+            <div className="panel-head"><div><h2 id="pending-cash-title">Faturamentos pendentes</h2><p>Cada arquivo é revisado e lançado separadamente.</p></div><span className="history-count">{cashReports.length} pendente(s)</span></div>
+            {cashReportProgress&&<div className="cash-report-progress" role="status" aria-live="polite"><b>{cashReportProgress.stage}</b>{cashReportProgress.activeFile&&<span>{cashReportProgress.activeFile}</span>}{cashReportProgress.total>1&&<span>Arquivo {Math.min(cashReportProgress.completed+1,cashReportProgress.total)} de {cashReportProgress.total}</span>}</div>}
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+            {cashReports.length ? <div className="cash-report-list">{cashReports.map((report)=><article className="cash-report-card" key={report.id}>
+              <div className="cash-report-copy"><b>{report.fileName||'Faturamento sem nome'}</b><span>{report.state==='uploaded'?'Aguardando leitura':report.state==='failed'?'Leitura com falha':'Aguardando conferência'}{report.updatedAt?' · Atualizado '+new Date(report.updatedAt).toLocaleString('pt-BR'):''}{report.duplicateWarning?' · Arquivo semelhante já enviado; não foi combinado':''}</span>
+                {cashReportErrors[report.id]&&<span className="cash-report-error" role="status">{cashReportErrors[report.id]}</span>}
+                {(report.warnings||[]).map((warning,index)=><span className="cash-report-warning" key={index}>{warning}</span>)}
+              </div>
+              <div className="cash-report-actions"><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void previewCashReport(report)}>Abrir original</button><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void downloadCashReport(report)}>Baixar original</button>
+                {report.draft&&<button type="button" className="btn primary" onClick={()=>openCashReportReview(report)}>Revisar</button>}
+                {!report.draft&&report.hasOriginal&&<button type="button" className="btn secondary" disabled={cashImporting} onClick={()=>void retryCashReport(report)}>Tentar leitura novamente</button>}
+                <button type="button" className="btn secondary" disabled={!report.hasOriginal||cashSaving} onClick={()=>void cancelCashReport(report)}>Cancelar pendência</button></div>
+            </article>)}</div> : <div className="empty-docs"><b>Nenhum faturamento pendente</b><p>Os arquivos enviados aparecerão aqui para conferência individual.</p></div>}
+          </section>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
             <button className="btn primary" type="button" disabled={cashImporting}
               onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
-          {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
+          {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit' || cashEntryMode === 'report-review') && <section className="panel cash-entry">
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
-              <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
-              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
+              <div><b>Preencher automaticamente pelo fechamento</b><p>Selecione até cinco PDFs ou fotos. Cada arquivo terá seu próprio rascunho e confirmação; nenhum faturamento será somado automaticamente.</p></div>
+              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Enviando e lendo…':'Enviar até 5 arquivos'}</button>
             </div>
             {!cashForm.sourceFileName&&<button className="text-btn" type="button" onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
@@ -3281,7 +3514,7 @@ export default function Home() {
               <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
               {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
             </div>}
-            <form onSubmit={saveCashClosing}>
+            <form onSubmit={cashEntryMode==='report-review'?savePendingCashReport:saveCashClosing}>
               <fieldset disabled={cashSaving} className="cash-form-fields">
               <div className="meta-fields">
                 <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
@@ -3302,7 +3535,7 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label>{cashEntryMode==='report-review'&&<button type="button" className="btn secondary" disabled={cashSaving||!accessCode} onClick={()=>void savePendingCashDraft()}>Salvar pendência</button>}<button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?(cashEntryMode==='report-review'?'Lançando…':'Salvando…'):(cashEntryMode==='report-review'?'Conferir e lançar':'Salvar faturamento')}</button></div>
               </fieldset>
             </form>
           </section>}
