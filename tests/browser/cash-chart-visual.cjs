@@ -3,6 +3,7 @@
 // ESTOQUE_BROWSER_URL=http://127.0.0.1:3000 PLAYWRIGHT_MODULE=playwright node tests/browser/cash-chart-visual.cjs
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const { performance } = require('node:perf_hooks');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -21,6 +22,9 @@ const printCounts = [{id:'qa-count-1',completedAt:'2026-10-20T15:00:00Z',
   by:'QA',items:[{productId:'qa-milk',name:'Leite integral',expected:20,counted:19},
     {productId:'qa-beans',name:'Café em grãos',expected:2.5,counted:3}]}];
 
+let sessionRevokedForQA = false;
+let checksAfterRevocation = 0;
+let writesAfterRevocation = 0;
 const closings = [
   {id:'chart-10',day:'2026-10-10',register:'001',operator:'QA',cartaoCredito:569,movements:[]},
   {id:'chart-17',day:'2026-10-17',register:'001',operator:'QA',cartaoCredito:783,movements:[]},
@@ -45,11 +49,29 @@ const closings = [
       if (!url.hostname.endsWith('.supabase.co') || !url.pathname.startsWith('/rest/v1/rpc/')) return route.abort();
       const name = url.pathname.split('/').at(-1);
       let data;
-      if (name === 'inventory_login') data = {ok:true,session_token:'visual-qa-session'};
+      if (name === 'inventory_validate_session') {
+        if (sessionRevokedForQA) {
+          checksAfterRevocation++;
+          return route.fulfill({status:401,contentType:'application/json',
+            headers:{'access-control-allow-origin':'*'},
+            body:JSON.stringify({code:'28000',message:'Sessão inválida'})});
+        }
+        data = {valid:true,user:{id:'qa',role:'admin'}};
+      }
+      else if (name === 'inventory_login') data = {ok:true,session_token:'visual-qa-session'};
       else if (name === 'inventory_tenants') data = {
         user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},
         role:'admin',tenants:[{id:'qa-unit',name:'Unidade QA'}],activeTenantId:'qa-unit',mustChangePassword:false
       };
+      else if (name === 'inventory_save') {
+        if (sessionRevokedForQA) {
+          writesAfterRevocation++;
+          return route.fulfill({status:401,contentType:'application/json',
+            headers:{'access-control-allow-origin':'*'},
+            body:JSON.stringify({code:'28000',message:'Sessão inválida'})});
+        }
+        data = {ok:true,revision:1};
+      }
       else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:printProducts,movements:[],documents:[],stockCounts:printCounts};
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
@@ -158,6 +180,51 @@ const closings = [
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog',{name:/Prévia de impressão/}).count(),0,'Escape deve fechar a prévia');
     console.log('PASS print preview: blind/differences, role-aware sheet, keyboard and six viewports');
+
+    // Revocation from another client: no manual logout click is permitted.
+    // Measure from remote revocation to visible login; a 9 s timeout masked SLA misses.
+    // This measures an online localhost mock, not real network latency.
+    const revokedAt=performance.now();
+    sessionRevokedForQA=true;
+    // No user action, click or focus event: the periodic watcher must act alone.
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const logoutLatencyMs=performance.now()-revokedAt;
+    assert.ok(logoutLatencyMs<=2500,
+      'remote revocation must reach the visible login in ~2.5 s; observed '+logoutLatencyMs.toFixed(0)+' ms');
+    console.log('QA revocation heartbeat-to-login latency: '+logoutLatencyMs.toFixed(0)+' ms');
+    assert.ok(checksAfterRevocation>=1,'navegador deve verificar token expirado');
+    assert.equal(writesAfterRevocation,0,'nenhum salvamento pode ser iniciado depois da detecção');
+    const persisted=await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session'));
+    assert.equal(persisted,null,'token inativo deve ser removido do browser');
+    assert.equal(await page.getByRole('button',{name:'Contagem de estoque',exact:true}).count(),0,
+      'uma conta desconectada não deve manter ações de estoque');
+    assert.match(await page.locator('body').innerText(),/Sua sessão foi encerrada|conta foi desativada/);
+    console.log('PASS client revocation: forced logout, no token, no inventory actions');
+
+    // Focus should trigger immediate validation, without waiting for a timer tick.
+    // Reauthenticate only in this synthetic fixture; never use production tokens.
+    sessionRevokedForQA=false;
+    await page.getByLabel('Login',{exact:true}).fill('synthetic.qa');
+    await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
+    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
+    // Exercise a real tab visibility/focus transition, not manually dispatched events.
+    // Hidden tabs can have their intervals throttled by the browser.
+    const backgroundTab=await context.newPage();
+    await backgroundTab.goto('about:blank');
+    await backgroundTab.bringToFront();
+    // requestAnimationFrame is suspended in background tabs; poll on a timer.
+    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500,polling:100});
+    sessionRevokedForQA=true;
+    const focusStartedAt=performance.now();
+    await page.bringToFront();
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const focusLogoutLatencyMs=performance.now()-focusStartedAt;
+    assert.ok(focusLogoutLatencyMs<=2500,
+      'returning a hidden tab to focus should force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session')),null);
+    await backgroundTab.close();
+    console.log('QA real tab-focus-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
 
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');

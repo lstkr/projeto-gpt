@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const POLICY = import('../lib/preview-database-policy.mjs');
 const GUARD = import('../lib/server/inventory-session.mjs');
-const BRANCH = 'feat/tenant-fiscal-purchases-20261021';
+const BRANCH = 'codex/homologacao-completa-20261023';
 const LIVE = 'https://dpauqdihvhbbaellwjav.supabase.co';
 const KEY = 'test_publishable_key_only';
 const TOKEN = 'a'.repeat(64);
