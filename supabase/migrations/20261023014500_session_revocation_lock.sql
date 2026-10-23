@@ -29,6 +29,23 @@ begin
 end;
 $function$;
 
+-- Do not allow a login that read active=true to create a fresh unrevoked
+-- session *after* inactivation swept app_sessions. A row SHARE lock on the
+-- account serializes login and the account's FOR UPDATE deactivation.
+do $patch_login$
+declare definition text; updated text;
+begin
+ definition:=pg_get_functiondef('private.inventory_login_impl(text,text)'::regprocedure);
+ updated:=replace(definition,
+   'where username = normalized_username and active = true;',
+   'where username = normalized_username and active = true for share;');
+ if updated=definition then
+   raise exception 'Login lock migration did not find expected SELECT. Review schema drift.';
+ end if;
+ execute updated;
+end;
+$patch_login$;
+
 -- Session checks now acquire the same transaction-scoped lock as mutations.
 -- Volatile prevents read-only invocation of a SELECT ... FOR SHARE from
 -- stable wrappers; POST RPC is used by the UI monitor.
