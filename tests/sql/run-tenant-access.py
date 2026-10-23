@@ -43,6 +43,18 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         print('PASS failed cutover rolls back schema and preserves credentials')
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/cash-report-batch.sql').read_text(encoding='utf8'))
+cash_report_migration = ROOT/'supabase/migrations/20261023040000_pending_cash_reports.sql'
+cash_report_rollback = ROOT/'supabase/rollback/20261023040000_pending_cash_reports.sql'
+cash_rows_before = sql("select count(*) from private.pending_cash_reports")
+cash_bytes_before = sql("select coalesce(sum(octet_length(file_bytes)),0) from private.pending_cash_reports")
+sql(cash_report_rollback.read_text(encoding='utf8'))
+assert sql("select to_regprocedure('public.cash_report_create(text,uuid,uuid,text,text,text)') is null") == 't'
+assert sql("select count(*) from private.pending_cash_reports") == cash_rows_before
+assert sql("select coalesce(sum(octet_length(file_bytes)),0) from private.pending_cash_reports") == cash_bytes_before
+print('PASS cash report rollback removes API functions and preserves every pending row and byte')
+sql(cash_report_migration.read_text(encoding='utf8'))
+assert sql("select to_regprocedure('public.cash_report_create(text,uuid,uuid,text,text,text)') is not null") == 't'
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
 credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
@@ -135,6 +147,7 @@ print('PASS concurrent different-tenant saves with equal revisions finish indepe
 
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
+sql('delete from private.pending_cash_reports')
 sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
 for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
               'tenant_inventory','cash_closings','pending_receipts','user_permissions',
