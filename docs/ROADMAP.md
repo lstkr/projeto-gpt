@@ -58,7 +58,7 @@ Não executar reset, mescla automática, SQL destrutivo ou alteração de usuár
 | Issue | Prioridade desta triagem | Responsável principal / apoio | Estado e dependências |
 | --- | --- | --- | --- |
 | [#113](https://github.com/lstkr/projeto-gpt/issues/113) | P1 | QA | Aberta — Impressão física A4/58/80 pendente; depende de evidências em papel; parent #36. |
-| [#104](https://github.com/lstkr/projeto-gpt/issues/104) | P1 | QA / Backend | Aberta — OCR real das 13 fotos e 3 goldens humanos; filho de #94, relacionado #50/#58. |
+| [#104](https://github.com/lstkr/projeto-gpt/issues/104) | **P0** | Backend / QA-OCR | Aberta — corrigir leitura real dos casos DANFE e contingência privados; PR #125 em draft, pixels aguardam executor privado. |
 | [#103](https://github.com/lstkr/projeto-gpt/issues/103) | P2 | UI/UX / Frontend | Aberta — PR #115 draft; depende da RPC #102/#114 aplicada e homologada, depois QA. |
 | [#102](https://github.com/lstkr/projeto-gpt/issues/102) | P2 | DBA / Backend | Aberta — Contrato de edição de usuários; código #114 integrado segundo PR #115, implantação/homologação pendente. |
 | [#99](https://github.com/lstkr/projeto-gpt/issues/99) | P2 | UI/UX / Frontend | Aberta — CMV visual depende de #98 e motor #97 (fechado); parent #85. |
@@ -116,3 +116,15 @@ A issue #69 preserva os critérios anteriores de histórico e navegação de gr�
 A consulta anterior encontrou 21 issues e 1 PR abertos. Foram criadas #116–#121, #68 foi reaberta por ajuste residual, e agora foram abertas #123/#124. Total esperado na rodada atual: **30 issues abertas e 2 PRs abertos** (#115 e #122); confirmar ao começar cada execução. #115 continua draft e bloqueado pela implantação/homologação descrita no próprio PR. O PR documental #122 agrega as issues e este adendo; suas verificações precisam rodar novamente no SHA atualizado.
 
 Atribuições neste roadmap são responsabilidades funcionais e nomes de engenharia por especialidade, não contas de usuários inventadas no GitHub. Criar PR separada por issue/camada quando houver mudança concreta; associar PR ao número da issue e passar evidência ao QA. Resolver todos em paralelo quando contratos permitirem; serializar mudanças concorrentes em pages/index.js e a integração de #123/#124.
+
+
+## CTO — prioridade máxima para OCR das notas anexadas (22/10/2026)
+Os dois anexos se alinham aos exemplos privados fiscal-04 (DANFE) e fiscal-06 (cupom em contingência) da #94/#104. A #104 existente foi promovida a **P0**; nenhuma cópia das imagens, dados fiscais, nomes ou chaves foi enviada a issues/PR/CI.
+- **Backend Specialist / Receipt OCR Engineer:** DRI da correção do pré-processamento/segunda leitura; avaliar efeito por campo e manter parser/fallback.
+- **QA Specialist / OCR Validation Engineer:** co-DRI para OCR real nos pixels e golden humano anonimizado em executor/acervo privado.
+- **UI/UX:** garantir revisão explícita de incertezas. DBA entra somente se persistência/RPC mudar. CTO mantém o gate de lançamento.
+- [PR #125](https://github.com/lstkr/projeto-gpt/pull/125) contém uma primeira tentativa: segunda leitura adaptativa em casos que já pedem retry, com teste sintético. Está **draft** até confirmar melhora nos dois originais em ambiente privado.
+- Testes de texto validam parser, não OCR por imagem. Os anexos reais não foram reconhecidos aqui porque o modelo de português precisaria ser baixado e a rede bloqueou a requisição; as fotos não foram transmitidas.
+- Prioridade P0 não autoriza ignorar conferência humana. Qualquer item/código/unidade/quantidade/valor incerto permanece revisável; erro de totais não pode ser aprovado silenciosamente.
+
+CI da PR #125 ainda está em execução. Testes locais: 152 aprovados; build local concluiu em Node 24 (projeto pede 22). O roteiro completo de campos, comparação antes/depois, golden anonimizado e homologação pixel-a-pixel seguem pendentes sob #104.
