@@ -1,14 +1,15 @@
 -- Test user metadata updates only in disposable tenant-test PostgreSQL.
 -- Fresh synthetic sessions ensure the test does not depend on earlier token state.
-insert into private.app_users(username,password_hash,role,display_name,active)
-values('qa.manager',extensions.crypt('synthetic-manager-password',extensions.gen_salt('bf',4)),'admin','Manager QA',true),
-('qa.worker',extensions.crypt('synthetic-worker-password',extensions.gen_salt('bf',4)),'employee','Worker QA',true),
-('qa.other',extensions.crypt('synthetic-other-password',extensions.gen_salt('bf',4)),'employee','Other QA',true);
+insert into private.app_users(id,username,password_hash,role,display_name,active)
+values('00000000-0000-4000-8000-0000000000fa','qa.manager',extensions.crypt('synthetic-manager-password',extensions.gen_salt('bf',4)),'admin','Manager QA',true),
+('00000000-0000-4000-8000-0000000000fb','qa.worker',extensions.crypt('synthetic-worker-password',extensions.gen_salt('bf',4)),'employee','Worker QA',true),
+('00000000-0000-4000-8000-0000000000fe','qa.other',extensions.crypt('synthetic-other-password',extensions.gen_salt('bf',4)),'employee','Other QA',true);
 insert into private.tenant_memberships(user_id,tenant_id,role)
 select id,'00000000-0000-4000-8000-000000000001',role from private.app_users where username in ('qa.manager','qa.worker');
 insert into private.establishments(id,name) values('00000000-0000-4000-8000-0000000000ed','Other Unit QA');
 insert into private.tenant_memberships(user_id,tenant_id,role)
 select id,'00000000-0000-4000-8000-0000000000ed','employee' from private.app_users where username='qa.other';
+-- Cross-tenant target ID is explicitly selected before privilege downgrade using a fixture helper.
 set role anon;
 do $$
 declare manager_token text; worker_token text; worker uuid; outsider uuid;
@@ -16,7 +17,9 @@ declare manager_token text; worker_token text; worker uuid; outsider uuid;
 begin
  manager_token:=public.inventory_login('qa.manager','synthetic-manager-password')->>'session_token';
  worker_token:=public.inventory_login('qa.worker','synthetic-worker-password')->>'session_token';
- worker:=(public.inventory_directory(manager_token)->'users'->0->>'id')::uuid;
+ select (entry->>'id')::uuid into worker from jsonb_array_elements(public.inventory_directory(manager_token)->'users') entry
+ where entry->>'username'='qa.worker';
+ if worker is null then raise exception 'Fixture worker not visible'; end if;
  outsider:='00000000-0000-4000-8000-0000000000fe'::uuid;
  -- privileges: worker denied, cross-tenant denied, superadmin denied target.
  begin perform public.inventory_user_update(worker_token,worker,'qa.worker','worker',true);
