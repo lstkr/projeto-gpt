@@ -54,6 +54,20 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
+
+# Verify the rollback restores the RPC while retaining audit history. Execute it
+# inside a transaction and roll that transaction back so later acceptance tests
+# continue against the forward migration.
+rollback_sql = (ROOT/'supabase/rollback/20261023013000_fiscal_document_server_attribution.sql').read_text(encoding='utf8')
+sql("begin;\\n" + rollback_sql + "\\ndo $ begin "
+    "assert (select count(*) from private.fiscal_document_attribution)=2; "
+    "assert position('The JSON snapshot stays backward compatible' in "
+    "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure))=0; "
+    "end $;\\nrollback;")
+assert sql("select count(*) from private.fiscal_document_attribution") == '2'
+assert sql("select position('The JSON snapshot stays backward compatible' in pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) > 0") == 't'
+print('PASS fiscal attribution rollback restores RPC and preserves audit rows')
+
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
 credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
 for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
