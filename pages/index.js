@@ -11,6 +11,7 @@ import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, s
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
+import { summarizeCashMonthly } from '../lib/cash-chart-references.mjs';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
@@ -1577,7 +1578,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Faturamento','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1681,6 +1682,7 @@ export default function Home() {
     });
   },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
   const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
+  const cashMonthlyReferences=summarizeCashMonthly(cashMonthly.daily);
   const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
   const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
@@ -2874,7 +2876,7 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
+        <button aria-label="Faturamento" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
@@ -3034,14 +3036,23 @@ export default function Home() {
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
             <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
           </div>
-          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
-              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
-              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
+          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" aria-labelledby="fiscal-upload-progress-title">
+            <div className="fiscal-upload-progress-head">
+              <h2 id="fiscal-upload-progress-title">Arquivos sendo processados</h2>
+              <strong>{uploadBatchProgress.completed} de {uploadBatchProgress.total} · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}%</strong>
             </div>
-            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
-            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
-            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
+            <progress value={uploadBatchProgress.completed} max={Math.max(1,uploadBatchProgress.total)} aria-label="Arquivos fiscais concluídos"/>
+            <div className="fiscal-upload-current" role="status" aria-live="polite" aria-atomic="true">
+              <span className="fiscal-upload-current-file"><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</span>
+              <span>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}</span>
+              {uploadBatchProgress.failed>0&&<strong className="fiscal-upload-failures" role="alert">{uploadBatchProgress.failed} {uploadBatchProgress.failed===1?'falha':'falhas'}</strong>}
+            </div>
+            <details className="fiscal-upload-file-details">
+              <summary>Ver andamento dos {uploadBatchProgress.total} arquivos</summary>
+              <ul>{uploadBatchProgress.files.map((file,index)=><li key={index} className={file.status==='Falhou'?'is-failed':''}>
+                <span>{file.name}</span><b>{file.status}</b>
+              </li>)}</ul>
+            </details>
           </section>}
           <section className="panel pending-documents-panel">
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
@@ -3321,16 +3332,30 @@ export default function Home() {
               {cashHighlightedEntry ? <>
                 <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
                 <strong>{money(cashHighlightedEntry.revenue)}</strong>
-              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
+              </> : <span>{cashChartData.count ? 'Passe o mouse, toque ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
             </div>
+            {cashChartScope==='month'&&<div className="cash-month-reference-legend" data-testid="cash-month-reference-legend" aria-live="polite">
+              {cashMonthlyReferences ? <>
+                <span className="cash-reference-rule">Considera apenas dias com lançamentos; dias sem fechamento ficam fora da comparação.</span>
+                {cashMonthlyReferences.maximum.revenue===cashMonthlyReferences.minimum.revenue
+                  ? <span className="cash-reference-item"><i className="cash-reference-swatch is-equal" aria-hidden="true"/>Maior e menor: <b>{money(cashMonthlyReferences.maximum.revenue)}</b> · {cashMonthlyReferences.maximum.day.slice(-2)}/{cashMonthlyReferences.maximum.day.slice(5,7)}</span>
+                  : <><span className="cash-reference-item"><i className="cash-reference-swatch is-maximum" aria-hidden="true"/>Maior: <b>{money(cashMonthlyReferences.maximum.revenue)}</b> · {cashMonthlyReferences.maximum.day.slice(-2)}/{cashMonthlyReferences.maximum.day.slice(5,7)}</span>
+                    <span className="cash-reference-item"><i className="cash-reference-swatch is-minimum" aria-hidden="true"/>Menor: <b>{money(cashMonthlyReferences.minimum.revenue)}</b> · {cashMonthlyReferences.minimum.day.slice(-2)}/{cashMonthlyReferences.minimum.day.slice(5,7)}</span></>}
+              </> : <span className="cash-reference-rule">Sem lançamentos no mês para comparar.</span>}
+            </div>}
             <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
-                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?p.day.slice(8,10)+'/'+p.day.slice(5,7):p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;const barHeight=hasRevenue?Math.max(3,p.revenue/cashChartMaxRevenue*100):0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')+(cashHighlightedDay===p.day?' is-highlighted':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onPointerDown={event=>event.pointerType==='touch'&&hasRevenue&&setCashHighlightedDay(p.day)} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
+                <div className="cash-bar-track">
+                  {cashChartScope==='month'&&cashMonthlyReferences&&<span className="cash-reference-line is-maximum" style={{bottom:`calc(${cashMonthlyReferences.maximum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
+                  {cashChartScope==='month'&&cashMonthlyReferences&&cashMonthlyReferences.minimum.revenue!==cashMonthlyReferences.maximum.revenue&&<span className="cash-reference-line is-minimum" style={{bottom:`calc(${cashMonthlyReferences.minimum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
+                  {cashHighlightedDay===p.day&&hasRevenue&&<span className="cash-bar-value" style={{bottom:`calc(${barHeight}% + 4px)`}} aria-hidden="true">{money(p.revenue)}</span>}
+                  <div className="cash-bar-fill" style={{height:barHeight+'%'}}/>
+                </div>
                 <small>{axisDate}</small><small>{weekday}</small>
               </button>})}
             </div>
           </section>
-          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
+          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de faturamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
             {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
