@@ -40,7 +40,7 @@ begin
 end $$;
 reset role;
 -- Privileged assertions are deliberately outside the anon session: RLS stays closed.
-do $
+do $$
 declare worker private.app_users%rowtype;
 begin
  select * into worker from private.app_users where username='qa.worker.renamed';
@@ -48,5 +48,5 @@ begin
  assert worker.password_hash=extensions.crypt('synthetic-worker-password',worker.password_hash);
  assert (select count(*) from private.app_user_edit_audit where target_id=worker.id)=2;
  assert (select count(*) from private.app_sessions where user_id=worker.id and revoked_at is null)=0;
-end $;
+end $$;
 
