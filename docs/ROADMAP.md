@@ -158,3 +158,14 @@ Esta fotografia substitui as contagens e os estados anteriores deste documento. 
 - #123/#124 continuam separados: #124 pode começar sobre o contrato proposto em #134, mas não muda API/schema e não libera publicação antes dos checks, revisão e homologação.
 
 Nenhuma PR desta lista foi mergeada por esta atualização; nenhuma migration ou deploy foi executado. Em #131 e #136, o status de CI foi inspecionado: Actions reportam failure com jobs sem steps e os logs não estão disponíveis (404 BlobNotFound); o status Vercel reporta rate limit de builds por 24h. Não classificar esses resultados como testes de aplicação reprovados ou CI aprovada.
+
+
+### Adendo CTO — sessão revogada em voo (#132/#133/#135)
+
+Em resposta à revisão P0, [PR #135](https://github.com/lstkr/projeto-gpt/pull/135) foi convertido para **draft** em 23/10/2026; permanece aberto, sem merge/deploy. O navegador marca `sessionRevokedRef` antes de alterar estado, cancela novas gravações enfileiradas de `inventory_save` e bloqueia chamadas por `invokeAdministration` após detectar revogação. A verificação de saúde ocorre periodicamente e não classifica falha transitória de rede como revogação.
+
+A proteção de concorrência é também server-side na proposta #133: `private.require_actor` tornou-se VOLATILE e adquire `FOR SHARE OF s` na sessão. A inativação precisa alterar/revogar a linha correspondente, esperando operações que já possuam o lock; ao retornar/confirmar a inativação, as sessões anteriores terminaram, e novos RPCs falham pela sessão revogada/inativa. Assim, operação já autorizada e iniciada antes do commit da inativação pode terminar primeiro; a garantia é que nenhuma operação protegida começa com sucesso depois do commit. O frontend reduz a janela visual, e o banco é a autoridade.
+
+Ainda é necessário validar operacionalmente o interleaving concorrente em PostgreSQL 15/17, prova de lock/revogação em #133, teste Playwright de #135 no head e o comportamento das demais RPCs/mutações. Não liberar publicação com checks sem etapas/logs ou apenas unit tests.
+
+Na consulta atual, o SHA de #135 é `6ba702e47a6c4ed6d275614df9931c23a469c4d8` e os workflows registrados estão reportados como `sem resultados`; não usar status sem logs como prova de teste concluído.
