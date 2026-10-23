@@ -23,6 +23,7 @@ const printCounts = [{id:'qa-count-1',completedAt:'2026-10-20T15:00:00Z',
 
 let sessionRevokedForQA = false;
 let checksAfterRevocation = 0;
+let writesAfterRevocation = 0;
 const closings = [
   {id:'chart-10',day:'2026-10-10',register:'001',operator:'QA',cartaoCredito:569,movements:[]},
   {id:'chart-17',day:'2026-10-17',register:'001',operator:'QA',cartaoCredito:783,movements:[]},
@@ -61,6 +62,15 @@ const closings = [
         user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},
         role:'admin',tenants:[{id:'qa-unit',name:'Unidade QA'}],activeTenantId:'qa-unit',mustChangePassword:false
       };
+      else if (name === 'inventory_save') {
+        if (sessionRevokedForQA) {
+          writesAfterRevocation++;
+          return route.fulfill({status:401,contentType:'application/json',
+            headers:{'access-control-allow-origin':'*'},
+            body:JSON.stringify({code:'28000',message:'Sessão inválida'})});
+        }
+        data = {ok:true,revision:1};
+      }
       else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:printProducts,movements:[],documents:[],stockCounts:printCounts};
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
@@ -172,9 +182,10 @@ const closings = [
 
     // Revocation from another client: no manual logout click is permitted.
     sessionRevokedForQA=true;
-    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    // No user action, click or focus event: the periodic watcher must act alone.
     await page.getByLabel('Login',{exact:true}).waitFor({timeout:9000});
     assert.ok(checksAfterRevocation>=1,'navegador deve verificar token expirado');
+    assert.equal(writesAfterRevocation,0,'nenhum salvamento pode ser iniciado depois da detecção');
     const persisted=await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session'));
     assert.equal(persisted,null,'token inativo deve ser removido do browser');
     assert.equal(await page.getByRole('button',{name:'Contagem de estoque',exact:true}).count(),0,
