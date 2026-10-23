@@ -45,13 +45,13 @@ begin
   report_two:=(result->>'id')::uuid;
 
   -- A batch accepts five stable file IDs, then rejects the sixth.
-  for i in 1..3 loop
+  for i in 1..5 loop
     perform public.cash_report_create(token_a,retry_batch,gen_random_uuid(),
       'batch-'||i||'.pdf','application/pdf',pdf_base64);
   end loop;
   begin
     perform public.cash_report_create(token_a,retry_batch,gen_random_uuid(),
-      'batch-4.pdf','application/pdf',pdf_base64);
+      'batch-6.pdf','application/pdf',pdf_base64);
     raise exception 'batch cap unexpectedly accepted too many files' using errcode='XX000';
   exception when sqlstate '22023' then null; end;
 
