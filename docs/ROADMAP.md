@@ -23,3 +23,72 @@ Critérios de aceite: custos e unidades coerentes, fontes identificadas, reproce
 - Reset de testes depende de escopo verificado, backup recuperável e rollback ensaiado. Preservar usuários e hashes existentes; revogar sessões explicitamente. Autenticação própria não é Supabase Auth.
 
 Nenhuma interface administrativa ou seleção de unidade deve ser publicada com autorização apenas no navegador ou antes de concluir isolamento e homologação de todas as RPCs existentes.
+
+## CTO — revisão de 22/10/2026: sete solicitações e continuidade
+
+Fonte: conversa “Relatório do projeto”, cinco screenshots recuperados e examinados nesta execução, arquivos reais da branch principal e inventário GitHub de 21 issues / 1 PR abertos antes desta rodada. Estado é fotografia da consulta, não certificado de produção. Screenshots não foram publicados por conterem informações fiscais/operacionais.
+
+### Encaminhamento das sete solicitações
+
+| Item | Issue / prioridade | DRI e execução | Dependências e aceite principal |
+| --- | --- | --- | --- |
+| 1. Privacidade QR no banner | [#116](https://github.com/lstkr/projeto-gpt/issues/116) — P2, aberta nova | UI/UX; Frontend executa; Backend revisa aviso; QA | Aviso visível antes do upload, junto a “Da nota fiscal para o estoque”; preservar transmissão automática a terceiros e risco de dados; #28 fechada não cobre novo posicionamento. |
+| 2. Painel compacto | [#68](https://github.com/lstkr/projeto-gpt/issues/68) — P2 residual, reaberta | UI/UX; Frontend; Backend valida progresso; QA | Não duplicar #68. main já unifica OCR/contador e ordena pendências; reduzir altura/espaços do cartão mantendo leitura e simultaneidade #58. Título P1 original preservado como histórico. |
+| 3. Arquivo inline + salvar | [#117](https://github.com/lstkr/projeto-gpt/issues/117) — P2, aberta nova | UI/UX; Frontend; Backend/DBA validam RPC; QA | main viewPendingOriginal força anchor.download. Visualizar PDF/imagem em navegador e manter baixar; tipos inseguros não executam; sessão/tenant, popup/erro e limpeza de recursos. |
+| 4. Checkbox de totais | [#118](https://github.com/lstkr/projeto-gpt/issues/118) — P1, aberta nova | Backend; Frontend após contrato; UI/UX e DBA revisam; QA | totalsReviewed participa de readyForFinalReview/confirmDocument. Retirar redundância sem autoaprovar; preservar divergências, arredondamento, invalidação e confirmação final auditável. |
+| 5. Quem conferiu | [#119](https://github.com/lstkr/projeto-gpt/issues/119) — P1, aberta nova | Backend DRI; DBA contrato; Frontend após contrato; UI/UX; QA | ID/nome snapshot/unidade/data pelo servidor na transação. Rejeitar autoria forjada; legado não vira autoria autenticada retroativa. |
+| 6a. Legados de fornecedores | [#62](https://github.com/lstkr/projeto-gpt/issues/62) — P1 plano, ampliada existente | DBA DRI; Backend; UI/UX/Frontend revisão humana; QA | Diagnóstico/dry-run, CNPJ e vínculos, backup verificável, restauração/testes e aprovação separada antes de executar. |
+| 6b. Legados de produtos | [#63](https://github.com/lstkr/projeto-gpt/issues/63) — P1 plano, ampliada existente | Backend DRI; DBA lidera persistência; UI/UX/Frontend; QA | Separar nome de exibição de mescla física; códigos/unidades/embalagem e IDs/estornos preservados; sem consolidação por OCR. |
+| 6c. Histórico e filtros | [#120](https://github.com/lstkr/projeto-gpt/issues/120) — P2, aberta nova | UI/UX; Frontend; Backend/DBA contrato; QA | #62/#63 + #119 → #120. Fornecedor/CNPJ, total, número, data/hora e autoria; sem arquivo no resumo, filtros combináveis por data/fornecedor/autor. Legados desconhecidos explícitos. |
+| 7. Naming e UX leve | [#121](https://github.com/lstkr/projeto-gpt/issues/121) — P2, aberta nova | CTO naming; UI/UX diretrizes; Frontend; QA | Avaliar Estoque.Leve/Estoque+Leve com gestor; nenhuma troca automática. Paleta neutra, linguagem direta, WCAG 2.2 AA, fontes/alertas acessíveis e metas de cliques. Disponibilidade de nome/domínio/marca ainda não pesquisada. |
+
+Atribuições acima são responsabilidades funcionais por equipe; não são assignees GitHub fictícios nem significam que agentes foram executados. CTO responde por priorização, dependências e aprovação de entrega; QA valida de forma independente. UI/UX lidera experiência, Frontend implementa componentes, Backend lidera API/regras/autoria e DBA lidera migração/RPC/RLS. Se uma camada precisar mudar, revisar contrato antes e manter PRs próprias por camada.
+
+### Sequência e bloqueios
+
+1. P1: #119 (autoria) e contrato de #118 (confirmação/validações), em paralelo ao diagnóstico somente leitura e planos #62/#63. Revisores Backend/DBA devem concordar antes de mudanças persistentes. QA acompanha #50/#58/#90/#94/#104 e pendências anteriores.
+2. P2 independentes de migração: #116, ajuste residual #68 e #117; PRs pequenas de Frontend, com revisão Backend quando consumir APIs.
+3. #62/#63: executar normalização somente após plano versionado, backup recuperável, dry-run/testes em banco descartável, restauração ensaiada e autorização explícita de produção. Não bloquear mock/layout de #120, mas entrega funcional depende de identidade/autoria validadas.
+4. #120 depois dos contratos #62/#63/#119; #121 pode elaborar diretrizes agora, sem bloquear integridade fiscal. Rebranding depende de decisão do gestor.
+
+Não executar reset, mescla automática, SQL destrutivo ou alteração de usuários/senhas. Preservar saldos, notas, movimentos, stockEntries, contagens, catalogMerges, IDs e códigos originais. Não deduzir identidade por semelhança OCR. Operações persistentes devem tratar revisão obsoleta, repetição/concorrência, isolamento por unidade e recuperação.
+
+### Todas as demandas anteriores ainda abertas na consulta
+
+| Issue | Prioridade desta triagem | Responsável principal / apoio | Estado e dependências |
+| --- | --- | --- | --- |
+| [#113](https://github.com/lstkr/projeto-gpt/issues/113) | P1 | QA | Aberta — Impressão física A4/58/80 pendente; depende de evidências em papel; parent #36. |
+| [#104](https://github.com/lstkr/projeto-gpt/issues/104) | P1 | QA / Backend | Aberta — OCR real das 13 fotos e 3 goldens humanos; filho de #94, relacionado #50/#58. |
+| [#103](https://github.com/lstkr/projeto-gpt/issues/103) | P2 | UI/UX / Frontend | Aberta — PR #115 draft; depende da RPC #102/#114 aplicada e homologada, depois QA. |
+| [#102](https://github.com/lstkr/projeto-gpt/issues/102) | P2 | DBA / Backend | Aberta — Contrato de edição de usuários; código #114 integrado segundo PR #115, implantação/homologação pendente. |
+| [#99](https://github.com/lstkr/projeto-gpt/issues/99) | P2 | UI/UX / Frontend | Aberta — CMV visual depende de #98 e motor #97 (fechado); parent #85. |
+| [#98](https://github.com/lstkr/projeto-gpt/issues/98) | P2 | DBA / Backend | Aberta — Contrato histórico valorizado por unidade/período antes de #99. |
+| [#94](https://github.com/lstkr/projeto-gpt/issues/94) | P1 | QA | Aberta — Parent de fotos privadas/OCR; execução residual em #104, sem publicar imagens fiscais. |
+| [#90](https://github.com/lstkr/projeto-gpt/issues/90) | P1 | QA / Frontend | Aberta — Gate visual de colisões/cortes; evidência requerida nas entregas de UI. |
+| [#87](https://github.com/lstkr/projeto-gpt/issues/87) | P1 | CTO | Aberta — Auditoria anterior; esta matriz atualiza os estados antigos sem duplicar tickets. |
+| [#85](https://github.com/lstkr/projeto-gpt/issues/85) | P2 | Backend | Aberta — CMV parent; #97 fechado, #98 → #99 pendentes. |
+| [#77](https://github.com/lstkr/projeto-gpt/issues/77) | P2 | Backend | Aberta — Edição de usuários parent; #102 → #103/PR #115. |
+| [#70](https://github.com/lstkr/projeto-gpt/issues/70) | P1 | Backend / DBA | Aberta — Integridade/autoria de caixa: homologar implantação e aceite; autoria fiscal nova em #119 é outro fluxo. |
+| [#69](https://github.com/lstkr/projeto-gpt/issues/69) | P2 | UI/UX / Frontend | Aberta — Layout/histórico de caixa: manter aceite residual e regressão em #50/#90; não duplicar pedido anterior. |
+| [#63](https://github.com/lstkr/projeto-gpt/issues/63) | P1 plano; P2 evolução | Backend / DBA | Aberta — Identidade/nome e produtos legados; plano/dry-run/backup/testes antes de execução; #62. |
+| [#62](https://github.com/lstkr/projeto-gpt/issues/62) | P1 plano; P2 evolução | DBA / Backend | Aberta — CNPJ/fornecedores legados; diagnóstico e migração reversível sujeitos a aprovação. |
+| [#58](https://github.com/lstkr/projeto-gpt/issues/58) | P1 | Backend / UI/UX | Aberta — Conferência durante OCR/lotes; implementação anterior não substitui testes de concorrência em #50/#104. |
+| [#54](https://github.com/lstkr/projeto-gpt/issues/54) | P1 | CTO / DevOps | Aberta — Permissão administrativa Vercel pendente no ticket; não alterar variáveis nem credenciais por esta rodada. |
+| [#52](https://github.com/lstkr/projeto-gpt/issues/52) | P1 | CTO / DevOps | Aberta — Proteção main depende de plano/permissões do provedor conforme ticket; não equivale a bloqueio real atual. |
+| [#50](https://github.com/lstkr/projeto-gpt/issues/50) | P1 | QA | Aberta — Homologação assistida: login, autorização, fiscal, caixa e concorrência; não marcar aprovado pelo build. |
+| [#36](https://github.com/lstkr/projeto-gpt/issues/36) | P2; QA P1 | UI/UX / QA | Aberta — Impressão implementada segundo #113; parent continua aberto até homologação física #113. |
+| [#35](https://github.com/lstkr/projeto-gpt/issues/35) | P2 adiado | Backend / UI/UX | Aberta — Scanner/balança segue adiado por priorização do gestor. |
+
+PR aberto anterior: [#115](https://github.com/lstkr/projeto-gpt/pull/115), **draft**, edição de usuários (#103/#77). A própria descrição bloqueia merge para disponibilidade operacional antes de aplicar/homologar RPC do [#114](https://github.com/lstkr/projeto-gpt/pull/114) em ambiente autorizado. Não afirmar implantação ou QA concluídos. Nenhum outro PR aberto retornou na consulta inicial.
+
+Pedidos anteriores de navegação: #75 (Configurações) e #82 (Permissões no perfil) estão fechados; paridade de funções/permissões segue regressão #50, sem reabrir ou duplicar sem falha observada. Fechamento em colunas segue #69. #28 privacidade e #68 processamento têm escopos prévios distintos; só #68 foi reaberta para residual demonstrado. #25 está fechada e seu contrato de identidade estável deve ser preservado. iFood #71 permanece fechado/fora do roadmap; scanner #35 segue adiado.
+
+### Evidências e limites da rodada
+
+- Inspeção de pages/index.js remoto: document-banner + aviso separado; fiscal-upload-progress com maxWidth 860/padding 18px 20px; viewPendingOriginal com download; totalsReviewed em gates; checkedBy digitado; history-panel com documents.map sem filtros.
+- Leitura de README, perfis Backend/DBA/UI/UX e governança. package.json atual usa npm test separado de npm run build; não presumir que build executa testes.
+- Alteração desta PR: somente docs/ROADMAP.md. Nenhum código de aplicação, schema, credencial, dado ou ambiente de produção alterado.
+- Testes funcionais, npm test, npm run build, OCR, SQL e testes visuais **não executados nesta triagem documental**. Homologações e CI de implementação continuam gates nas issues; CI desta PR deve ser consultada no SHA final.
+- Risco: fotografia de status envelhece; conferir GitHub antes de implementar. Conflitos em pages/index.js exigem integração sequencial de PRs de UI.
+- Deploy: sem ação de deploy nesta rodada; não confundir merge documental com implantação funcional. Rollback documental: reverter o commit desta PR; futuros planos de dados exigem rollback próprio validado.
+- Regra de continuidade CTO: a cada nova ToDoList/Roadmap, confrontar código + tickets/PRs existentes, reaproveitar issues quando houver sobreposição, definir um DRI, revisores, prioridade, dependências e critérios de aceite antes de integrar.
