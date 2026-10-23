@@ -24,5 +24,19 @@ test('financial discrepancies are review warnings while invalid totals still blo
   assert.match(page,/totalsFinalMismatch && 'O total calculado difere/);
   assert.match(page,/if \(draftTotal < -0\.01\)/);
   assert.match(page,/receiptReviewRows\.some\(\(row\) => !row\.done\)/);
-  assert.match(page,/draft\?\.finalReviewed \|\| !draft\?\.checkedBy\?\.trim\(\)/);
+  assert.match(page,/draft\?\.finalReviewed/);
+  assert.doesNotMatch(page,/draft\?\.checkedBy\?\.trim\(\)/);
+});
+test('fiscal confirmation keeps human approval and derives displayed authorship from authenticated user', () => {
+  assert.match(page,/value=\{authenticatedReviewerName\} readOnly aria-readonly="true"/);
+  assert.doesNotMatch(page,/changeDraft\('checkedBy'/);
+  assert.match(page,/Conferi todo o documento e autorizo a entrada no estoque/);
+  assert.match(page,/Usuário autenticado: ' \+ authenticatedReviewerName/);
+  assert.match(page,/delete documentToSave\.checkedBy/);
+});
+test('history distinguishes server-verified authorship from legacy text', () => {
+  assert.match(page,/checkedByVerified === true/);
+  assert.match(page,/Conferido e lançado por/);
+  assert.match(page,/Autoria legada não verificada:/);
+  assert.match(page,/Autoria não informada/);
 });
