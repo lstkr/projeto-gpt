@@ -34,9 +34,12 @@ test('fiscal confirmation keeps human approval and derives displayed authorship 
   assert.match(page,/Usuário autenticado: ' \+ authenticatedReviewerName/);
   assert.match(page,/delete documentToSave\.checkedBy/);
   assert.match(page,/pendingAttributionRef\.current\.set\(documentId/);
-  assert.match(page,/setSaveStatus\('Sincronizado'\);\s*const acknowledgedAttributions/);
-  assert.match(page,/checkedByVerified: true/);
+  assert.match(page,/supabase\.rpc\('inventory_get'/);
+  assert.match(page,/document\?\.checkedByVerified === true/);
+  assert.match(page,/document\.checkedByUserId === pending\.userId/);
   assert.match(page,/pendingAttributionRef\.current\.delete\(documentId\)/);
+  assert.match(page,/Autoria aguardando confirmação do servidor/);
+  assert.doesNotMatch(page,/checkedByVerified: true/);
 });
 test('history distinguishes server-verified authorship from legacy text', () => {
   assert.match(page,/checkedByVerified === true/);
