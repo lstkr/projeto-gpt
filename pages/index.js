@@ -225,7 +225,19 @@ function localizedValue(raw) {
 }
 
 function parseReceiptOcr(text) {
-  const source = String(text || '');
+  let source = String(text || '');
+  // Preserve the raw OCR elsewhere; repair only decimal separators in sale columns.
+  source = source.replace(/(\b\d+[,.]\d{4}\s+[A-Z]{1,8}\s+)(\d+)\/(\d{4})\b/gi, '$1$2,$3');
+  // A flattened table must still produce one fiscal line per printed code.
+  if (!/[\r\n]/.test(source)) {
+    const table = source.match(/C[O0]DIGO\s*[—-]?\s*DESCRI[ÇC][ÃA]O([\s\S]*?)(QTD\s+TOTAL|VALOR\s+TOTAL|FORMA\s+PAGAMENTO)/i);
+    if (table) {
+      const body = table[1].replace(/^[\s\S]*?(?=\b\d{3,12}\s+[A-ZÀ-Ü])/i, '')
+        .replace(/(\d+[,.]\d{2,4}|\d+\.)\s+(\d{3,12})\s+(?=[A-ZÀ-Ü])/gi, '$1\n$2 ');
+      source = 'CODIGO DESCRICAO\n' + body + '\n' + source.slice(table.index + table[0].length - table[2].length);
+    }
+  }
+  source = source.replace(/(\d+[,.]\d{4}\s+[A-Z]{1,8}\s+\d+[,.]\d{4})\s+\d+\.\s*$/gmi, '$1');
   const lines = source.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
   const amountPattern = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2,4}|\d+\.\d{2,4}/g;
@@ -268,7 +280,9 @@ function parseReceiptOcr(text) {
     const mismatch = Math.abs(quantity * unitPrice - lineTotal);
     // Never silently overwrite the printed unit price (thermal receipts can round it).
     const readingWarning = (values.length >= 3 || row.inlineTotal !== null) && mismatch > 0.055
-      ? 'Quantidade × preço difere do total impresso. Confira os três campos.' : '';
+      ? 'Quantidade × preço difere do total impresso. Confira os três campos.'
+      : values.length < 3 && row.inlineTotal === null
+        ? 'Total da linha não reconhecido; calculado por quantidade e preço. Confira no documento.' : '';
     rows.push({
       code: row.code, name: name.slice(0, 120),
       quantity, unit: row.unit || 'un',
@@ -1430,7 +1444,8 @@ export default function Home() {
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
-    setCurrentUser(state.user || null);
+    // Keep the session ID: legacy inventory snapshots expose only display fields.
+    setCurrentUser({ ...(state.user || {}), ...identity });
     const permissionsResult=await supabase.rpc('inventory_permissions_list',{p_token:token});
     if(!permissionsResult.error && permissionsResult.data?.self) {
       setFiscalPermissions(permissionsResult.data.self);
@@ -2093,6 +2108,7 @@ export default function Home() {
     setCashImportAlternativeText(report.draft.sourceAlternativeText||'');
     setCashImportWarnings(Array.isArray(report.warnings)?report.warnings:(report.draft.importWarnings||[]));
     setCashEditId('');setCashEntryMode('report-review');setCashError('');setView('cash');
+    requestAnimationFrame(()=>document.querySelector('.cash-entry input')?.focus());
   }
   async function savePendingCashDraft(){
     if(!cashReportActive)return;
@@ -2265,11 +2281,18 @@ export default function Home() {
     if(!reason||reason.trim().length<5)return;
     cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,reason:reason.trim(),idempotencyKey:uuid()};
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
+    setCashSelectedDay('');setCashSelectedClosingId('');
     setCashEntryMode('edit');
     setCashEditId(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
       movements:entry.movements||[]});
     setCashError('');setView('cash');
+  }
+
+  function openCashDay(day){
+    const entries=closings.filter(entry=>entry.day===day);
+    if(entries.length===1)return openCashClosingDetail(entries[0]);
+    setCashSelectedClosingId('');setCashAuditHistory([]);setCashSelectedDay(day);
   }
 
   async function openCashClosingDetail(entry){
@@ -3039,12 +3062,15 @@ export default function Home() {
         const totals = data.totals || {};
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
+              supplier: data.supplier?.name || d.supplier,
+              supplierCnpj: data.supplier?.cnpj || d.supplierCnpj,
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
               items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
               officialApplied: true, finalReviewed:false, officialVerified:true,
-              subtotal: totals.subtotal ?? d.subtotal,
-              discount: totals.discount ?? d.discount,
+              subtotal: totals.subtotal ?? Math.round(officialItems.reduce((sum,item)=>sum+Number(item.lineTotal||0),0)*100)/100,
+              discount: totals.discount ?? 0,
+              additionalCharges: 0, lineTotalsEdited: false, subtotalManuallyEdited: false,
               total: totals.total ?? d.total,
               totalsSource:'SEFAZ (consulta automática)',
               source:String(d.source||'').includes('consulta pública')?d.source:String(d.source||'')+' + consulta pública'
@@ -3944,7 +3970,7 @@ export default function Home() {
               </> : <span className="cash-reference-rule">Sem lançamentos no mês para comparar.</span>}
             </div>}
             <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?p.day.slice(8,10)+'/'+p.day.slice(5,7):p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;const barHeight=hasRevenue?Math.max(3,p.revenue/cashChartMaxRevenue*100):0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')+(cashHighlightedDay===p.day?' is-highlighted':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onPointerDown={event=>event.pointerType==='touch'&&hasRevenue&&setCashHighlightedDay(p.day)} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?p.day.slice(8,10)+'/'+p.day.slice(5,7):p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;const barHeight=hasRevenue?Math.max(3,p.revenue/cashChartMaxRevenue*100):0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')+(cashHighlightedDay===p.day?' is-highlighted':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onPointerDown={event=>event.pointerType==='touch'&&hasRevenue&&setCashHighlightedDay(p.day)} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&openCashDay(p.day)}>
                 <div className="cash-bar-track">
                   {cashChartScope==='month'&&cashMonthlyReferences&&<span className="cash-reference-line is-maximum" style={{bottom:`calc(${cashMonthlyReferences.maximum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
                   {cashChartScope==='month'&&cashMonthlyReferences&&cashMonthlyReferences.minimum.revenue!==cashMonthlyReferences.maximum.revenue&&<span className="cash-reference-line is-minimum" style={{bottom:`calc(${cashMonthlyReferences.minimum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
@@ -3979,7 +4005,7 @@ export default function Home() {
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
         {cashSelectedClosingId===String(entry.id)&&currentUser?.role==='admin'&&<div className="cash-audit-panel">
-          <div className="cash-audit-panel-head"><h4>Histórico de versões</h4><button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Corrigir fechamento</button></div>
+          <div className="cash-audit-panel-head"><h4>Histórico de versões</h4><button type="button" className="btn primary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Corrigir fechamento</button></div>
           {cashAuditLoading?<p role="status">Carregando auditoria…</p>:cashAuditHistory.length?<ol>{cashAuditHistory.map((version)=><li key={version.version}><div><b>Versão {version.version} · {version.action==='baseline'?'original':version.action==='restore'?'restauração':'correção'}</b><small>{new Date(version.occurredAt).toLocaleString('pt-BR')} · {version.actor?.displayName||'Autoria anterior não registrada'} · {version.reason}</small></div>{version.version!==cashAuditHistory[0]?.version&&<button type="button" className="text-btn" disabled={cashSaving} onClick={()=>void restoreCashClosingVersion(entry,version.version)}>Recuperar esta versão</button>}</li>)}</ol>:<p>Não há versões anteriores disponíveis.</p>}
         </div>}
         {!cashSelectedClosingId&&currentUser?.role==='admin'&&<div className="cash-day-review-action"><button type="button" className="text-btn" onClick={()=>void openCashClosingDetail(entry)}>Revisar este fechamento e seu histórico</button></div>}
