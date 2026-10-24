@@ -76,6 +76,7 @@ const closings = [
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
       else if (name === 'cash_closings_list') data = closings;
+      else if (name === 'cash_reports_list') data = [];
       else if (name === 'pending_receipts_list') data = [];
       else if (name === 'inventory_logout') data = {ok:true};
       else throw new Error('Unmocked RPC: ' + name);

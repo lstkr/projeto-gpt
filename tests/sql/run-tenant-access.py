@@ -34,8 +34,7 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     if migration.name.endswith('_tenant_access.sql'):
         sql("insert into private.app_users(username,password_hash,role,display_name) values ('recovery.fixture',extensions.crypt('synthetic-recovery-password',extensions.gen_salt('bf',4)),'admin','Recovery Fixture')")
         before = sql("select password_hash from private.app_users where username='recovery.fixture'")
-        migration_text = migration.read_text(encoding='utf8')
-        fault = migration_text.rsplit('commit;',1)[0] + "do $$ begin raise exception 'injected cutover failure'; end $$; commit;"
+        fault = re.sub(r'commit;\s*$', "do $$ begin raise exception 'injected cutover failure'; end $$; commit;", migration.read_text(encoding='utf8'), flags=re.I)
         run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
         assert run.returncode != 0 and 'injected cutover failure' in run.stderr
         assert sql("select password_hash from private.app_users where username='recovery.fixture'") == before
@@ -44,278 +43,7 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         print('PASS failed cutover rolls back schema and preserves credentials')
     if migration.name == '20261023013000_fiscal_document_server_attribution.sql':
         migration_text = migration.read_text(encoding='utf8')
-        fault = migration_text.rsplit('commit;',1)[0] + "do $$ begin raise exception 'injected attribution failure'; end $$; commit;"
-        run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
-        assert run.returncode != 0 and 'injected attribution failure' in run.stderr
-        assert sql("select to_regclass('private.fiscal_document_attribution') is null") == 't'
-        definition = sql("select pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)")
-        assert 'checkedByVerified' not in definition and 'active_tenant' not in definition
-        print('PASS failed fiscal-attribution migration rolls back table and RPC patch')
-    sql(migration.read_text(encoding='utf8'))
-sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
-sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
-
-# Verify the rollback restores the RPC while retaining audit history. Execute it
-# inside a transaction and roll that transaction back so later acceptance tests
-# continue against the forward migration.
-rollback_sql = (ROOT/'supabase/rollback/20261023013000_fiscal_document_server_attribution.sql').read_text(encoding='utf8')
-sql("begin;\\n" + rollback_sql + "\\ndo $ begin "
-    "assert (select count(*) from private.fiscal_document_attribution)=2; "
-    "assert position('The JSON snapshot stays backward compatible' in "
-    "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure))=0; "
-    "end $;\\nrollback;")
-assert sql("select count(*) from private.fiscal_document_attribution") == '2'
-assert sql("select position('The JSON snapshot stays backward compatible' in pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) > 0") == 't'
-print('PASS fiscal attribution rollback restores RPC and preserves audit rows')
-
-before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
-credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
-for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
-    sql((ROOT/f'db/operations/{operation}.sql').read_text(encoding='utf8'))
-assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r") == before
-assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r") == credentials
-assert sql('select count(*) from private.app_sessions where revoked_at is null') == '0'
-print('PASS operational backup/reset/restore preserves users and requires fresh login')
-
-# Exercise the view's underlying row locks with independent PostgreSQL connections.
-# Fixed tokens below belong only to synthetic users in this disposable database.
-tenant_a = '00000000-0000-4000-8000-0000000000e1'
-tenant_b = '00000000-0000-4000-8000-0000000000e2'
-sql(f"""
-insert into private.establishments(id,name) values ('{tenant_a}','Concurrent A'),('{tenant_b}','Concurrent B');
-insert into private.tenant_memberships(user_id,tenant_id,role)
- select u.id,e.id,'admin' from private.app_users u cross join private.establishments e
- where u.username='sql.manager' and e.id in ('{tenant_a}','{tenant_b}');
-insert into private.tenant_inventory(tenant_id,id,state)
- values ('{tenant_a}',true,'{{"products":[],"documents":[],"movements":[],"revision":0}}'),
- ('{tenant_b}',true,'{{"products":[],"documents":[],"movements":[],"revision":0}}');
-insert into private.app_sessions(token_hash,user_id,expires_at,tenant_id)
- select encode(extensions.digest(repeat(v.token,64),'sha256'),'hex'),u.id,now()+interval '1 hour',v.tenant_id::uuid
- from private.app_users u cross join (values ('c','{tenant_a}'),('d','{tenant_b}')) v(token,tenant_id)
- where u.username='sql.manager';
-""")
-psql = ['psql','-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
-
-def save_statement(token, revision, marker):
-    return ("select public.inventory_save(repeat('%s',64),"
-            "jsonb_build_object('products','[]'::jsonb,'documents','[]'::jsonb,"
-            "'movements','[]'::jsonb,'revision',%s,'concurrencyMarker','%s'));"
-            % (token, revision, marker))
-
-def open_writer(statement):
-    process = subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,text=True,bufsize=1)
-    process.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
-                        + statement + "\n\\echo TENANT_WRITER_READY\n")
-    process.stdin.flush()
-    with selectors.DefaultSelector() as selector:
-        selector.register(process.stdout, selectors.EVENT_READ)
-        assert selector.select(timeout=8), 'Tenant writer barrier timed out'
-        for _ in range(8):
-            line = process.stdout.readline().strip()
-            if line == 'TENANT_WRITER_READY':
-                return process
-    process.kill()
-    raise AssertionError('Tenant writer failed before barrier')
-
-def commit_writer(process):
-    _, stderr = process.communicate('commit;\n',timeout=10)
-    assert process.returncode == 0, stderr
-
-writer = open_writer(save_statement('c',0,'first-writer'))
-waiter = subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,text=True)
-try:
-    waiter.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
-                       + save_statement('c',0,'stale-writer') + '\ncommit;\n')
-    waiter.stdin.flush()
-    time.sleep(0.25)
-    assert waiter.poll() is None, 'Same-tenant writer did not wait for the row lock'
-    commit_writer(writer)
-    _, stderr = waiter.communicate(timeout=10)
-    assert waiter.returncode != 0 and '40001' in stderr, 'Stale same-tenant revision was not rejected'
-finally:
-    for process in (writer,waiter):
-        if process.poll() is None:
-            process.kill()
-assert sql(f"select state->>'concurrencyMarker' from private.tenant_inventory where tenant_id='{tenant_a}'") == 'first-writer'
-assert sql(f"select state->>'revision' from private.tenant_inventory where tenant_id='{tenant_a}'") == '1'
-print('PASS concurrent same-tenant saves serialize; exactly one revision succeeds')
-
-# Give both tenants revision 1. B must finish while A still holds its own lock.
-sql("set role anon; " + save_statement('d',0,'prepare-second-tenant'))
-writer = open_writer(save_statement('c',1,'independent-a'))
-try:
-    independent = subprocess.run(psql,input="begin; set statement_timeout='3s'; set local role anon;\n"
-                                 + save_statement('d',1,'independent-b') + '\ncommit;\n',
-                                 text=True,capture_output=True,timeout=6)
-    assert independent.returncode == 0, independent.stderr
-    commit_writer(writer)
-finally:
-    if writer.poll() is None:
-        writer.kill()
-assert sql(f"select count(*) from private.tenant_inventory where tenant_id in ('{tenant_a}','{tenant_b}') and state->>'revision'='2'") == '2'
-print('PASS concurrent different-tenant saves with equal revisions finish independently')
-
-# The authorized environment reset keeps Supabase-managed schemas outside its scope
-# and leaves exactly one fresh DBA bootstrap path.
-sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
-for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
-              'tenant_inventory','cash_closings','pending_receipts','user_permissions',
-              'permission_audit','external_fiscal_rate_limits']:
-    assert sql(f'select count(*) from private.{table}') == '0', f'{table} reset'
-assert sql("select count(*) from auth.users") == '1', 'managed auth data preserved'
-assert sql("select count(*) from storage.buckets") == '1', 'managed storage buckets preserved'
-assert sql("select count(*) from storage.objects") == '1', 'managed storage objects preserved'
-sql("select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'))")
-fresh = sql("with login as (select public.inventory_login('admin.master','synthetic-fresh-dba') result) "
-            "select (result->>'must_change_password') || '|' || "
-            "jsonb_array_length(public.inventory_tenants(result->>'session_token')->'tenants') from login")
-assert fresh == 'true|0', f'fresh DBA first-login gate and empty directory: {fresh}'
-for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_20261021',
-                      'estq_backup_shared_inventory_20261021','estq_backup_pending_receipts_20261021',
-                      'estq_backup_function_defs_20261021']:
-    assert sql(f"select to_regclass('private.{old_snapshot}') is null") == 't', f'{old_snapshot} removed'
-print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
-print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
-
-, "do $ begin raise exception 'injected cutover failure'; end $; commit;", migration.read_text(encoding='utf8'), flags=re.I)
-        run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
-        assert run.returncode != 0 and 'injected cutover failure' in run.stderr
-        assert sql("select password_hash from private.app_users where username='recovery.fixture'") == before
-        assert sql("select to_regclass('private.establishments') is null") == 't'
-        assert sql("select to_regclass('public.shared_inventory') is not null") == 't'
-        print('PASS failed cutover rolls back schema and preserves credentials')
-    if migration.name == '20261023013000_fiscal_document_server_attribution.sql':
-        fault = re.sub(r'commit;\\s*
-    sql(migration.read_text(encoding='utf8'))
-sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
-sql((ROOT/'tests/sql/cash-report-batch.sql').read_text(encoding='utf8'))
-cash_report_migration = ROOT/'supabase/migrations/20261023040000_pending_cash_reports.sql'
-cash_report_rollback = ROOT/'supabase/rollback/20261023040000_pending_cash_reports.sql'
-cash_rows_before = sql("select count(*) from private.pending_cash_reports")
-cash_bytes_before = sql("select coalesce(sum(octet_length(file_bytes)),0) from private.pending_cash_reports")
-sql(cash_report_rollback.read_text(encoding='utf8'))
-assert sql("select to_regprocedure('public.cash_report_create(text,uuid,uuid,text,text,text)') is null") == 't'
-assert sql("select count(*) from private.pending_cash_reports") == cash_rows_before
-assert sql("select coalesce(sum(octet_length(file_bytes)),0) from private.pending_cash_reports") == cash_bytes_before
-print('PASS cash report rollback removes API functions and preserves every pending row and byte')
-sql(cash_report_migration.read_text(encoding='utf8'))
-assert sql("select to_regprocedure('public.cash_report_create(text,uuid,uuid,text,text,text)') is not null") == 't'
-sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
-before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
-credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
-for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
-    sql((ROOT/f'db/operations/{operation}.sql').read_text(encoding='utf8'))
-assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r") == before
-assert sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r") == credentials
-assert sql('select count(*) from private.app_sessions where revoked_at is null') == '0'
-print('PASS operational backup/reset/restore preserves users and requires fresh login')
-
-# Exercise the view's underlying row locks with independent PostgreSQL connections.
-# Fixed tokens below belong only to synthetic users in this disposable database.
-tenant_a = '00000000-0000-4000-8000-0000000000e1'
-tenant_b = '00000000-0000-4000-8000-0000000000e2'
-sql(f"""
-insert into private.establishments(id,name) values ('{tenant_a}','Concurrent A'),('{tenant_b}','Concurrent B');
-insert into private.tenant_memberships(user_id,tenant_id,role)
- select u.id,e.id,'admin' from private.app_users u cross join private.establishments e
- where u.username='sql.manager' and e.id in ('{tenant_a}','{tenant_b}');
-insert into private.tenant_inventory(tenant_id,id,state)
- values ('{tenant_a}',true,'{{"products":[],"documents":[],"movements":[],"revision":0}}'),
- ('{tenant_b}',true,'{{"products":[],"documents":[],"movements":[],"revision":0}}');
-insert into private.app_sessions(token_hash,user_id,expires_at,tenant_id)
- select encode(extensions.digest(repeat(v.token,64),'sha256'),'hex'),u.id,now()+interval '1 hour',v.tenant_id::uuid
- from private.app_users u cross join (values ('c','{tenant_a}'),('d','{tenant_b}')) v(token,tenant_id)
- where u.username='sql.manager';
-""")
-psql = ['psql','-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
-
-def save_statement(token, revision, marker):
-    return ("select public.inventory_save(repeat('%s',64),"
-            "jsonb_build_object('products','[]'::jsonb,'documents','[]'::jsonb,"
-            "'movements','[]'::jsonb,'revision',%s,'concurrencyMarker','%s'));"
-            % (token, revision, marker))
-
-def open_writer(statement):
-    process = subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,text=True,bufsize=1)
-    process.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
-                        + statement + "\n\\echo TENANT_WRITER_READY\n")
-    process.stdin.flush()
-    with selectors.DefaultSelector() as selector:
-        selector.register(process.stdout, selectors.EVENT_READ)
-        assert selector.select(timeout=8), 'Tenant writer barrier timed out'
-        for _ in range(8):
-            line = process.stdout.readline().strip()
-            if line == 'TENANT_WRITER_READY':
-                return process
-    process.kill()
-    raise AssertionError('Tenant writer failed before barrier')
-
-def commit_writer(process):
-    _, stderr = process.communicate('commit;\n',timeout=10)
-    assert process.returncode == 0, stderr
-
-writer = open_writer(save_statement('c',0,'first-writer'))
-waiter = subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE,text=True)
-try:
-    waiter.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
-                       + save_statement('c',0,'stale-writer') + '\ncommit;\n')
-    waiter.stdin.flush()
-    time.sleep(0.25)
-    assert waiter.poll() is None, 'Same-tenant writer did not wait for the row lock'
-    commit_writer(writer)
-    _, stderr = waiter.communicate(timeout=10)
-    assert waiter.returncode != 0 and '40001' in stderr, 'Stale same-tenant revision was not rejected'
-finally:
-    for process in (writer,waiter):
-        if process.poll() is None:
-            process.kill()
-assert sql(f"select state->>'concurrencyMarker' from private.tenant_inventory where tenant_id='{tenant_a}'") == 'first-writer'
-assert sql(f"select state->>'revision' from private.tenant_inventory where tenant_id='{tenant_a}'") == '1'
-print('PASS concurrent same-tenant saves serialize; exactly one revision succeeds')
-
-# Give both tenants revision 1. B must finish while A still holds its own lock.
-sql("set role anon; " + save_statement('d',0,'prepare-second-tenant'))
-writer = open_writer(save_statement('c',1,'independent-a'))
-try:
-    independent = subprocess.run(psql,input="begin; set statement_timeout='3s'; set local role anon;\n"
-                                 + save_statement('d',1,'independent-b') + '\ncommit;\n',
-                                 text=True,capture_output=True,timeout=6)
-    assert independent.returncode == 0, independent.stderr
-    commit_writer(writer)
-finally:
-    if writer.poll() is None:
-        writer.kill()
-assert sql(f"select count(*) from private.tenant_inventory where tenant_id in ('{tenant_a}','{tenant_b}') and state->>'revision'='2'") == '2'
-print('PASS concurrent different-tenant saves with equal revisions finish independently')
-
-# The authorized environment reset keeps Supabase-managed schemas outside its scope
-# and leaves exactly one fresh DBA bootstrap path.
-sql('delete from private.pending_cash_reports')
-sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
-for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
-              'tenant_inventory','cash_closings','pending_receipts','user_permissions',
-              'permission_audit','external_fiscal_rate_limits']:
-    assert sql(f'select count(*) from private.{table}') == '0', f'{table} reset'
-assert sql("select count(*) from auth.users") == '1', 'managed auth data preserved'
-assert sql("select count(*) from storage.buckets") == '1', 'managed storage buckets preserved'
-assert sql("select count(*) from storage.objects") == '1', 'managed storage objects preserved'
-sql("select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-fresh-dba',extensions.gen_salt('bf',12)),'$2a$','$2b$'))")
-fresh = sql("with login as (select public.inventory_login('admin.master','synthetic-fresh-dba') result) "
-            "select (result->>'must_change_password') || '|' || "
-            "jsonb_array_length(public.inventory_tenants(result->>'session_token')->'tenants') from login")
-assert fresh == 'true|0', f'fresh DBA first-login gate and empty directory: {fresh}'
-for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_20261021',
-                      'estq_backup_shared_inventory_20261021','estq_backup_pending_receipts_20261021',
-                      'estq_backup_function_defs_20261021']:
-    assert sql(f"select to_regclass('private.{old_snapshot}') is null") == 't', f'{old_snapshot} removed'
-print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
-print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
-
-, "do $ begin raise exception 'injected attribution failure'; end $; commit;", migration.read_text(encoding='utf8'), flags=re.I)
+        fault = migration_text.rsplit('commit;', 1)[0] + "do $$ begin raise exception 'injected attribution failure'; end $$; commit;"
         run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
         assert run.returncode != 0 and 'injected attribution failure' in run.stderr
         assert sql("select to_regclass('private.fiscal_document_attribution') is null") == 't'
@@ -326,6 +54,19 @@ print('PASS tenant cutover, isolation, privileges, password gate, token rotation
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/revocation-contract.sql').read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/cash-report-batch.sql').read_text(encoding='utf8'))
+
+# Exercise fiscal-attribution rollback without removing its audit records.
+# The rollback runs in a transaction that is deliberately reverted afterwards.
+rollback_sql = (ROOT/'supabase/rollback/20261023013000_fiscal_document_server_attribution.sql').read_text(encoding='utf8')
+sql("begin;\n" + rollback_sql + "\ndo $check$ begin "
+    "assert (select count(*) from private.fiscal_document_attribution)=2; "
+    "assert position('The JSON snapshot stays backward compatible' in "
+    "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure))=0; "
+    "end $check$;\nrollback;")
+assert sql("select count(*) from private.fiscal_document_attribution") == '2'
+assert sql("select position('The JSON snapshot stays backward compatible' in pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) > 0") == 't'
+print('PASS fiscal attribution rollback restores RPC and preserves audit rows')
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
 credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
 for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
