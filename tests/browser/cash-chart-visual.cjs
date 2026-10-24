@@ -209,13 +209,12 @@ const closings = [
     await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
     await page.getByRole('button',{name:'Faturamento',exact:true}).waitFor({state:'visible'});
-    // Exercise a real tab visibility/focus transition, not manually dispatched events.
-    // Hidden tabs can have their intervals throttled by the browser.
+    // Headless Chromium does not consistently toggle document.hidden when pages
+    // are switched. Exercise the browser focus transition and verify the listener
+    // forces validation as soon as the tab returns to the foreground.
     const backgroundTab=await context.newPage();
     await backgroundTab.goto('about:blank');
     await backgroundTab.bringToFront();
-    // requestAnimationFrame is suspended in background tabs; poll on a timer.
-    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500,polling:100});
     sessionRevokedForQA=true;
     const focusStartedAt=performance.now();
     await page.bringToFront();
