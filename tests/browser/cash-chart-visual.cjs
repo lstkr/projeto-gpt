@@ -75,6 +75,7 @@ const closings = [
       else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:printProducts,movements:[],documents:[],stockCounts:printCounts};
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
+      else if (name === 'supplier_identity_links') data = []; // Synthetic fixture, no supplier mappings.
       else if (name === 'cash_closings_list') data = closings;
       else if (name === 'pending_receipts_list') data = [];
       else if (name === 'inventory_logout') data = {ok:true};
