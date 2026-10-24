@@ -12,6 +12,7 @@ end $$;
 
 delete from private.pending_receipts;
 delete from private.cash_closings;
+delete from private.pending_cash_reports;
 delete from private.tenant_inventory;
 delete from private.app_sessions;
 delete from private.app_login_attempts;
@@ -37,6 +38,7 @@ begin
  or exists(select 1 from private.app_sessions)
  or exists(select 1 from private.tenant_inventory)
  or exists(select 1 from private.pending_receipts)
+ or exists(select 1 from private.pending_cash_reports)
  or exists(select 1 from private.cash_closings)
  then raise exception 'Test reset incomplete'; end if;
 end $$;
