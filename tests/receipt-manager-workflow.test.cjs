@@ -4,15 +4,20 @@ const fs = require('node:fs');
 const page = fs.readFileSync('pages/index.js','utf8');
 const sql = fs.readFileSync('db/pending-receipts.sql','utf8');
 
-test('pending cancellation is guarded by database role, not UI alone', () => {
+test('pending cancellation is guarded by ownership or manager permission in the database', () => {
   assert.match(sql,/function public\.pending_receipt_cancel\(p_token text, p_id uuid\)/);
-  assert.match(sql,/actor_role is distinct from 'admin'/);
+  assert.match(sql,/actor_role<>'admin' and existing\.owner_id is distinct from actor_id/);
   assert.match(sql,/existing\.state <> 'pending'/);
   assert.match(sql,/state='cancelled'/);
   assert.match(sql,/cancelled_by=actor_id/);
-  // A UI deve exigir papel gestor E permissao explicita; a RPC aplica a barreira real.
-  assert.match(page,/currentUser\?\.role==='admin'&&canFiscal\('fiscal\.pending\.cancel'\)&&<button[^>]*className="btn secondary"/);
-  assert.match(page,/currentUser\?\.role !== 'admin' \|\| !canFiscal\('fiscal\.pending\.cancel'\)/);
+  assert.match(page,/row\.canCancel&&<button/);
+  assert.match(page,/>Cancelar NF<\/button>/);
+  assert.match(page,/if \(!row\?\.canCancel/);
+  assert.match(page,/!supabase \|\| !accessCode/);
+  const migration=fs.readFileSync('supabase/migrations/20261024010000_tenant_scoped_receipt_actions.sql','utf8');
+  assert.match(migration,/perform private\.set_tenant_context\(p_token\)/);
+  assert.match(migration,/existing\.owner_id is distinct from actor\.id/);
+  assert.match(migration,/where p\.tenant_id=tenant_uuid and p\.state='pending'/);
 });
 test('official data becomes default only for verified SEFAZ response', () => {
   assert.match(page,/data\.source !== 'SVRS' \|\| data\.accessKey !== expectedKey/);

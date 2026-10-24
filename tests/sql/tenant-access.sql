@@ -6,7 +6,7 @@ from private.app_users where username='sql.manager';
 select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('synthetic-superadmin-only',extensions.gen_salt('bf',12)),'$2a$','$2b$'));
 set role anon;
 do $$
-declare token text; old_token text; employee_token text; tenant uuid; pending uuid; result jsonb; state jsonb; dba_token text; i integer;
+declare token text; old_token text; employee_token text; tenant uuid; pending uuid; employee_pending uuid; result jsonb; state jsonb; dba_token text; i integer;
  manager_id uuid; employee_id uuid; state_revision bigint;
 begin
  result:=public.inventory_login('admin.master','synthetic-superadmin-only'); dba_token:=result->>'session_token';
@@ -62,6 +62,16 @@ begin
  assert (result->>'must_change_password')::boolean;
  begin perform public.inventory_get(employee_token); raise exception 'Password gate bypassed'; exception when insufficient_privilege then null; end;
  result:=public.inventory_password_change(employee_token,'synthetic-employee-only','synthetic-new-password'); assert (result->>'ok')::boolean;
+ result:=public.pending_receipt_create(employee_token,'employee-note.png','image/png','eQ==','{}'::jsonb);
+ employee_pending:=(result->>'id')::uuid;
+ assert exists(select 1 from jsonb_array_elements(public.pending_receipts_list(employee_token)) r
+   where r->>'id'=employee_pending::text and (r->>'canCancel')::boolean);
+ begin
+  perform public.pending_receipt_cancel(employee_token,pending);
+  raise exception 'Employee cancelled a pending receipt created by another user' using errcode='XX000';
+ exception when insufficient_privilege then null; end;
+ result:=public.pending_receipt_cancel(employee_token,employee_pending);
+ assert (result->>'ok')::boolean;
  state:=public.inventory_get(employee_token);
  state:=state||jsonb_build_object(
   'revision',coalesce((state->>'revision')::bigint,0),

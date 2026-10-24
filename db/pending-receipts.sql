@@ -19,16 +19,17 @@ create policy deny_pending on public.pending_receipts for all to anon,authentica
 create or replace function public.pending_receipts_list(p_token text)
 returns jsonb language plpgsql security definer set search_path to ''
 as $function$
-declare uid uuid;
+ declare uid uuid; actor_role text;
 begin
- select u.id into uid from private.app_sessions s join private.app_users u on u.id=s.user_id
+ select u.id,u.role into uid,actor_role from private.app_sessions s join private.app_users u on u.id=s.user_id
  where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
  and s.expires_at>now() and s.revoked_at is null and u.active;
  if uid is null then raise exception 'Sessão inválida' using errcode='42501'; end if;
  if not private.has_permission(uid,'fiscal.pending.read') then raise exception 'Operação não autorizada' using errcode='42501'; end if;
  return coalesce((select jsonb_agg(jsonb_build_object(
  'id',p.id,'fileName',p.file_name,'mime',p.mime,'draft',p.draft,'revision',p.revision,
- 'state',p.state,'createdAt',p.created_at,'updatedAt',p.updated_at)
+ 'state',p.state,'createdAt',p.created_at,'updatedAt',p.updated_at,
+ 'canCancel',p.owner_id=uid or (actor_role='admin' and private.has_permission(uid,'fiscal.pending.cancel')))
  order by p.created_at desc)
  from public.pending_receipts p where p.state='pending'),'[]'::jsonb);
 end;
@@ -154,8 +155,11 @@ begin
   from private.app_sessions s join private.app_users u on u.id=s.user_id
   where s.token_hash=encode(extensions.digest(coalesce(p_token,''),'sha256'),'hex')
     and s.expires_at>now() and s.revoked_at is null and u.active;
-  if (actor_role is distinct from 'admin' or not private.has_permission(actor_id,'fiscal.pending.cancel')) then
-    raise exception 'Somente o Gestor pode cancelar notas pendentes.' using errcode='42501';
+  if actor_id is null or actor_role not in ('admin','employee') then
+    raise exception 'Operação não autorizada.' using errcode='42501';
+  end if;
+  if actor_role='admin' and not private.has_permission(actor_id,'fiscal.pending.cancel') then
+    raise exception 'Operação não autorizada.' using errcode='42501';
   end if;
   -- Same lock order as inventory_save: inventory first, pending row second.
   -- Otherwise simultaneous cancellation and posting can race or deadlock.
@@ -164,6 +168,9 @@ begin
   select * into existing from public.pending_receipts where id=p_id for update;
   if not found or existing.state <> 'pending' then
     raise exception 'Nota não está mais pendente.' using errcode='22023';
+  end if;
+  if actor_role<>'admin' and existing.owner_id is distinct from actor_id then
+    raise exception 'Você só pode cancelar uma nota pendente enviada por você.' using errcode='42501';
   end if;
   -- Prevent cancellation if another session has already committed its stock entry.
   if exists (

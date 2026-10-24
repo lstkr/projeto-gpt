@@ -11,7 +11,7 @@ import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { updateFiscalLine, resolveFiscalSubtotal } from '../lib/fiscal-calculation.mjs';
 import { canStartFiscalFinalReview, canConfirmFiscalDocument } from '../lib/fiscal-confirmation.mjs';
 import { filterDocumentHistory, formatDocumentIssueDate } from '../lib/document-history.mjs';
-import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
+import { cnpjDigits, formatSupplierCnpj, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
@@ -1292,6 +1292,9 @@ export default function Home() {
   const [pendingPreview, setPendingPreview] = useState(null);
   const pendingPreviewUrlRef = useRef('');
   const [error, setError] = useState('');
+  const errorAlertRef = useRef(null);
+  const firstFiscalFieldRef = useRef(null);
+  const focusDraftOnOpenRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
@@ -1308,6 +1311,15 @@ export default function Home() {
   const sessionRevokedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
   const receiptOcrWorkerRef = useRef(null);
+
+  useEffect(() => {
+    if(error) errorAlertRef.current?.focus();
+  },[error]);
+  useEffect(() => {
+    if(!draft || !focusDraftOnOpenRef.current) return;
+    focusDraftOnOpenRef.current=false;
+    requestAnimationFrame(()=>firstFiscalFieldRef.current?.focus());
+  },[draft?.pendingId,draft?.fileName]);
   const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
   const uploadRef = useRef(null);
 
@@ -2557,8 +2569,8 @@ export default function Home() {
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
   async function cancelPendingReceipt(row) {
-    if (currentUser?.role !== 'admin' || !canFiscal('fiscal.pending.cancel') || !supabase || !accessCode) {
-      setError('Somente o Gestor pode cancelar notas pendentes.'); return;
+    if (!row?.canCancel || !supabase || !accessCode) {
+      setError('Você não tem autorização para cancelar esta nota pendente.'); return;
     }
     if (!window.confirm('Cancelar definitivamente a nota "' +
       (row.draft?.supplier || row.fileName) +
@@ -2573,7 +2585,7 @@ export default function Home() {
       setPendingReceipts((rows)=>rows.filter((item)=>item.id!==row.id));
       setDraft((current)=>current?.pendingId===row.id?null:current);
       setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
-      setToast('Nota cancelada pelo Gestor.');
+      setToast('Nota pendente cancelada.');
     }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
   }
   async function openPendingReceipt(row){
@@ -2581,6 +2593,7 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
+    focusDraftOnOpenRef.current=true;
     setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
@@ -3055,6 +3068,7 @@ export default function Home() {
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, lineTotalsEdited, subtotalManuallyEdited, ...documentToSave } = draft;
+    documentToSave.supplierCnpj = formatSupplierCnpj(draft.supplierCnpj);
     delete documentToSave.checkedBy;
     pendingAttributionRef.current.set(documentId, {
       userId: currentUser?.id,
@@ -3400,11 +3414,11 @@ export default function Home() {
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
               <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Visualizar arquivo</button>
               {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
-              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
+              {row.canCancel&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          {error && <div className="error" role="alert"><Icon type="alert" size={18}/><span>{error}</span><button type="button" aria-label="Dispensar erro" onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
+          {error && <div ref={errorAlertRef} className="error" role="alert" tabIndex={-1}><Icon type="alert" size={18}/><span>{error}</span><button type="button" aria-label="Dispensar erro" onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
@@ -3485,7 +3499,7 @@ export default function Home() {
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input ref={firstFiscalFieldRef} value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={formatSupplierCnpj(draft.supplierCnpj||'')} onChange={(e)=>changeDraft('supplierCnpj',formatSupplierCnpj(e.target.value))} placeholder="14 dígitos" inputMode="text"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
