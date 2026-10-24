@@ -86,7 +86,7 @@ const closings = [
     await page.getByLabel('Login', {exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
-    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).click();
+    await page.getByRole('button',{name:'Faturamento',exact:true}).click();
     await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
 
     const columns = page.locator('.cash-chart-month .cash-bar-column');
@@ -208,7 +208,7 @@ const closings = [
     await page.getByLabel('Login',{exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
-    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
+    await page.getByRole('button',{name:'Faturamento',exact:true}).waitFor({state:'visible'});
     // Exercise a real tab visibility/focus transition, not manually dispatched events.
     // Hidden tabs can have their intervals throttled by the browser.
     const backgroundTab=await context.newPage();
