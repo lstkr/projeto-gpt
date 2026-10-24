@@ -41,8 +41,16 @@ Seguir AGENTS.md e os perfis em docs/agents; não presumir Supabase Auth.
 Manter identidades originais e conferência fiscal humana. Nunca alterar
 credenciais, resetar banco ou fazer deploy destrutivo sem autorização.
 Não atribuir nomes de usuário GitHub fictícios aos papéis de Engineer.
-Issue #52 (main sem proteção efetiva) e #54 (escopo Vercel) continuam
-impedimentos administrativos — checks falhos não bloqueiam push direto.
+Visibilidade PUBLICA do repositorio autorizada pelo proprietario em 24/10/2026
+para testes manuais. NAO exigir que o repositorio seja privado, nem bloquear
+PRs/homologacao apenas pela visibilidade publica. Garantir ausencia de segredos,
+credenciais, tokens, dados pessoais, backups e imagens fiscais privadas no
+codigo e historico. A autorizacao publica NAO libera push direto na main,
+aplicacao de migracoes em producao ou deploy sem homologacao.
+Issue #52 acompanha a protecao efetiva da main, que pode ser habilitada
+em repositorios publicos no GitHub Free (Settings > Branches/Rules).
+Ate confirmar main.protected=true e testes de bloqueio, checks falhos nao
+bloqueiam push direto. Issue #54 (escopo Vercel) segue independente.
 Scanner #35 permanece adiado por solicitação expressa do gestor.
 
 ## Exemplo de kickoff por equipe
