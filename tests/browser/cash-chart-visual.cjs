@@ -216,8 +216,13 @@ const closings = [
     const cdp=await context.newCDPSession(page);
     const {windowId}=await cdp.send('Browser.getWindowForTarget');
     await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'minimized'}});
-    // requestAnimationFrame is suspended when hidden; use timer polling.
-    await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500,polling:100});
+    // Xvfb can report document.visible even for a minimized Chromium window.
+    // Record this limitation explicitly: a true hidden-tab event still needs
+    // human QA on a desktop browser; do not claim it was proven by this runner.
+    await page.waitForTimeout(150);
+    const actuallyHidden=await page.evaluate(()=>document.hidden);
+    console.log('QA Xvfb minimized window document.hidden: '+actuallyHidden);
+    if(!actuallyHidden) console.warn('QA limitation: hidden-tab visibility was NOT reproduced in Xvfb; verify manually.');
     sessionRevokedForQA=true;
     const focusStartedAt=performance.now();
     await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
