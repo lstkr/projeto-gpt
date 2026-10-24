@@ -123,6 +123,21 @@ Caixa Físico`);
  assert.equal(r.outras,'0');
 });
 
+test('combina campos reconhecidos por Paddle e Tesseract sem aceitar leitura ausente como zero',async()=>{
+ const {parseCashReportCandidates}=await parser;
+ const tesseract=`NFC-e\nCARTAO CREDITO R$ 150,00\nTotal R$ 300,00\nCaixa Digital`;
+ const paddle=`Caixa do dia: 10/10/2026\nCaixa Nº: 003\nOperador: TESTE\nNFC-e\nCARTAO DEBITO R$ 150,00\n(=)Total R$ 300,00\nCaixa Digital`;
+ const result=parseCashReportCandidates(tesseract,paddle);
+ assert.equal(result.day,'2026-10-10');
+ assert.equal(result.register,'003');
+ assert.equal(result.operator,'TESTE');
+ assert.equal(result.cartaoCredito,'150.00');
+ assert.equal(result.cartaoDebito,'150.00');
+ assert.equal(result.reportedTotal,300);
+ assert.ok(result._recognizedFields.includes('cartaoCredito'));
+ assert.ok(result._recognizedFields.includes('cartaoDebito'));
+});
+
 test('foto térmica sem cabeçalho NFC-e e sem sinais nas movimentações ainda lê dados impressos',async()=>{
  const {parseCashReport}=await parser;
  const text=`Caixa do dia: 08/10/2025

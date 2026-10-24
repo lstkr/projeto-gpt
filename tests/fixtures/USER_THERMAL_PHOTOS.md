@@ -65,4 +65,10 @@ Foi comparado o PP-OCRv6 multilíngue em português, executado localmente via WA
 
 A interface de homologação mostra os textos de Tesseract e PP-OCRv6 em colunas e permite aplicar a leitura alternativa aos campos antes da conferência. Para imagens fiscais, a tabela também sinaliza linhas não concordantes. A aplicação baixa apenas os modelos públicos pelo próprio domínio do preview; os documentos ficam no navegador e não são enviados ao serviço que hospeda os modelos. **#94 segue aberta até melhorar a leitura automática e validar as 13 imagens sem depender da escolha humana.**
 
+### Fusão automática de campos (24/10/2026)
+
+Adicionamos uma fusão conservadora por campo para o fechamento de caixa: PP-OCRv6 tem prioridade quando identifica explicitamente um campo e Tesseract só o preenche quando não há candidato do Paddle. Os avisos e a comparação lado a lado continuam disponíveis, e o lançamento ainda exige revisão humana. Nas 7 fotos de caixa, a fusão acertou **38/65 campos (58%)**.
+
+Para as 7 notas/documentos fiscais, o alinhamento de itens entre candidatos PSM 4, PSM 6 e PP-OCRv6 acertou **11/24 campos (46%)**. Somando as duas categorias, o experimento exploratório marcou **49/89 (55%)**; esse agregado não significa 50% em cada categoria nem substitui a validação no fluxo de homologação. A etapa fiscal continua abaixo de 50%, por isso #94 não está pronta para encerramento.
+
 As 13 fotos enviadas nesta conversa estão disponíveis localmente como arquivos privados, sem renomeá-las, em `project_sources/`. Execute `npm run test:private-ocr /caminho/para/as/fotos`; se usar um modelo Português já instalado, `TESSERACT_LANG_PATH` pode apontar para uma pasta com `por.traineddata` ou `por.traineddata.gz`. O runner associa os arquivos pelo SHA-256 e imprime apenas contagens, campos com falha e latência; não imprime nomes físicos, texto OCR ou dados fiscais.

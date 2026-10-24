@@ -1,4 +1,4 @@
-Warning: truncated output (original token count: 74865)
+Warning: truncated output (original token count: 74909)
 Total output lines: 4028
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -19,7 +19,7 @@ import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { summarizeCashMonthly } from '../lib/cash-chart-references.mjs';
-import { parseCashReport } from '../lib/cash-report-parser.mjs';
+import { parseCashReport, parseCashReportCandidates } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { cashReportMimeFromBytes, cashReportSafeDownloadName, decodeCashReportBase64, encodeCashReportBase64, cashReportFileMatchesMime } from '../lib/cash-report-ui.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
@@ -1575,9 +1575,7 @@ export default function Home() {
   useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
-  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
-
-  useEffect(() …34865 tokens truncated…            <tbody>{group.items.map((p) => <tr key={p.id}>
+  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, s…34909 tokens truncated…y={p.id}>
                   <td><b>{p.name}</b><small className="purchase-detail">{p.sku || 'Sem código'}</small></td>
                   <td><span>{p.usualSupplier || 'A definir'}</span><small className="purchase-detail">{p.supplierSource === 'manual' ? 'Definido pelo Gestor' : p.supplierSource === 'histórico' ? 'Mais frequente no histórico' : 'Sem compras anteriores'}</small><button className="text-btn purchase-inline-edit" type="button" onClick={() => openProduct(p)}>Alterar fornecedor</button></td>
                   <td>{qty(p.stock)} / {qty(p.min)} {p.unit}</td>
@@ -1913,7 +1911,7 @@ export default function Home() {
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
               <b>Arquivo importado: {cashForm.sourceFileName}</b>
               {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
-              <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
+              <p>O formulário combina os campos reconhecidos por PP-OCRv6 e Tesseract. Compare as leituras com o comprovante; nenhum campo é confirmado sem sua revisão.</p>
               {cashImportAlternativeText?<details className="ocr-comparison">
                 <summary>Comparar leituras OCR lado a lado</summary>
                 <div className="ocr-comparison-grid">
