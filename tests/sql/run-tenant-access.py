@@ -57,17 +57,25 @@ sql((ROOT/'tests/sql/revocation-contract.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/cash-report-batch.sql').read_text(encoding='utf8'))
 
 # Exercise fiscal-attribution rollback without removing its audit records.
+# The tenant fixture now creates three attributed documents; compare to the
+# actual pre-rollback snapshot rather than assuming a fixed row count.
 # The rollback runs in a transaction that is deliberately reverted afterwards.
+audit_snapshot_query = ("select coalesce(md5(string_agg(to_jsonb(r)::text,'' "
+                        "order by tenant_id, document_id)),'') "
+                        "from private.fiscal_document_attribution r")
+audit_snapshot_before = sql(audit_snapshot_query)
+audit_count_before = sql("select count(*) from private.fiscal_document_attribution")
+assert audit_count_before.isdigit() and int(audit_count_before)>=2
 rollback_sql = (ROOT/'supabase/rollback/20261023013000_fiscal_document_server_attribution.sql').read_text(encoding='utf8')
-sql("begin;\n" + rollback_sql + "\ndo $check$ declare audit_count bigint; marker_position integer; begin "
+sql("begin;\\n" + rollback_sql + "\\ndo $check$ declare audit_count bigint; marker_position integer; begin "
     "select count(*) into audit_count from private.fiscal_document_attribution; "
     "select position('The JSON snapshot stays backward compatible' in "
     "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) "
     "into marker_position; "
-    "if audit_count<>2 then raise exception 'Rollback audit count expected 2, got %', audit_count; end if; "
+    f"if audit_count<>{audit_count_before} then raise exception 'Rollback audit count changed from {audit_count_before} to %', audit_count; end if; "
     "if marker_position<>0 then raise exception 'Rollback attribution marker still present at %', marker_position; end if; "
-    "end $check$;\nrollback;")
-assert sql("select count(*) from private.fiscal_document_attribution") == '2'
+    "end $check$;\\nrollback;")
+assert sql(audit_snapshot_query) == audit_snapshot_before, 'Fiscal attribution rollback changed audit records'
 assert sql("select position('The JSON snapshot stays backward compatible' in pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) > 0") == 't'
 print('PASS fiscal attribution rollback restores RPC and preserves audit rows')
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
