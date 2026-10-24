@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 74909)
-Total output lines: 4028
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
 import CountPrintAction from '../components/CountPrintAction';
@@ -1575,7 +1572,1981 @@ export default function Home() {
   useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
-  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, s…34909 tokens truncated…y={p.id}>
+  }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin' || sessionRevokedRef.current) return;
+    if (skipNextSyncRef.current) {
+      skipNextSyncRef.current = false;
+      return;
+    }
+    setSaveStatus('Salvando…');
+    const timer = setTimeout(() => {
+      // Serialize snapshots: each save uses the revision acknowledged by Supabase.
+      // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
+      saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+        if (sessionRevokedRef.current) return;
+        const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
+          p_session_token: accessCode,
+          p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
+        });
+        if (saveError || !saved?.ok) {
+          setSaveStatus('Falha ao salvar');
+          setToast(saveError?.message?.includes('outra sessão')
+            ? 'O estoque mudou em outra sessão. Atualize a página para evitar sobrescrever dados.'
+            : 'Não foi possível salvar no estoque compartilhado. Confira sua sessão e a conexão.');
+        } else {
+          revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
+          setSaveStatus('Sincronizado');
+          const pendingAttributions = Array.from(pendingAttributionRef.current.entries());
+          if (pendingAttributions.length) {
+            let authoritativeState = null;
+            try {
+              const { data: serverState, error: readError } = await supabase.rpc('inventory_get', {
+                p_session_token: accessCode
+              });
+              if (!readError && serverState) authoritativeState = serverState;
+            } catch (_) {}
+            if (authoritativeState) {
+              const serverDocuments = new Map((authoritativeState.documents || []).map((document) => [document.id, document]));
+              const serverMovements = new Map((authoritativeState.movements || []).map((movement) => [movement.id, movement]));
+              const confirmedAttributions = pendingAttributions.filter(([documentId, pending]) => {
+                const document = serverDocuments.get(documentId);
+                return document?.checkedByVerified === true
+                  && document.checkedByUserId === pending.userId
+                  && Boolean(document.checkedBy)
+                  && pending.movementIds.every((movementId) => {
+                    const movement = serverMovements.get(movementId);
+                    return movement?.byVerified === true && movement.byUserId === pending.userId;
+                  });
+              });
+              if (confirmedAttributions.length) {
+                const confirmedIds = new Set(confirmedAttributions.map(([documentId]) => documentId));
+                setDocuments((current) => current.map((document) =>
+                  confirmedIds.has(document.id) ? serverDocuments.get(document.id) : document));
+                const confirmedMovementIds = new Set(confirmedAttributions.flatMap(([, pending]) => pending.movementIds));
+                setMovements((current) => current.map((movement) =>
+                  confirmedMovementIds.has(movement.id) ? serverMovements.get(movement.id) : movement));
+                confirmedAttributions.forEach(([documentId]) => pendingAttributionRef.current.delete(documentId));
+              }
+            }
+          }
+          // Mark processed only after the shared stock snapshot was committed.
+          for(const completed of documents.filter(d=>d.pendingReceiptId)){
+            if(pendingMarking.current.has(completed.pendingReceiptId))continue;
+            pendingMarking.current.add(completed.pendingReceiptId);
+            const {data:marked,error:markError}=await supabase.rpc('pending_receipt_mark_posted',{
+              p_token:accessCode,p_id:completed.pendingReceiptId
+            });
+            if(markError||!marked?.ok)setPendingSaveError(markError?.message||'Falha ao arquivar a conferência concluída.');
+            else setPendingReceipts(rows=>rows.filter(r=>r.id!==completed.pendingReceiptId));
+            pendingMarking.current.delete(completed.pendingReceiptId);
+          }
+        }
+      });
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [supabase, accessGranted, accessCode, dataReady, products, movements, documents, suppliers, mustChangePassword, currentUser?.role]);
+
+  const administrationGuardRef = useRef(null);
+  administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
+  const invokeAdministration = useCallback(async (name, args) => {
+    if (!supabase || !accessCode || sessionRevokedRef.current) throw new Error('Sessão necessária.');
+    if (name === 'inventory_select_tenant') {
+      // Only a stable view can switch. Token rotation at the database prevents
+      // delayed requests from the previous unit from crossing this boundary.
+      const guard = administrationGuardRef.current;
+      if (guard.saveStatus !== 'Sincronizado' || guard.busy || guard.cashSaving || guard.cashImporting || guard.countBusy || guard.mergeBusy || guard.deletingDocId || guard.pendingBusy || guard.draft || guard.draftQueueLength || guard.manualMode || guard.modal) {
+        throw new Error('Conclua as operações da unidade atual antes de trocar.');
+      }
+      setDataReady(false);
+      try { await saveQueueRef.current; await pendingSaveSerial.current; }
+      catch { setDataReady(true); throw new Error('Falha ao concluir gravações pendentes.'); }
+    }
+    try {
+      const { data, error: rpcError } = await supabase.rpc(name, { ...args, p_token: accessCode });
+      if (rpcError || !data || data.ok === false) throw new Error('Operação recusada.');
+      if (name === 'inventory_select_tenant') {
+        if (!data.session_token || data.session_token === accessCode) throw new Error('Rotação de sessão necessária.');
+        // Never put a token for the new tenant into state containing old stock.
+        try { sessionStorage.setItem('projeto-gpt-session', data.session_token); }
+        catch {
+          // The old token is revoked. A fresh login is safer than rendering
+          // state from the previous unit when browser storage is unavailable.
+          window.location.replace(window.location.pathname + window.location.search);
+          throw new Error('Entre novamente para acessar a unidade.');
+        }
+      }
+      return data;
+    } catch (failure) {
+      if (name === 'inventory_select_tenant') {
+        setDataReady(true);
+        setToast('Troca de estabelecimento não concluída. Entre novamente se a sessão expirou.');
+      }
+      throw failure;
+    }
+  }, [supabase, accessCode]);
+
+  const reloadSelectedTenant = useCallback(async () => {
+    window.location.replace(window.location.pathname + window.location.search);
+  }, []);
+
+  const finishPasswordChange = useCallback(async () => {
+    if (supabase && accessCode) await supabase.rpc('inventory_logout', { p_session_token: accessCode });
+    try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
+    window.location.replace(window.location.pathname + window.location.search);
+  }, [supabase, accessCode]);
+
+  function handleLock() {
+    const token = accessCode;
+    if (supabase && token) {
+      void supabase.rpc('inventory_logout', { p_session_token: token });
+    }
+    try {
+      sessionStorage.removeItem('projeto-gpt-session');
+      sessionStorage.removeItem('projeto-gpt-access');
+    } catch (_) {}
+    setAccessCode('');
+    setCurrentUser(null);
+    setMustChangePassword(false);
+    setLoginPassword('');
+    setAccessGranted(false);
+    setDataReady(false);
+    setAccessMessage('Você saiu da sua conta. Entre novamente para acessar o estoque.');
+    setSaveStatus('');
+    setDraft(null);
+    setDraftQueue([]);
+    setDraftBatch(null);
+    setError('');
+    // Reload clears in-flight state and prevents a stale save effect from
+    // persisting old inventory data after logout.
+    window.location.replace(window.location.pathname + window.location.search);
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(''), 3300);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const low = products.filter(isLow);
+  const value = products.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.cost || 0), 0);
+  const units = products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
+  const categories = ['Todas', ...new Set(products.map((p) => p.category).filter(Boolean))];
+  // Re-run automatically whenever the shared catalog changes, without mutating it.
+  const duplicatePairs = useMemo(() => findPotentialDuplicates(products), [products]);
+  const registrationDuplicateHints = useMemo(() => editing || !productForm.name?.trim() ? [] :
+    findDuplicatesForCandidate({ ...productForm, id: '__novo_produto__' }, products).slice(0, 3),
+    [editing, productForm, products]);
+  const shownProducts = useMemo(() => products.filter((p) => {
+    const matches = [p.name, p.sku, p.category].some((v) => norm(v).includes(norm(query)));
+    const matchesCategory = category === 'Todas' || p.category === category;
+    const matchesFilter = filter === 'Todos' || (filter === 'Estoque baixo' ? isLow(p) : !isLow(p));
+    return matches && matchesCategory && matchesFilter;
+  }), [products, query, category, filter]);
+
+  const nextCount=countDueDate(countSettings,stockCounts);
+  const countDue=Boolean(nextCount && nextCount<=countDay());
+  const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
+  const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
+  const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const filteredHistoryDocuments = filterDocumentHistory(documents, historyFilters);
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Faturamento','Envie relatórios, confira cada fechamento e acompanhe a evolução.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+
+  const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
+  const draftSubtotal = resolveFiscalSubtotal(draft, draftItemsSubtotal);
+  const draftDiscount = draft ? Number(draft.discount || 0) : 0;
+  // The net payable amount is derived from the gross subtotal and discounts, never typed manually.
+  const draftTotal = Math.round((draftSubtotal - draftDiscount + Number(draft?.additionalCharges || 0)) * 100) / 100;
+  const reportedFiscalTotal = draft?.total != null && draft?.total !== '' && Number.isFinite(Number(draft.total)) ? Number(draft.total) : null;
+  const reportedTotalMismatch = Boolean(draft && reportedFiscalTotal != null && Math.abs(reportedFiscalTotal - draftTotal) > 0.05);
+  const totalsItemsMismatch = Boolean(draft && Math.abs(draftItemsSubtotal - draftSubtotal) > 0.05);
+  const draftExtras = draft ? Number(draft.additionalCharges || 0) : 0;
+  const draftIdentifiedItemDiscounts = (draft?.items || []).reduce((sum,it) => sum + Number(it.itemDiscount || 0), 0);
+  const discountUnattributed = Boolean(draft && draft.items.length > 1 &&
+    draftDiscount - draftIdentifiedItemDiscounts > 0.02);
+  const totalsFinalMismatch = Boolean(draft && (draftTotal < -0.01 || reportedTotalMismatch));
+  const officialComparison = draft?.officialItems?.length ? compareInvoiceItems(draft.items, draft.officialItems) : [];
+  const officialMissing = officialComparison.filter((r) => !r.ocr).length;
+  const officialTotalsMismatch = Boolean(draft && draft.officialOrigin === 'sefaz' && (
+    (draft.officialTotal != null && Math.abs(draftTotal - Number(draft.officialTotal)) > 0.02) ||
+    (draft.officialSubtotal != null && Math.abs(draftSubtotal - Number(draft.officialSubtotal)) > 0.05) ||
+    (draft.officialDiscount != null && Math.abs(draftDiscount - Number(draft.officialDiscount)) > 0.02)
+  ));
+  const currentHistoryMatches = useMemo(() =>
+    draft ? findHistoricalMatches(draft, documents, products) : [],
+    [draft, documents, products]);
+  const receiptReviewRows = (draft?.items || []).map((it, index) => {
+    const issues = [];
+    if (!shouldPostReceiptItem(it)) issues.push('Despesa/serviço fiscal: não será lançado como mercadoria. Confira a classificação.');
+    const targetProduct = products.find((p) => p.id === it.productId);
+    const mappedProduct = targetProduct || findReceiptCatalogProduct(it, products, draft.supplierCnpj);
+    const previousPurchase = currentHistoryMatches[index];
+    if (previousPurchase && (!previousPurchase.confident || !previousPurchase.productId ||
+        (it.productId && it.productId !== '__new__' && it.productId !== previousPurchase.productId))) {
+      issues.push('Compra anterior deste fornecedor: "' + previousPurchase.historicalName +
+        '" (NF ' + (previousPurchase.invoiceNumber || 'sem número') +
+        '). Revise o vínculo para evitar duplicatas.');
+    }
+    if (!mappedProduct && shouldPostReceiptItem(it) && it.productId !== '__new__')
+      issues.push('Produto ainda não vinculado ao estoque: confirme se é novo ou associe ao cadastro existente.');
+    if (it.productId === '__new__') issues.push('Novo cadastro solicitado: confirme se não existe um item equivalente antes de lançar.');
+    const aliasProduct = findSupplierAliasProduct(it, products, draft.supplierCnpj);
+    const candidateDuplicates = !targetProduct && shouldPostReceiptItem(it) ?
+      findDuplicatesForCandidate({
+        id: '__item_fiscal_' + index, name: it.name, sku: it.code, unit: it.unit,
+        supplierCodes: draft.supplierCnpj && it.code ? [{ cnpj: draft.supplierCnpj, code: it.code }] : []
+      }, products) : [];
+    if (!mappedProduct && candidateDuplicates.length && it.productId !== '__new__') issues.push(
+      'Possível duplicidade com "' + candidateDuplicates[0].left.name +
+      '". Confira e selecione o produto existente antes de criar outro.');
+    if (aliasProduct && !targetProduct &&
+        normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.originalName ?? it.name))
+      issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
+        '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
+    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
+      issues.push('Código fiscal cadastrado em outra unidade. Selecione o produto interno e informe a quantidade convertida.');
+    if (targetProduct && normalizeReceiptName(targetProduct.name) !== normalizeReceiptName(it.name))
+      issues.push('Produto da nota associado a cadastro de outro nome: confira o vínculo.');
+    const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
+    if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
+    if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
+
+    const row = officialComparison.find((r) => r.ocrIndex === index);
+    if (row && row.issues.length) issues.push(...row.issues);
+    if (it.readingWarning) issues.push(it.readingWarning);
+    if (it.unitInferred) issues.push('Unidade não reconhecida no OCR.');
+    if (/manjeric|hortel|alface|rucula|salsa|cebolinha/i.test(norm(it.name)) &&
+      normalizeReceiptUnit(it.unit) === 'ml') issues.push('Unidade ML incomum para este produto: confirme com o cupom e o estoque.');
+    if (Math.abs(Number(it.quantity || 0) * Number(it.unitPrice || 0) - receiptItemTotal(it)) > 0.055)
+      issues.push('Preço × quantidade não corresponde ao total da linha.');
+    if (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz')
+      issues.push('Sem confirmação oficial automática: conferir com a foto.');
+    if (String(draft.source || '').startsWith('PDF'))
+      issues.push('PDF preenchido manualmente: conferir com o documento.');
+    const existingByName = !targetProduct && products.find((p) => normalizeReceiptName(p.name) === normalizeReceiptName(it.name));
+    if (existingByName && normalizeReceiptUnit(existingByName.unit) !== normalizeReceiptUnit(it.unit))
+      issues.push('Unidade do produto já cadastrado: ' + existingByName.unit + '. Confira a conversão.');
+    return { issues: [...new Set(issues)], requiresReview: issues.length > 0,
+      done: issues.length === 0 || draft.reviewedItems?.[it.lineId] === true };
+  });
+  const totalsRequireReview = Boolean(draft && (
+    Boolean(draft.manualInvoice) || totalsItemsMismatch || totalsFinalMismatch || officialTotalsMismatch || discountUnattributed || Boolean(draft.totalsWarning) ||
+    (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
+    String(draft.source || '').startsWith('PDF')
+  ));
+  const readyForFinalReview = canStartFiscalFinalReview(draft, receiptReviewRows);
+  const cashMonthly=useMemo(()=>{
+    const [year,month]=cashMonth.split('-').map(Number);
+    return aggregateCashMonthly(closings,year,month);
+  },[closings,cashMonth]);
+  const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
+  const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
+  const cashChartDays=useMemo(()=>{
+    if(cashChartScope==='year') return cashYearly.daily;
+    const [year,month]=cashMonth.split('-').map(Number);
+    const daysInMonth=new Date(year,month,0).getDate();
+    const revenueByDay=new Map(cashMonthly.daily.map(item=>[item.day,item.revenue]));
+    return Array.from({length:daysInMonth},(_,index)=>{
+      const day=`${cashMonth}-${String(index+1).padStart(2,'0')}`;
+      return {day,revenue:revenueByDay.get(day)??0};
+    });
+  },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
+  const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
+  const cashMonthlyReferences=summarizeCashMonthly(cashMonthly.daily);
+  const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
+  const cashChartEntries=useMemo(()=>cashSelectedClosingId
+    ? closings.filter(entry=>String(entry.id)===String(cashSelectedClosingId))
+    : cashSelectedDay?closings.filter(entry=>entry.day===cashSelectedDay):[],[closings,cashSelectedDay,cashSelectedClosingId]);
+  const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
+  const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
+  const purchaseList = purchaseData.items;
+  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents, suppliers, supplierIdentityLinks), [documents, suppliers, supplierIdentityLinks]);
+  const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
+  const manualMatches = useMemo(() => products.filter((p) =>
+    [p.name, p.sku, ...(p.alternateSkus || [])].some((value) => norm(value).includes(norm(manualSearch)))
+  ).slice(0, 30), [products, manualSearch]);
+  const manualChosen = products.find((p) => p.id === manualChosenId);
+  const manualDuplicateSuggestions = useMemo(() => manualNew && manualForm.name.trim()
+    ? findDuplicatesForCandidate({id:'__manual_new__', name:manualForm.name, sku:manualForm.sku, unit:manualForm.unit}, products)
+    : [], [manualNew,manualForm.name,manualForm.sku,manualForm.unit,products]);
+
+  function downloadPurchaseList() {
+    if (!purchaseList.length) { setToast('Nenhum item abaixo do estoque mínimo.'); return; }
+    const rows = [['Categoria','Produto','Fornecedor habitual','Estoque atual','Estoque mínimo','Quantidade a comprar','Unidade','Preço médio pago (R$)','Preço de referência (R$)','Origem do preço','Total estimado (R$)']];
+    for (const group of purchaseData.categories) {
+      rows.push([group.name,'','','','','','','','','','']);
+      for (const p of group.items) rows.push([group.name,p.name,p.usualSupplier || 'A definir',p.stock,p.min,p.buy,p.unit,
+        p.averagePaid ?? '',p.unitEstimate ?? '',p.priceSource,p.estimate ?? '']);
+      rows.push([group.name,'SUBTOTAL','','','','','','','','',group.subtotal]);
+    }
+    rows.push(['TOTAL GERAL','','','','','','','','','',purchaseData.total]);
+    if (purchaseData.missingPrices) rows.push(['AVISO',purchaseData.missingPrices + ' produto(s) sem preço de referência; orçamento parcial','','','','','','','','','']);
+    const csv = '\uFEFF' + rows.map((row) => row.map((value) => '"' + String(value ?? '').replace(/"/g, '""') + '"').join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'lista-de-compras-cafeteria-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); setToast('Lista de compras exportada.');
+  }
+
+  function startManualInvoice() {
+    if (manualMode || draft || draftQueue.length) {
+      setError('Conclua a entrada ou conferência atual antes de iniciar outra nota.');
+      return;
+    }
+    setDraft({
+      source:'Nota cadastrada manualmente (sem validação SEFAZ)',
+      fileName:'Nota digitada manualmente',
+      supplier:'', supplierCnpj:'', invoiceNumber:'',
+      date:new Date().toLocaleDateString('pt-BR'),
+      checkedBy:'', finalReviewed:false, reviewedItems:{},
+      items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
+      status:'Aguardando conferência', manualInvoice:true
+    });
+    setError('');setView('documents');
+  }
+  function selectManualInvoiceProduct(index, id) {
+    const product=products.find((p)=>p.id===id);
+    setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[d.items[index]?.lineId]:false},
+      finalReviewed:false,items:d.items.map((it,i)=>i===index && product
+        ? {...it,productId:product.id,name:product.name,code:product.sku,
+           unit:product.unit,unitPrice:Number(product.cost)||0,
+           lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
+           readingWarning:''} : it)}));
+  }
+  async function readCashPdfWithOcr(file){
+    // Shared receipt OCR engine: Tesseract, also used for invoice photos.
+    // PDF.js only renders the page. It does not interpret the register totals.
+    const pdfjs=await import('pdfjs-dist/legacy/build/pdf.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc=`/vendor/pdf.worker-${pdfjs.version}.min.mjs`;
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    const task=pdfjs.getDocument({data:bytes,stopAtErrors:false,isEvalSupported:false});
+    let worker;
+    try{
+      const pdf=await task.promise;
+      const {createWorker}=await import('tesseract.js');
+      worker=await createWorker('por');
+      await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
+      const texts=[],alternativeTexts=[];
+      for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,5);pageNumber++){
+        const page=await pdf.getPage(pageNumber);
+        const viewport=page.getViewport({scale:2.5});
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+        try{
+          await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+          const recognition=await worker.recognize(canvas);
+          texts.push(recognition.data.text||'');
+          try{alternativeTexts.push(await runPaddleOcr(canvas));}catch{alternativeTexts.push('');}
+        }finally{canvas.width=0;canvas.height=0;page.cleanup();}
+      }
+      return {text:texts.join('\n'),alternativeText:alternativeTexts.filter(Boolean).join('\n')};
+    }finally{
+      if(worker)await worker.terminate().catch(()=>{});
+      await task.destroy();
+    }
+  }
+  function cashReportUuid(){
+    if(!globalThis.crypto?.getRandomValues)throw new Error('Este navegador não permite criar um identificador seguro para o lote.');
+    const bytes=globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+    const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+  }
+  async function refreshCashReports(){
+    if(!supabase||!accessCode)return [];
+    const {data,error}=await supabase.rpc('cash_reports_list',{p_token:accessCode});
+    if(error||!Array.isArray(data))throw new Error(error?.message||'Não foi possível atualizar a fila de faturamentos pendentes.');
+    setCashReports(data);return data;
+  }
+  async function readCashReportText(file){
+    const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
+    if(fileKind==='pdf'){
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const base64=encodeCashReportBase64(bytes);
+      const response=await fetch('/api/cash-extract',{method:'POST',
+        headers:{'content-type':'application/json','x-estoque-session':accessCode},
+        body:JSON.stringify({base64})});
+      const parsed=await response.json();
+      if(response.ok)return {text:parsed.text||'',alternativeText:''};
+      if(response.status===422){
+        try{return await readCashPdfWithOcr(file);}
+        catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
+          '. Leitura OCR alternativa também falhou: '+ocrError.message+
+          '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
+      }
+      throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
+    }
+    if(fileKind==='image'){
+      const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+      const canvases=prepared.canvases.length?prepared.canvases:[file];
+      const {createWorker}=await import('tesseract.js');
+      const worker=await createWorker('por');
+      try{
+        await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+        const texts=[],alternativeTexts=[];
+        for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+        for(const canvas of canvases){try{alternativeTexts.push(await runPaddleOcr(canvas));}catch{alternativeTexts.push('');}}
+        return {text:texts.join('\n'),alternativeText:alternativeTexts.filter(Boolean).join('\n')};
+      }finally{await worker.terminate();}
+    }
+    throw new Error('Tipo de arquivo inválido. Use PDF, JPG, PNG ou WEBP.');
+  }
+  async function getCashReportFile(reportId){
+    if(!supabase||!accessCode)throw new Error('Entre no sistema para acessar o original.');
+    const {data,error}=await supabase.rpc('cash_report_file',{p_token:accessCode,p_id:reportId});
+    if(error||!data?.base64)throw new Error(error?.message||'O original não está disponível nesta pendência.');
+    const bytes=decodeCashReportBase64(data.base64);
+    if(!cashReportFileMatchesMime(data.mime,bytes))throw new Error('O conteúdo não corresponde ao tipo declarado; o arquivo não será aberto.');
+    return {...data,bytes,fileName:cashReportSafeDownloadName(data.fileName)};
+  }
+  async function previewCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      setCashReportPreview({url,mime:file.mime,fileName:file.fileName,id:report.id});
+      setCashError('');
+    }catch(error){setCashError(error?.message||'Não foi possível abrir o original.');}
+  }
+  async function downloadCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      const link=document.createElement('a');link.href=url;link.download=file.fileName;link.rel='noopener';link.click();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){setCashError(error?.message||'Não foi possível baixar o original.');}
+  }
+  async function processCashReport(report){
+    setCashReportErrors(current=>({...current,[report.id]:''}));
+    setCashReportProgress(current=>({...current,activeFile:report.fileName,stage:'Lendo o documento'}));
+    try{
+      const original=await getCashReportFile(report.id);
+      const file=new File([original.bytes],original.fileName,{type:original.mime});
+      const recognition=await readCashReportText(file);
+      const text=typeof recognition==='string'?recognition:(recognition.text||'');
+      const alternativeText=typeof recognition==='string'?'':(recognition.alternativeText||'');
+      const {_recognizedFields,...parsed}=parseCashReportCandidates(text,alternativeText);
+      const draft={...parsed,sourceFileName:original.fileName,sourceText:text.slice(0,30000),
+        sourceAlternativeText:alternativeText.slice(0,30000),cashReviewed:false,
+        reviewedImport:false,cashCounted:'',importWarnings:Array.isArray(parsed.importWarnings)?parsed.importWarnings:[]};
+      setCashReportProgress(current=>({...current,stage:'Salvando rascunho'}));
+      const {data,error}=await supabase.rpc('cash_report_save',{
+        p_token:accessCode,p_id:report.id,p_draft:draft,p_expected_revision:Number(report.revision||1)
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar o rascunho reconhecido.');
+      await refreshCashReports();
+      setCashReportErrors(current=>({...current,[report.id]:''}));
+    }catch(error){
+      setCashReportErrors(current=>({...current,[report.id]:error?.message||'Falha ao ler o documento.'}));
+      throw error;
+    }
+  }
+  async function uploadCashReportBatch(event){
+    const files=Array.from(event.target.files||[]);event.target.value='';
+    if(!files.length)return;
+    if(files.length>5){setCashError('Selecione até 5 arquivos por lote.');return;}
+    if(!supabase||!accessCode){setCashError('Entre no sistema para enviar faturamentos.');return;}
+    const batchId=cashReportUuid();
+    setCashError('');setCashImporting(true);
+    setCashReportProgress({total:files.length,completed:0,activeFile:'',stage:'Enviando arquivos'});
+    const failures=[];
+    try{
+      for(let index=0;index<files.length;index++){
+        const file=files[index];
+        setCashReportProgress({total:files.length,completed:index,activeFile:file.name,stage:'Validando e enviando'});
+        try{
+          if(file.size>4000000)throw new Error('Arquivo acima do limite de 4 MB.');
+          const bytes=new Uint8Array(await file.arrayBuffer());
+          const mime=cashReportMimeFromBytes(bytes);
+          if(!mime)throw new Error('Arquivo sem assinatura PDF/JPEG/PNG/WEBP válida.');
+          const {data,error}=await supabase.rpc('cash_report_create',{
+            p_token:accessCode,p_batch_id:batchId,p_file_id:cashReportUuid(),
+            p_file_name:file.name.slice(0,180),p_mime:mime,p_base64:encodeCashReportBase64(bytes)
+          });
+          if(error||!data?.ok||!data?.id)throw new Error(error?.message||'O servidor não aceitou este arquivo.');
+          const record={id:data.id,revision:Number(data.revision||1),fileName:file.name};
+          await refreshCashReports();
+          try{await processCashReport(record);}
+          catch(error){failures.push(file.name+': '+(error?.message||'Falha na leitura.'));}
+        }catch(error){failures.push(file.name+': '+(error?.message||'Falha no envio.'));}
+      }
+      setCashReportProgress({total:files.length,completed:files.length,activeFile:'',stage:'Lote concluído'});
+      await refreshCashReports();
+      if(failures.length)setCashError('Alguns arquivos precisam de nova tentativa: '+failures.join(' · '));
+      else setToast(files.length+' faturamento(s) enviado(s) para revisão individual.');
+    }catch(error){setCashError(error?.message||'Não foi possível processar o lote.');}
+    finally{setCashImporting(false);window.setTimeout(()=>setCashReportProgress(null),1800);}
+  }
+  async function retryCashReport(report){
+    setCashReportProgress({total:1,completed:0,activeFile:report.fileName,stage:'Tentando leitura novamente'});
+    try{await processCashReport(report);setToast('Documento lido. Abra a pendência para conferir.');}
+    catch(error){setCashError(error?.message||'Falha ao tentar novamente.');}
+    finally{setCashReportProgress(null);}
+  }
+  function openCashReportReview(report){
+    if(!report?.draft){setCashReportErrors(current=>({...current,[report.id]:'Este arquivo ainda não tem dados reconhecidos. Tente a leitura novamente.'}));return;}
+    setCashReportActive({id:report.id,revision:Number(report.revision||1)});
+    const emptyDraft={day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),
+      register:'',operator:'',cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]};
+    setCashForm({...emptyDraft,...report.draft,cashReviewed:false,reviewedImport:false,
+      sourceFileName:report.fileName,sourceText:report.draft.sourceText||''});
+    setCashImportText(report.draft.sourceText||'');
+    setCashImportAlternativeText(report.draft.sourceAlternativeText||'');
+    setCashImportWarnings(Array.isArray(report.warnings)?report.warnings:(report.draft.importWarnings||[]));
+    setCashEditId('');setCashEntryMode('report-review');setCashError('');setView('cash');
+  }
+  async function savePendingCashDraft(){
+    if(!cashReportActive)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalidValues=CASH_CHANNELS.filter(([key])=>snapshot[key]!==''&&!Number.isFinite(Number(snapshot[key])));
+    if(invalidValues.length){setCashError('Corrija os valores numéricos antes de salvar o rascunho.');return;}
+    setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:snapshot.cashCounted===''?'':Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:false,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data,error}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar a pendência.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(data.revision||cashReportActive.revision+1)});
+      await refreshCashReports();setToast('Rascunho salvo. O faturamento ainda não foi lançado.');
+    }catch(error){setCashError(error?.message||'Falha ao salvar o rascunho.');}
+    finally{setCashSaving(false);}
+  }
+  async function savePendingCashReport(event){
+    event.preventDefault();if(!cashReportActive||cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Confirme a revisão individual deste faturamento.');
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    if(!supabase||!accessCode){setCashError('Entre novamente para lançar este faturamento.');return;}
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:true,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data:saved,error:saveError}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(saveError||!saved?.ok)throw new Error(saveError?.message||'Não foi possível salvar o rascunho revisado.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(saved.revision||cashReportActive.revision+1)});
+      const key=cashReportIdempotencyRef.current.get(cashReportActive.id)||cashReportUuid();
+      cashReportIdempotencyRef.current.set(cashReportActive.id,key);
+      const {data:posted,error:postError}=await supabase.rpc('cash_report_post',{p_token:accessCode,p_id:cashReportActive.id,
+        p_expected_revision:Number(saved.revision||cashReportActive.revision+1),p_idempotency_key:key});
+      if(postError||!posted?.ok)throw new Error(postError?.message||'O rascunho foi salvo, mas não foi lançado.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      await refreshCashReports();
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashEntryMode('');setCashReportActive(null);
+      setToast('Faturamento conferido e lançado.');
+    }catch(error){
+      await refreshCashReports().catch(()=>{});
+      setCashError(error?.message||'Falha ao lançar o faturamento. Revise e tente novamente.');
+    }finally{cashSavingRef.current=false;setCashSaving(false);}
+  }
+  async function cancelCashReport(report){
+    if(!window.confirm('Cancelar esta pendência? O faturamento não será lançado.'))return;
+    try{
+      const {data,error}=await supabase.rpc('cash_report_cancel',{p_token:accessCode,p_id:report.id,
+        p_expected_revision:Number(report.revision||1)});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível cancelar a pendência.');
+      await refreshCashReports();setCashReportErrors(current=>({...current,[report.id]:''}));
+      if(cashReportActive?.id===report.id){setCashReportActive(null);setCashEntryMode('');}
+      setToast('Pendência cancelada. O histórico de faturamento não foi alterado.');
+    }catch(error){setCashError(error?.message||'Não foi possível cancelar. Somente o autor ou o Gestor podem cancelar esta pendência.');}
+  }
+  useEffect(()=>()=>{if(cashReportPreview?.url)URL.revokeObjectURL(cashReportPreview.url);},[cashReportPreview?.url]);
+
+  async function importCashReport(event){
+    const file=event.target.files?.[0];
+    if(!file)return;
+    event.target.value='';
+    if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
+    if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
+    newCashClosing('upload');
+    setCashImporting(true);setCashError('');setCashImportWarnings([]);setCashImportAlternativeText('');
+    try{
+      let text='';
+      let alternativeText='';
+      const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
+      if(fileKind==='pdf'){
+        const bytes=new Uint8Array(await file.arrayBuffer());
+        let binary='';
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        const response=await fetch('/api/cash-extract',{method:'POST',
+          headers:{'content-type':'application/json','x-estoque-session':accessCode},
+          body:JSON.stringify({base64:btoa(binary)})});
+        const parsed=await response.json();
+        if(response.ok){text=parsed.text;}
+        else if(response.status===422){
+          try{
+            const recognition=await readCashPdfWithOcr(file);
+            text=recognition.text||'';alternativeText=recognition.alternativeText||'';
+          }
+          catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
+            '. Leitura OCR alternativa também falhou: '+ocrError.message+
+            '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
+        }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
+      }else if(fileKind==='image'){
+        const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+        const canvases=prepared.canvases.length?prepared.canvases:[file];
+        const {createWorker}=await import('tesseract.js');
+        const worker=await createWorker('por');
+        try{
+          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+          const texts=[];
+          for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+          text=texts.join('\n');
+        }finally{await worker.terminate();}
+        try{
+          const alternatives=[];
+          for(const canvas of canvases)alternatives.push(await runPaddleOcr(canvas));
+          alternativeText=alternatives.join('\n');
+        }catch{alternativeText='';}
+      }else throw new Error('Use PDF, JPG, PNG ou WEBP.');
+      const {_recognizedFields,...result}=parseCashReportCandidates(text,alternativeText);
+      // Missing metadata must remain editable instead of discarding recognized revenue.
+      // Empty register/operator are deliberately not silently replaced by guesses.
+      const duplicated=closings.some(d=>d.day===result.day&&d.register===result.register);
+      setCashEditId('');
+      setCashForm(prev=>({...prev,...result,day:result.day||prev.day,
+        sourceFileName:file.name,sourceText:text.slice(0,30000),
+        reviewedImport:false,
+        // Never assume the PDF has a trustworthy physical closing count.
+        cashCounted:''
+      }));
+      setCashImportText(text);
+      setCashImportAlternativeText(alternativeText);
+      setCashImportWarnings([...result.importWarnings,
+        ...(duplicated?['Já existe fechamento deste caixa e data. Somente o Gestor pode corrigi-lo.']:[])]);
+      setCashMonth(result.day.slice(0,7));
+      setCashEntryMode('upload');
+      setToast('Relatório lido. Confira os dados antes de salvar.');
+    }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
+    finally{setCashImporting(false);}
+  }
+  function useAlternativeCashOcr(){
+    if(!cashImportAlternativeText)return;
+    const parsed=parseCashReport(cashImportAlternativeText);
+    setCashForm(previous=>({...previous,...parsed,day:parsed.day||previous.day,
+      sourceFileName:previous.sourceFileName,sourceText:cashImportAlternativeText.slice(0,30000),
+      cashReviewed:false,reviewedImport:false,cashCounted:''}));
+    setCashImportText(cashImportAlternativeText);
+    setCashImportWarnings(parsed.importWarnings||[]);
+    setToast('Valores substituídos pela leitura alternativa. Confira com o comprovante antes de salvar.');
+  }
+  function changeCashField(key,value){setCashForm(prev=>{
+    const next={...prev,[key]:value};
+    if(key==='cashReviewed')next.reviewedImport=prev.sourceFileName?Boolean(value):false;
+    else if(key==='reviewedImport')next.cashReviewed=Boolean(value);
+    else{next.cashReviewed=false;if(prev.sourceFileName)next.reviewedImport=false;}
+    return next;
+  });setCashError('');}
+  function newCashClosing(mode='manual'){
+    cashCorrectionContextRef.current=null;
+    setCashEntryMode(mode);
+    setCashImportText('');setCashImportWarnings([]);
+    setCashEditId('');
+    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
+      operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
+      credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
+    setCashError('');
+  }
+  function editCashClosing(entry){
+    if(!entry?.updatedAt){setToast('Atualize o histórico antes de corrigir este fechamento.');return;}
+    if(!window.confirm('A edição ficará registrada com uma cópia dos dados anteriores e poderá ser recuperada depois. Continuar?'))return;
+    const reason=window.prompt('Informe o motivo da correção (obrigatório):');
+    if(!reason||reason.trim().length<5)return;
+    cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,reason:reason.trim(),idempotencyKey:uuid()};
+    setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
+    setCashEntryMode('edit');
+    setCashEditId(entry.id);
+    setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
+      movements:entry.movements||[]});
+    setCashError('');setView('cash');
+  }
+
+  async function openCashClosingDetail(entry){
+    setCashSelectedClosingId(String(entry.id));
+    setCashSelectedDay(entry.day);
+    setCashAuditHistory([]);setCashAuditLoading(true);
+    if(supabase&&accessCode){
+      const {data,error}=await supabase.rpc('cash_closing_audit_list',{p_token:accessCode,p_closing_id:entry.id});
+      if(!error&&Array.isArray(data))setCashAuditHistory(data);
+      else setToast(error?.message||'Não foi possível carregar o histórico de correções.');
+    }
+    setCashAuditLoading(false);
+  }
+
+  async function restoreCashClosingVersion(entry,version){
+    if(!supabase||!accessCode||!entry?.updatedAt)return;
+    const reason=window.prompt(`Explique por que está recuperando a versão ${version}:`);
+    if(!reason||reason.trim().length<5)return;
+    if(!window.confirm(`Restaurar a versão ${version}? O estado atual será preservado no histórico e a recuperação criará uma nova versão auditada.`))return;
+    setCashSaving(true);
+    try{
+      const {data,error}=await supabase.rpc('cash_closing_correct',{
+        p_token:accessCode,p_closing_id:entry.id,p_expected_updated_at:entry.updatedAt,
+        p_entry:null,p_reason:reason.trim(),p_idempotency_key:uuid(),p_restore_version:version
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível recuperar os dados.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(listError||!Array.isArray(updated))throw new Error(listError?.message||'Correção salva, mas não foi possível atualizar o histórico.');
+      setClosings(updated);
+      const current=updated.find(row=>String(row.id)===String(entry.id));
+      if(current)await openCashClosingDetail(current);
+      setToast('Versão recuperada como nova correção auditada.');
+    }catch(error){setToast(error.message||'Falha ao recuperar versão financeira.');}
+    finally{setCashSaving(false);}
+  }
+
+  async function linkLegacySupplier(document, supplierId) {
+    const supplier = suppliers.find((row) => String(row.id) === String(supplierId));
+    if (!supplier || !document?.id || !supabase || !accessCode) return;
+    const confirmed = window.confirm(
+      `Vincular esta nota a “${supplier.name}” usando a validação do Gestor? A operação ficará auditada e não altera a nota, os produtos nem o estoque.`
+    );
+    if (!confirmed) return;
+    const { data, error } = await supabase.rpc('supplier_identity_link', {
+      p_token: accessCode,
+      p_document_id: String(document.id),
+      p_supplier_id: String(supplier.id)
+    });
+    if (error || !data?.ok) {
+      setToast(error?.message || 'Não foi possível registrar o vínculo do fornecedor.');
+      return;
+    }
+    const { data: links, error: linksError } = await supabase.rpc('supplier_identity_links', { p_token: accessCode });
+    if (linksError || !Array.isArray(links)) {
+      setToast('Vínculo salvo. Atualize a tela para recarregar o histórico auditável.');
+      return;
+    }
+    setSupplierIdentityLinks(links);
+    setToast('Fornecedor vinculado e registrado na auditoria.');
+  }
+  async function saveCashClosing(event){
+    event.preventDefault();
+    if(cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Marque a conferência ao lado do botão salvar.');
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...entrySnapshot}=snapshot;
+      const clean={...entrySnapshot,day:snapshot.day,register:snapshot.register.trim(),
+        operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:snapshot.movements.map(m=>({
+          type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
+        }))};
+      const isCorrection=cashEntryMode==='edit';
+      const correction=cashCorrectionContextRef.current;
+      if(isCorrection&&!correction)throw new Error('Reabra a revisão para iniciar uma correção auditável.');
+      const {data,error:saveError}=isCorrection
+        ? await supabase.rpc('cash_closing_correct',{p_token:accessCode,p_closing_id:cashEditId,
+          p_expected_updated_at:correction.expectedUpdatedAt,p_entry:clean,p_reason:correction.reason,
+          p_idempotency_key:correction.idempotencyKey,p_restore_version:null})
+        : await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
+      if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashSelectedClosingId('');setCashEditId('');setCashEntryMode('');cashCorrectionContextRef.current=null;
+      setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':isCorrection?'Correção financeira salva e auditada.':'Faturamento registrado com sucesso.');
+    }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
+    finally{cashSavingRef.current=false;setCashSaving(false);}
+  }
+  function openManualEntry() {
+    if (draft || draftQueue.length) {
+      setError('Conclua ou descarte a conferência das notas antes de iniciar uma entrada manual.');
+      setView('documents');
+      return;
+    }
+    setManualMode(true); setManualNew(false); setManualChosenId(''); setManualSearch('');
+    setManualForm({name:'',sku:'',category:'Mercearia',unit:'un',min:'0',
+      quantity:'1',cost:'0',supplier:'',preferredSupplier:'',reason:'Entrada manual'});
+    setError('');setView('documents');
+  }
+  function saveManualEntry(event) {
+    event.preventDefault();
+    if (supabase && saveStatus !== 'Sincronizado') {
+      setError('Aguarde a sincronização do estoque para lançar esta entrada.');
+      return;
+    }
+    const quantity = Number(manualForm.quantity);
+    const cost = Number(manualForm.cost);
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 99999999 ||
+      Math.round(quantity*1000) !== quantity*1000 || !Number.isFinite(cost) || cost < 0) {
+      setError('Informe quantidade positiva (até três casas decimais) e custo não negativo.');
+      return;
+    }
+    const reason = manualForm.reason.trim() || 'Entrada manual';
+    let product;
+    const timestamp = dateNow();
+    if (manualNew) {
+      if (currentUser?.role !== 'admin') {
+        setError('Somente o Gestor pode criar cadastros. Selecione um produto existente.');
+        return;
+      }
+      const name = manualForm.name.trim();
+      if (!name) {setError('Informe a descrição do novo produto.');return;}
+      const candidates = findDuplicatesForCandidate({id:'__manual_new__',name,
+        sku:manualForm.sku,unit:manualForm.unit},products);
+      if (candidates.length) {
+        setError('Produto possivelmente já cadastrado: '+candidates[0].left.name+
+          '. Selecione o item na busca; corrija o cadastro existente em vez de criar uma duplicata.');
+        return;
+      }
+      product = {id:uid(),name,sku:manualForm.sku.trim() || 'PRD-'+Date.now(),
+        category:manualForm.category,unit:manualForm.unit,stock:quantity,
+        min:Number(manualForm.min)||0,cost,preferredSupplier:manualForm.preferredSupplier.trim(),
+        updated:timestamp};
+      setProducts((old) => [product,...old]);
+    } else {
+      product = products.find((p) => p.id === manualChosenId);
+      if (!product) {setError('Selecione um produto cadastrado na lista de busca.');return;}
+      const updatedStock = Math.round((Number(product.stock)+quantity)*1000)/1000;
+      if (updatedStock>99999999) {setError('Quantidade final acima do máximo permitido.');return;}
+      setProducts((old)=>old.map((p)=>p.id===product.id ?
+        {...p,stock:updatedStock,cost,updated:timestamp} : p));
+    }
+    const movementId=uid();
+    const documentId=uid();
+    const checkedBy=currentUser?.display_name || 'Usuário autenticado';
+    const amount=Math.round(quantity*cost*100)/100;
+    const entry={id:documentId,source:'Entrada manual (sem documento fiscal)',
+      fileName:'Entrada manual',supplier:manualForm.supplier.trim(),
+      invoiceNumber:'',date:new Date().toLocaleDateString('pt-BR'),
+      checkedBy,status:'Lançamento manual',importedAt:timestamp,subtotal:amount,
+      discount:0,total:amount,items:[{name:product.name,code:product.sku,
+      productId:product.id,quantity,unit:product.unit,unitPrice:cost,lineTotal:amount}],
+      stockEntries:[{productId:product.id,movementId,quantity,netUnitCost:cost}]};
+    setDocuments((old)=>[entry,...old]);
+    setMovements((old)=>[{id:movementId,documentId,productId:product.id,
+      product:product.name,type:'Entrada',quantity,reason,date:timestamp,by:checkedBy},...old]);
+    setManualMode(false);setManualNew(false);setManualChosenId('');setManualSearch('');
+    setError('');setToast(manualNew?'Produto criado e entrada registrada.':'Entrada adicionada ao produto existente.');
+  }
+  function openProduct(product) {
+    setEditing(product || null);
+    setProductForm(product ? { name: product.name, sku: product.sku || '', category: product.category || 'Outros', unit: product.unit || 'un', stock: String(product.stock), min: String(product.min), cost: String(product.cost), preferredSupplier: product.preferredSupplier || '' } : { name: '', sku: '', category: 'Mercearia', unit: 'un', stock: '0', min: '0', cost: '0', preferredSupplier: '' });
+    setModal('product');
+  }
+  function saveProduct(event) {
+    event.preventDefault();
+    const name = productForm.name.trim();
+    if (!name) return;
+    if (editing) {
+      setProducts((old) => old.map((p) => p.id === editing.id ? { ...p, ...productForm, stock: Number(productForm.stock), min: Number(productForm.min), cost: Number(productForm.cost) } : p));
+      setToast('Produto atualizado.');
+    } else {
+      const hints = findDuplicatesForCandidate({ ...productForm, id: '__novo_produto__', name }, products);
+      if (hints.length && !window.confirm(
+        'Possível cadastro duplicado: "' + hints[0].left.name + '" (' + hints[0].left.sku +
+        '). Confira antes de prosseguir. Deseja cadastrar mesmo assim?')) return;
+      const item = { ...productForm, id: uid(), name, sku: productForm.sku || ('PRD-' + Date.now().toString().slice(-5)), stock: Number(productForm.stock) || 0, min: Number(productForm.min) || 0, cost: Number(productForm.cost) || 0, updated: dateNow() };
+      setProducts((old) => [item, ...old]);
+      setMovements((old) => [{ id: uid(), product: name, type: 'Cadastro', quantity: item.stock, reason: 'Cadastro inicial', date: dateNow() }, ...old]);
+      setToast('Produto cadastrado.');
+    }
+    setModal('');
+  }
+  function openAdjustment(product, type = 'Entrada') {
+    setEditing(product);
+    setAdjust({ type, quantity: '1', reason: type === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' });
+    setModal('adjust');
+  }
+  function beginCount() {
+    if(!products.length){setCountError('Cadastre produtos antes de fazer a contagem.');return;}
+    if(supabase&&saveStatus!=='Sincronizado'){setCountError('Aguarde o estoque sincronizar antes de iniciar.');return;}
+    setCountDraft(Object.fromEntries(products.map((p)=>[p.id,''])));
+    setCountBasis(revisionRef.current);
+    setCountError('');
+  }
+  async function saveCountSettings() {
+    if(currentUser?.role!=='admin'){setCountError('Apenas o Gestor pode alterar a periodicidade.');return;}
+    if(supabase&&saveStatus!=='Sincronizado'){setCountError('Aguarde a sincronização antes de salvar.');return;}
+    setCountBusy(true);setCountError('');
+    try{
+      await saveQueueRef.current;
+      if(supabase){
+        const {data,error:rpcError}=await supabase.rpc('inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
+        if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Erro ao salvar configuração.');
+        if(!(await loadSharedInventory(accessCode)))throw new Error('Configuração salva, mas não foi possível recarregar.');
+      }else setCountSettings({...settingsForm,configuredAt:countDay()});
+      setToast('Periodicidade da contagem atualizada.');
+    }catch(e){setCountError(e?.message||'Não foi possível configurar a contagem.');}
+    finally{setCountBusy(false);}
+  }
+  async function completePhysicalCount() {
+    if(!countDraft||countBusy||!supabase)return;
+    if(products.some((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='')){setCountError('Preencha todos os produtos, inclusive os zerados.');return;}
+    const lines=products.map((p)=>({productId:p.id,counted:Number(String(countDraft[p.id]).replace(',','.'))}));
+    if(lines.some((v)=>!Number.isFinite(v.counted)||v.counted<0||Math.round(v.counted*1000)/1000!==v.counted)){setCountError('Informe quantidades não negativas, com até 3 casas decimais.');return;}
+    const diffs=lines.filter((x)=>x.counted!==Number(products.find((p)=>p.id===x.productId)?.stock||0)).length;
+    if(!window.confirm('Concluir a contagem? '+diffs+' diferenças serão ajustadas no estoque.'))return;
+    setCountBusy(true);setCountError('');
+    try{
+      await saveQueueRef.current;
+      const {data,error:rpcError}=await supabase.rpc('inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
+      if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Falha ao registrar.');
+      if(!(await loadSharedInventory(accessCode)))throw new Error('Registro concluído, mas falhou a atualização da tela.');
+      setCountDraft(null);setCountBasis(null);
+      setToast('Contagem concluída com sucesso. Ajustes registrados no histórico.');
+    }catch(e){setCountError(e?.message||'Não foi possível concluir a contagem.');}
+    finally{setCountBusy(false);}
+
+  }
+  function saveAdjustment(event) {
+    event.preventDefault();
+    const amount = Number(adjust.quantity);
+    if (!editing || !(amount > 0)) return;
+    const delta = adjust.type === 'Saída' ? -amount : amount;
+    if (Number(editing.stock) + delta < 0) { setToast('A saída não pode ser maior que o saldo disponível.'); return; }
+    setProducts((old) => old.map((p) => p.id === editing.id ? { ...p, stock: Math.round((Number(p.stock) + delta) * 1000) / 1000, updated: dateNow() } : p));
+    setMovements((old) => [{ id: uid(), product: editing.name, type: adjust.type, quantity: amount, reason: adjust.reason || 'Ajuste manual', date: dateNow() }, ...old]);
+    setModal('');
+    setToast('Estoque atualizado.');
+  }
+  async function parseUploadedFile(file) {
+    const xml = /\.xml$/i.test(file.name) || file.type === 'text/xml' || file.type === 'application/xml';
+    if (xml) {
+      const content = await file.text();
+      const parsed = parseNfeXml(content);
+      return [{ ...parsed, checkedBy: '', fileName: file.name, status: 'Aguardando conferência' }];
+    }
+    if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+      {
+        try {
+          const prepared = await prepareReceiptCanvases(file);
+          const canvases = prepared.canvases.length ? prepared.canvases : [file];
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
+          const { createWorker } = await import('tesseract.js');
+          // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
+          if (!receiptOcrWorkerRef.current) {
+            receiptOcrWorkerRef.current = await createWorker('por', 1, {
+              logger: (message) => {
+                if (message.status === 'recognizing text') {
+                  const progress = receiptOcrProgressRef.current;
+                  setOcrProgress(Math.min(99, Math.round(100 *
+                    (progress.index + (progress.pass + (message.progress || 0)) / 2) / progress.count)));
+                }
+              }
+            });
+          }
+          const worker = receiptOcrWorkerRef.current;
+          receiptOcrProgressRef.current = { index: 0, count: canvases.length, pass: 0 };
+          const receipts = [];
+          for (let index = 0; index < canvases.length; index++) {
+            receiptOcrProgressRef.current = { index, count: canvases.length, pass: 0 };
+            await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+            const primaryResult = await worker.recognize(canvases[index]);
+            const primaryText = primaryResult.data.text || '';
+            const primaryItems = parseReceiptOcr(primaryText);
+
+            const printedTotal = parseReceiptTotals(primaryText).total;
+            const primaryTotals = reconcileReceiptTotals(primaryText, '', primaryItems);
+            const needsRetry = needsSecondOcrPass(primaryItems,
+              { ...primaryTotals, hasPrintedTotal: printedTotal !== null },
+              Number(primaryResult.data.confidence));
+            let alternateText = '';
+            let alternateItems = [];
+            let paddleText = '';
+            let paddleWarning = '';
+            if (needsRetry) {
+              receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
+              await worker.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+              const retryCanvas = canvases[index];
+              const retryContext = retryCanvas.getContext('2d', { willReadFrequently: true });
+              const retryImage = retryContext.getImageData(0, 0, retryCanvas.width, retryCanvas.height);
+              adaptiveBinarizeImageData(retryImage);
+              retryContext.putImageData(retryImage, 0, 0);
+              const alternateResult = await worker.recognize(retryCanvas);
+              alternateText = alternateResult.data.text || '';
+              alternateItems = parseReceiptOcr(alternateText);
+            }
+            // PP-OCRv6 is a second local candidate. If its model/runtime is
+            // unavailable, preserve the Tesseract result and disclose the fallback.
+            try {
+              paddleText = await runPaddleOcr(canvases[index]);
+            } catch {
+              paddleWarning = 'A leitura alternativa PP-OCRv6 ficou indisponível neste navegador.';
+            }
+            setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
+            // If either pass recognized real coded lines inside the receipt table,
+            // discard unstructured guesses from the legacy OCR fallback. Those guesses
+            // were adding Sub-Total, tax, payment and misread fragments as products.
+            const primaryCoded = primaryItems.filter((item) => item.code);
+            const alternateCoded = alternateItems.filter((item) => item.code);
+            const paddleItems = parseReceiptOcr(paddleText);
+            const paddleCoded = paddleItems.filter((item) => item.code);
+            const tesseractItems = primaryCoded.length || alternateCoded.length
+              ? mergeReceiptCandidates(primaryCoded, alternateCoded)
+              : mergeReceiptCandidates(primaryItems, alternateItems);
+            const items = paddleText
+              ? mergeReceiptCandidates(tesseractItems, paddleCoded.length ? paddleCoded : paddleItems)
+              : tesseractItems;
+            const invoiceTotals = reconcileReceiptTotals(primaryText,
+              [alternateText, paddleText].filter(Boolean).join('\n'), items);
+            const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
+            const primaryMeta = detectReceiptMetadata(primaryText);
+            const alternateMeta = detectReceiptMetadata(alternateText);
+            const paddleMeta = detectReceiptMetadata(paddleText);
+            const meta = {
+              invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber || paddleMeta.invoiceNumber,
+              date: primaryMeta.date || alternateMeta.date || paddleMeta.date
+            };
+            const qrResults = await qrResultsPromise;
+            const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
+            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText),
+              extractAccessKeyFromText(alternateText), extractAccessKeyFromText(paddleText)]
+              .find(validateNfceAccessKey) || '';
+            const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
+            const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) ||
+              hasUncertainReceiptKey(alternateText) || hasUncertainReceiptKey(paddleText))
+              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
+              : '';
+            const multiple = prepared.split && canvases.length > 1;
+            receipts.push({
+              supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || detectReceiptSupplier(paddleText) || (multiple ? 'Cupom ' + (index + 1) : ''),
+              supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText) || detectSupplierCnpj(paddleText),
+              invoiceNumber: meta.invoiceNumber,
+              date: meta.date,
+              accessKey,
+              consultaUrl,
+              keyWarning,
+              qrDetected: Boolean(qr.qrRaw) && Boolean(accessKey),
+              qrUrlPreserved: Boolean(qr.qrUrlPreserved),
+              qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
+              qrReaderWarning: qr.qrReaderWarning || '',
+              source: multiple
+                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — Tesseract + PP-OCRv6 local)'
+                : 'Foto (Tesseract + PP-OCRv6 local)',
+              checkedBy: '',
+              fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
+              status: 'Aguardando conferência',
+              ocrText: combinedText,
+              ocrComparison: {
+                tesseract: combinedText,
+                paddle: paddleText,
+                warning: paddleWarning
+              },
+              subtotal: invoiceTotals.subtotal,
+              discount: invoiceTotals.discount,
+              total: invoiceTotals.total,
+              totalsSource: invoiceTotals.totalsSource,
+              totalsWarning: invoiceTotals.totalsWarning,
+              items: items.length ? items : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }]
+            });
+          }
+          const uniqueReceipts = [];
+          let duplicateReadsRemoved = 0;
+          const normalizeSupplier = (value) => norm(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+          const sameSupplier = (a, b) => {
+            const left = normalizeSupplier(a), right = normalizeSupplier(b);
+            if (!left || !right) return true;
+            const shorter = Math.min(left.length, right.length);
+            return shorter >= 8 && (left === right || left.startsWith(right) || right.startsWith(left));
+          };
+          for (const candidate of receipts) {
+            const duplicate = uniqueReceipts.find((existing) => {
+              if (validateNfceAccessKey(candidate.accessKey) && validateNfceAccessKey(existing.accessKey))
+                return candidate.accessKey === existing.accessKey;
+              if (candidate.invoiceNumber && existing.invoiceNumber && candidate.invoiceNumber === existing.invoiceNumber) {
+                return sameSupplier(candidate.supplier, existing.supplier);
+              }
+              return false;
+            });
+            if (!duplicate) {
+              uniqueReceipts.push(candidate);
+              continue;
+            }
+            duplicateReadsRemoved++;
+            const existingItems = (duplicate.items || []).filter((item) => item.name && item.name.trim());
+            const candidateItems = (candidate.items || []).filter((item) => item.name && item.name.trim());
+            const joinedItems = mergeReceiptCandidates(existingItems, candidateItems);
+            duplicate.items = joinedItems.length ? joinedItems : [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }];
+            duplicate.ocrText = [duplicate.ocrText, candidate.ocrText].filter(Boolean).join('\n\n--- OUTRO RECORTE DA MESMA NOTA ---\n');
+            duplicate.supplier = duplicate.supplier || candidate.supplier;
+            duplicate.supplierCnpj = duplicate.supplierCnpj || candidate.supplierCnpj;
+            duplicate.invoiceNumber = duplicate.invoiceNumber || candidate.invoiceNumber;
+            duplicate.date = duplicate.date || candidate.date;
+            duplicate.accessKey = duplicate.accessKey || candidate.accessKey;
+            duplicate.consultaUrl = duplicate.consultaUrl || candidate.consultaUrl;
+            duplicate.keyWarning = duplicate.accessKey ? '' : (duplicate.keyWarning || candidate.keyWarning);
+            duplicate.qrDetected = duplicate.qrDetected || candidate.qrDetected;
+            duplicate.qrUrlPreserved = duplicate.qrUrlPreserved || candidate.qrUrlPreserved;
+            duplicate.qrReader = duplicate.qrReader || candidate.qrReader;
+            duplicate.qrReaderWarning = duplicate.qrReaderWarning || candidate.qrReaderWarning;
+            duplicate.subtotal = duplicate.subtotal ?? candidate.subtotal;
+            duplicate.discount = duplicate.discount ?? candidate.discount;
+            duplicate.total = duplicate.total ?? candidate.total;
+            duplicate.totalsSource = duplicate.totalsSource || candidate.totalsSource;
+            duplicate.source = 'Foto (leitura combinada de recortes repetidos)';
+          }
+
+          const parsedReceipts = uniqueReceipts.length ? uniqueReceipts : receipts;
+          return parsedReceipts;
+        } catch (e) {
+          throw new Error('Leitura OCR de ' + file.name + ': ' + (e?.message || 'erro desconhecido'));
+        } finally {
+          // Shared OCR worker is released at the end of uploadFiles().
+        }
+      }
+    }
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      return [{ supplier: '', invoiceNumber: '', date: '', source: 'PDF (preenchimento manual)', checkedBy: '', fileName: file.name, status: 'Aguardando preenchimento', items: [{ name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0 }] }];
+    }
+    throw new Error('Formato não reconhecido: ' + file.name + '. Use XML, PDF ou JPG/PNG/WEBP.');
+  }
+
+  const cleanPendingDraft=(value)=>{
+    if(!value) return {};
+    const {pendingId,pendingRevision, ...clean}=value;
+    const comparison=clean.ocrComparison;
+    return {...clean,ocrText:String(clean.ocrText||'').slice(0,100000),
+      ocrComparison:comparison?{
+        tesseract:String(comparison.tesseract||'').slice(0,100000),
+        paddle:String(comparison.paddle||'').slice(0,100000),
+        warning:String(comparison.warning||'').slice(0,500)
+      }:undefined,
+      officialText:String(clean.officialText||'').slice(0,30000)};
+  };
+  async function refreshPending(){
+    if(!supabase||!accessCode)return;
+    const {data,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:accessCode});
+    if(pendingError)throw new Error(pendingError.message);
+    setPendingReceipts(Array.isArray(data)?data:[]);
+  }
+  async function storePendingReceipt(file,receipt){
+    if(!supabase||!accessCode)throw new Error('Faça login para salvar notas pendentes no servidor.');
+    if(file.size>4000000)throw new Error('Limite de 4 MB por arquivo para arquivamento.');
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    let encoded='';
+    for(let i=0;i<bytes.length;i+=8192)encoded+=String.fromCharCode(...bytes.subarray(i,i+8192));
+    const base64=btoa(encoded);
+    const {data,error:uploadError}=await supabase.rpc('pending_receipt_create',{
+      p_token:accessCode,p_file_name:file.name,p_mime:file.type||'',
+      p_base64:base64,p_draft:cleanPendingDraft(receipt)
+    });
+    if(uploadError||!data?.ok)throw new Error(uploadError?.message||'Não foi possível arquivar a nota.');
+    pendingFingerprints.current.set(data.id,JSON.stringify(cleanPendingDraft(receipt)));
+    pendingRevisions.current.set(data.id,data.revision);
+    return {...receipt,pendingId:data.id,pendingRevision:data.revision};
+  }
+  async function cancelPendingReceipt(row) {
+    if (!row?.canCancel || !supabase || !accessCode) {
+      setError('Você não tem autorização para cancelar esta nota pendente.'); return;
+    }
+    if (!window.confirm('Cancelar definitivamente a nota "' +
+      (row.draft?.supplier || row.fileName) +
+      '"? Ela sairá da lista de conferência sem movimentar o estoque.')) return;
+    try {
+      const {data,error:cancelError}=await supabase.rpc('pending_receipt_cancel',{
+        p_token:accessCode,p_id:row.id
+      });
+      if(cancelError||!data?.ok)throw new Error(cancelError?.message||'Falha ao cancelar.');
+      pendingFingerprints.current.delete(row.id);
+      pendingRevisions.current.delete(row.id);
+      setPendingReceipts((rows)=>rows.filter((item)=>item.id!==row.id));
+      setDraft((current)=>current?.pendingId===row.id?null:current);
+      setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
+      setToast('Nota pendente cancelada.');
+    }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
+  }
+  async function openPendingReceipt(row){
+    if(draft && draft.pendingId!==row.id &&
+       !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
+    pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
+    pendingRevisions.current.set(row.id,row.revision);
+    focusDraftOnOpenRef.current=true;
+    setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
+    setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
+  }
+  function closePendingPreview(){
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+    setPendingPreview(null);
+  }
+  useEffect(()=>()=>{
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+  },[]);
+  async function viewPendingOriginal(row){
+    if(!supabase||!accessCode)return;
+    try{
+      const {data,error:fileError}=await supabase.rpc('pending_receipt_file',{p_token:accessCode,p_id:row.id});
+      if(fileError||!data?.base64)throw new Error(fileError?.message||'Arquivo original não disponível.');
+      const binary=atob(data.base64);
+      const dataBytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++)dataBytes[i]=binary.charCodeAt(i);
+      const previewType=getPendingReceiptPreviewType(data.mime,dataBytes);
+      const safeType=previewType||'application/octet-stream';
+      const url=URL.createObjectURL(new Blob([dataBytes],{type:safeType}));
+      if(pendingPreviewUrlRef.current)URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current=url;
+      setPendingPreview({
+        url,fileName:safePendingReceiptFilename(data.fileName),mime:previewType,
+        previewable:Boolean(previewType)
+      });
+    }catch(e){setError(e?.message||'Não foi possível abrir o arquivo original.');}
+  }
+  async function uploadFiles(selectedFiles) {
+    const files = Array.from(selectedFiles || []);
+    if (!files.length || busy) return;
+    if (files.length > 20) {
+      setError('Envie até 20 arquivos de cada vez para manter o processamento estável.');
+      return;
+    }
+    if (manualMode) {setError('Feche a entrada manual antes de importar notas fiscais.');return;}
+    // Pending review never blocks a new upload; imported drafts remain isolated.
+    setView('documents');
+    setBusy(true);
+    setError('');
+    setOcrProgress(0);
+    setUploadBatchProgress({current:0,total:files.length,completed:0,failed:0,fileName:'',
+      files:files.map(file=>({name:file.name,status:'Aguardando'}))});
+    if (uploadRef.current) uploadRef.current.value = '';
+    const parsed = [];
+    const issues = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadBatchProgress(prev=>prev&&({...prev,current:i+1,fileName:file.name,
+          files:prev.files.map((item,j)=>j===i?{...item,status:'Lendo'}:item)}));
+        let fileStatus='Concluído';
+        setProcessingType(/\.xml$/i.test(file.name) ? 'xml' : 'ocr');
+        setOcrProgress(0);
+        try {
+          const receipts = await parseUploadedFile(file);
+          for(const receipt of receipts){
+            const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
+            parsed.push(await storePendingReceipt(file,mapped));
+            try { await refreshPending(); } catch (refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
+          }
+        } catch (e) {
+          fileStatus='Conferência manual';
+          issues.push(file.name + ': ' + (e?.message || 'não foi possível interpretar'));
+          const fallback={supplier:'',invoiceNumber:'',date:'',
+            source:'Arquivo (conferência manual)',checkedBy:'',fileName:file.name,
+            status:'Aguardando preenchimento',
+            importWarning:e?.message||'Não foi possível interpretar automaticamente.',
+            items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
+          try{
+            parsed.push(await storePendingReceipt(file,fallback));
+            try { await refreshPending(); } catch(refreshError) {
+              issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
+            }
+          }
+          catch(saveError){
+            fileStatus='Falhou';
+            issues.push(file.name+': não foi possível salvar o arquivo no servidor — '+saveError.message);
+          }
+
+        } finally {
+          // Completed means that parsing and persistence (or a recorded failure) finished.
+          setUploadBatchProgress(prev=>prev&&({...prev,completed:i+1,
+            failed:prev.failed+(fileStatus==='Falhou'?1:0),
+            files:prev.files.map((item,j)=>j===i?{...item,status:fileStatus}:item)}));
+        }
+      }
+      if (parsed.length) {
+        try{await refreshPending();}catch(refreshError){
+          issues.push('Notas salvas, mas não foi possível atualizar a lista: '+refreshError.message);
+        }
+        // Keep the active review untouched; newly imported notes appear in the server-backed queue.
+        setToast(parsed.length + (parsed.length === 1 ? ' cupom pronto' : ' cupons prontos') + ' para conferência. Nada foi lançado automaticamente.');
+      }
+      if (issues.length) setError('Alguns arquivos precisam de preenchimento manual: ' + issues.slice(0, 3).join(' | '));
+    } finally {
+      const worker = receiptOcrWorkerRef.current;
+      receiptOcrWorkerRef.current = null;
+      if (worker) await worker.terminate().catch(() => {});
+      setBusy(false);
+      setOcrProgress(0);
+      setUploadBatchProgress(null);
+    }
+  }
+  useEffect(()=>{
+    if(!draft?.pendingId||!supabase||!accessCode||!dataReady)return;
+    const snapshot=cleanPendingDraft(draft),id=draft.pendingId;
+    const fingerprint=JSON.stringify(snapshot);
+    if(pendingFingerprints.current.get(id)===fingerprint)return;
+    const timer=setTimeout(()=>{
+      pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
+        setPendingBusy(true);setPendingSaveError('');
+        setPendingSaveErrorById(previous=>({...previous,[id]:''}));
+        const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
+          p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
+        });
+        if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
+        pendingFingerprints.current.set(id,fingerprint);
+        pendingRevisions.current.set(id,data.revision);
+        // Trigger another autosave if the reviewer edited while the previous RPC was running.
+        setDraft(current=>current?.pendingId===id?{...current,pendingRevision:data.revision}:current);
+        setPendingReceipts(old=>old.map(row=>row.id===id
+          ? {...row,draft:snapshot,revision:data.revision}:row));
+      }).catch(e=>{
+        const message=e?.message||'Falha ao salvar conferência.';
+        setPendingSaveError(message);
+        setPendingSaveErrorById(previous=>({...previous,[id]:message}));
+      }).finally(()=>setPendingBusy(false));
+    },pendingConfirmRequested?.id===id?0:1200);
+    return ()=>clearTimeout(timer);
+  },[draft,supabase,accessCode,dataReady,pendingConfirmRequested]);
+
+  // A single confirmation click waits for the exact reviewed draft to be acknowledged.
+  // If the operator changes/switches the note while saving, never post an old version.
+  useEffect(()=>{
+    const request=pendingConfirmRequested;
+    if(!request)return;
+    const outcome=pendingConfirmationState(request,draft?{
+      pendingId:draft.pendingId,
+      fingerprint:JSON.stringify(cleanPendingDraft(draft))
+    }:null,pendingFingerprints.current.get(request.id),pendingSaveErrorById[request.id]);
+    if(outcome==='waiting')return;
+    setPendingConfirmRequested(null);
+    if(outcome==='changed'){
+      setError('A conferência mudou durante o salvamento. Confira a versão atual e confirme novamente.');
+    }else if(outcome==='failed'){
+      setError('Não foi possível salvar a conferência: '+pendingSaveErrorById[request.id]);
+    }else if(outcome==='ready'){
+      confirmDocument();
+    }
+  },[pendingConfirmRequested,draft,pendingSaveErrorById]);
+
+  function changeDraft(key, value) {
+    const numericFields = ['subtotal', 'discount', 'total', 'additionalCharges', 'officialSubtotal', 'officialDiscount', 'officialTotal'];
+    setDraft((d) => d ? ({ ...d, finalReviewed: key === 'checkedBy' ? d.finalReviewed : false,
+      [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
+  }
+  function usePaddleReceiptOcr(){
+    const text=draft?.ocrComparison?.paddle;
+    if(!text)return;
+    const items=parseReceiptOcr(text);
+    if(!items.length){setError('A leitura PP-OCRv6 não encontrou linhas de produto utilizáveis. Confira a imagem e preencha manualmente.');return;}
+    const totals=reconcileReceiptTotals(text,'',items);
+    const metadata=detectReceiptMetadata(text);
+    setDraft(previous=>previous?({...previous,
+      supplier:detectReceiptSupplier(text)||previous.supplier,
+      supplierCnpj:detectSupplierCnpj(text)||previous.supplierCnpj,
+      invoiceNumber:metadata.invoiceNumber||previous.invoiceNumber,
+      date:metadata.date||previous.date,
+      items,subtotal:totals.subtotal,discount:totals.discount,total:totals.total,
+      totalsSource:totals.totalsSource,totalsWarning:totals.totalsWarning,
+      ocrText:text,reviewedItems:{},finalReviewed:false,officialVerified:false,
+      officialApplied:false,subtotalManuallyEdited:false,lineTotalsEdited:false
+    }):previous);
+    setError('');
+    setToast('Campos preenchidos pela leitura PP-OCRv6. Confira cada valor com o documento original.');
+  }
+  function changeNfceAccessKey(value) {
+    const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
+    setDraft((previous) => {
+      if (!previous) return previous;
+      const valid = validateNfceAccessKey(key);
+      return {
+        ...previous,
+        accessKey: valid ? key : '',
+        accessKeyInput: key,
+        consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
+        qrUrlPreserved: false,
+        officialCompared: false, officialItems: [], officialVerified: false,
+        officialOrigin: '', officialStatus: '', officialApplied: false,
+        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 65 e dígito verificador correto.'
+      };
+    });
+  }
+
+  function changeInvoiceAmount(key, value) {
+    const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
+    setDraft((d) => d ? ({ ...d, [key]: number, subtotalManuallyEdited: key === 'subtotal' ? true : d.subtotalManuallyEdited, finalReviewed: false, officialVerified: false }) : d);
+  }
+  function changeItem(index, key, value) {
+    setDraft((d) => ({
+      ...d,
+      lineTotalsEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? true : d.lineTotalsEdited,
+      subtotalManuallyEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? false : d.subtotalManuallyEdited,
+      reportedSubtotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedSubtotal ?? d.subtotal) : d.reportedSubtotal,
+      reportedTotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedTotal ?? d.total) : d.reportedTotal,
+      reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
+      finalReviewed: false, officialVerified: false,
+      items: d.items.map((it, i) => {
+        if (i !== index) return it;
+        return updateFiscalLine(it, key, value);
+      })
+    }));
+  }
+
+  useEffect(() => {
+    if (!draft?.consultaUrl || !draft?.qrUrlPreserved || draft.officialCompared) return;
+    const url = draft.consultaUrl;
+    const expectedKey = draft.accessKey;
+    let validQr = false;
+    try {
+      const parsed = new URL(url);
+      const hosts = ['dfe-portal.svrs.rs.gov.br', 'www.sefaz.rs.gov.br'];
+      const pathOk = /^\/Dfe\/QrCodeNFce\/?$/i.test(parsed.pathname) || /^\/NFCE\/NFCE-COM\.aspx$/i.test(parsed.pathname);
+      const payload = parsed.searchParams.get('p') || '';
+      validQr = parsed.protocol === 'https:' && hosts.includes(parsed.hostname) && pathOk &&
+        /^\d{44}\|/.test(payload) && validateNfceAccessKey(payload.split('|')[0]) &&
+        payload.split('|')[0] === expectedKey;
+    } catch (_) {}
+    if (!validQr) {
+      setDraft((d) => d && d.consultaUrl === url
+        ? { ...d, officialStatus: 'QR Code incompleto. Confira a nota manualmente.', officialOrigin: '' } : d);
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    setDraft((d) => d && d.consultaUrl === url ? { ...d, officialStatus: 'Consultando a SEFAZ (até 10 segundos)…' } : d);
+    (async () => {
+      try {
+        const response = await fetch('/api/consulta-nfce', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-estoque-session': accessCode },
+          body: JSON.stringify({ url }), signal: controller.signal
+        });
+        const data = await response.json().catch(() => ({}));
+        if (controller.signal.aborted) return;
+        if (!response.ok) {
+          const fallback = response.status === 401 ? 'Sessão expirada. Faça login novamente para consultar a SEFAZ.' :
+            response.status === 403 ? 'Seu usuário não tem permissão para esta consulta.' :
+            response.status === 429 ? 'Muitas consultas em pouco tempo. Tente novamente em instantes.' :
+            response.status === 503 ? 'Autenticação temporariamente indisponível. Confira a nota manualmente.' :
+            'Consulta oficial indisponível. Confira a nota manualmente.';
+          throw new Error(data.error || fallback);
+        }
+        if (data.source !== 'SVRS' || data.accessKey !== expectedKey)
+          throw new Error('A resposta fiscal não corresponde à chave deste cupom.');
+        const officialItems = Array.isArray(data.items) ? data.items : [];
+        if (!officialItems.length) throw new Error('A SEFAZ não disponibilizou os itens num formato legível.');
+        const totals = data.totals || {};
+        setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
+          ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
+              officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
+              officialTotal: totals.total, reviewedItems: {}, officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
+              items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
+              officialApplied: true, finalReviewed:false, officialVerified:true,
+              subtotal: totals.subtotal ?? d.subtotal,
+              discount: totals.discount ?? d.discount,
+              total: totals.total ?? d.total,
+              totalsSource:'SEFAZ (consulta automática)',
+              source:String(d.source||'').includes('consulta pública')?d.source:String(d.source||'')+' + consulta pública'
+            } : d);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setDraft((d) => d && d.consultaUrl === url
+          ? { ...d, officialStatus: err.message || 'SEFAZ indisponível. Confira a nota manualmente.' } : d);
+      } finally {
+        clearTimeout(timeout);
+        if (controller.signal.aborted) {
+          setDraft((d) => d && d.consultaUrl === url && !d.officialCompared
+            ? { ...d, officialStatus: 'A SEFAZ não respondeu em até 10 segundos. Confira os campos destacados.' } : d);
+        }
+      }
+    })();
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [draft?.consultaUrl, draft?.qrUrlPreserved, draft?.accessKey]);
+
+  function checkOfficialText() {
+    const raw = String(draft?.officialText || '').trim();
+    if (!raw) { setError('Cole o texto dos itens exibidos na consulta pública antes de comparar.'); return; }
+    const officialItems = parseOfficialConsultaItems(raw);
+    if (!officialItems.length) {
+      setError('Não consegui extrair os itens do texto colado. Copie a tabela de produtos com descrição, quantidade, unidade e valores; a consulta continua aberta no outro separador.');
+      return;
+    }
+    const totals = parseReceiptTotals(raw);
+    setDraft((d) => ({
+      ...d,
+      officialItems,
+      officialCompared: true,
+      officialVerified: false, officialApplied: false,
+      officialOrigin: 'texto-manual',
+      reviewedItems: {}, finalReviewed: false, officialSubtotal: totals.subtotal,
+      officialDiscount: totals.discount,
+      officialTotal: totals.total
+    }));
+    setError('');
+    setToast('Consulta pública interpretada: ' + officialItems.length + ' itens para comparar com o OCR.');
+  }
+  function applyOfficialItems() {
+    if (!draft?.officialItems?.length) return;
+    setDraft((d) => ({
+      ...d,
+      items: d.officialItems.map((item, index) => {
+        const match = compareInvoiceItems(d.items, d.officialItems).find((r) =>
+          r.official === item && r.ocr && normalizeProductCode(r.ocr.code) === normalizeProductCode(item.code) &&
+          Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
+        return { ...item, itemDiscount: Number(item.itemDiscount ?? match?.ocr?.itemDiscount ?? 0) };
+      }),
+      reviewedItems: {}, finalReviewed:false,
+      officialApplied: true,
+      subtotal: d.officialSubtotal ?? d.subtotal,
+      discount: d.officialDiscount ?? d.discount,
+      total: d.officialTotal ?? d.total,
+      officialVerified: d.officialOrigin === 'sefaz',
+      totalsWarning: d.officialOrigin === 'sefaz' && d.officialTotal != null && d.officialSubtotal != null ? '' : d.totalsWarning,
+      source: String(d.source || '').includes('consulta pública') ? d.source : (String(d.source || '') + ' + consulta pública'),
+      totalsSource: d.officialOrigin === 'sefaz' ? 'SEFAZ (consulta automática)' : 'Texto de consulta (não autenticado)'
+    }));
+    setError('');
+    setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
+  }
+  function confirmDocument() {
+    if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
+      setError(/[A-Za-z]/.test(draft.supplierCnpj)
+        ? 'CNPJ alfanumérico preservado. Esta versão ainda não valida esse formato; solicite a atualização antes de lançar esta nota.'
+        : 'CNPJ do fornecedor inválido. Confira os dígitos com o emitente da nota antes de lançar.');
+      return;
+    }
+    if(draft?.pendingId){
+      const id=draft.pendingId;
+      const fingerprint=JSON.stringify(cleanPendingDraft(draft));
+      // Do not bypass persistence: request an immediate flush and wait for its ACK.
+      if(pendingFingerprints.current.get(id)!==fingerprint||pendingSaveErrorById[id]){
+        setError('');
+        setPendingSaveErrorById(previous=>({...previous,[id]:''}));
+        setPendingConfirmRequested({id,fingerprint});
+        return;
+      }
+    }
+    if (receiptReviewRows.some((row) => !row.done)) {
+      setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
+      return;
+    }
+    if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
+    if (!canConfirmFiscalDocument(draft, receiptReviewRows, currentUser?.id)) {
+      setError('Conclua a conferência de itens, totais e responsável no quadro de confirmação final.'); return;
+    }
+    if (draft.manualInvoice) {
+      if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
+        setError('Informe fornecedor, número e data da nota manual.');
+        return;
+      }
+      if (draft.items.some((item)=>!products.some((p)=>p.id===item.productId))) {
+        setError('Associe cada linha a um produto já cadastrado. Para um produto novo, use o botão Novo produto na tela de Estoque.');
+        return;
+      }
+      if (Math.abs(Number(draftSubtotal) - Number(draftItemsSubtotal)) > 0.02) {
+        setError('Confira o subtotal: ele deve corresponder à soma das linhas digitadas.');
+        return;
+      }
+    }
+    const missingHistoricalLinks = draft.items.some((item, index) => {
+      if (!shouldPostReceiptItem(item) || item.productId) return false;
+      const matched = findHistoricalMatches(draft, documents, products)[index];
+      return Boolean(matched && matched.productId &&
+        !findReceiptCatalogProduct(item, products, draft.supplierCnpj));
+    });
+    if (missingHistoricalLinks) {
+      setError('Já existe uma compra deste item com o mesmo fornecedor. Selecione o produto do estoque indicado no histórico ou confirme expressamente que é um cadastro distinto.');
+      return;
+    }
+    const unresolvedCodes = draft.items.filter(shouldPostReceiptItem).filter((it) =>
+      !it.productId && !findReceiptCatalogProduct(it, products, draft.supplierCnpj) &&
+      findReceiptCodeConflicts(it, products, draft.supplierCnpj).length > 0);
+    if (unresolvedCodes.length) {
+      setError('Código fiscal equivalente a produto já cadastrado: "' + unresolvedCodes[0].name +
+        '". Escolha o produto existente ou selecione explicitamente "Criar cadastro distinto", após conferir a nota.');
+      return;
+    }
+    if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
+      const mapped = findSupplierAliasProduct(it, products, draft.supplierCnpj);
+      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
+      const target = products.find((p) => p.id === it.productId);
+      return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
+        !(Number(it.stockQuantity) > 0));
+    })) { setError('Selecione o produto interno e informe sua quantidade quando a unidade fiscal for diferente.'); return; }
+    if (!draft || !draft.items.length || draft.items.some((it) =>
+      !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
+      !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
+      !it.unit?.trim())) {
+      setError('Todas as linhas devem conter produto, quantidade, unidade e preço válidos.');
+      return;
+    }
+    const financialWarnings = [
+      totalsItemsMismatch && 'A soma dos itens difere do subtotal.',
+      totalsFinalMismatch && 'O total calculado difere do valor capturado.',
+      officialTotalsMismatch && 'Os totais diferem da consulta oficial.',
+      officialMissing > 0 && 'Há itens da consulta pública não correspondentes à conferência.',
+      discountUnattributed && 'Há desconto distribuído entre os itens.'
+    ].filter(Boolean);
+    if (financialWarnings.length && !window.confirm(
+      'ATENÇÃO — divergências na nota:\\n\\n' + financialWarnings.join('\\n') +
+      '\\n\\nUsuário autenticado: ' + authenticatedReviewerName +
+      '\\nDeseja lançar a nota com os valores revisados manualmente?'
+    )) return;
+    // The unique fiscal access key is the primary deduplication key.
+    const duplicate = documents.some((d) =>
+      (validateNfceAccessKey(d.accessKey) && d.accessKey === draft.accessKey) ||
+      (!(validateNfceAccessKey(d.accessKey) && validateNfceAccessKey(draft.accessKey)) &&
+        d.invoiceNumber && draft.invoiceNumber && d.invoiceNumber === draft.invoiceNumber &&
+        normalizeReceiptName(d.supplier) === normalizeReceiptName(draft.supplier) &&
+        (!d.date || !draft.date || d.date === draft.date)));
+    if (duplicate) { setError('Esta nota já foi lançada no estoque. Para corrigir, peça ao Gestor o estorno da entrada anterior.'); return; }
+    // Keep an immutable copy: each fiscal row stores the definitive catalog ID.
+    const items = draft.items.map((item) => ({ ...item }));
+    const nextProducts = [...products];
+    const nextMovements = [...movements];
+    const documentId = uid();
+    const stockEntries = [];
+    // Apply line-specific discounts first; prorate only the remaining discount
+    // and charges, so a targeted discount is not spread over unrelated products.
+    const gross = items.reduce((sum, item) => sum + receiptItemTotal(item), 0);
+    const expenseTotal = items.filter((it) => !shouldPostReceiptItem(it))
+      .reduce((sum, it) => sum + receiptItemTotal(it) - Number(it.itemDiscount || 0), 0);
+    const postedBase = items.filter(shouldPostReceiptItem)
+      .reduce((sum, it) => sum + receiptItemTotal(it) - Number(it.itemDiscount || 0), 0);
+    const lineDiscounts = items.reduce((sum, item) => sum + Math.max(0, Number(item.itemDiscount || 0)), 0);
+    const remainingDiscount = Math.max(0, Number(draftDiscount) - lineDiscounts);
+    const discountBase = Math.max(0, gross - lineDiscounts);
+    items.forEach((it, itemIndex) => {
+      if (!shouldPostReceiptItem(it)) return; // Retain in fiscal history; do not mutate stock.
+      const itemGross = receiptItemTotal(it);
+      const base = Math.max(0, itemGross - Math.max(0, Number(it.itemDiscount || 0)));
+      const ratio = discountBase > 0 ? base / discountBase : 0;
+      // Fees already listed as fiscal rows are not extra to the invoice total.
+      // Allocate their net cost to physical items instead of creating fake products.
+      const serviceRatio = postedBase > 0 ? base / postedBase : 0;
+      const netLine = Math.max(0, base - remainingDiscount * ratio +
+        draftExtras * serviceRatio + expenseTotal * serviceRatio -
+        (discountBase > 0 ? expenseTotal * remainingDiscount / discountBase * serviceRatio : 0));
+      const fiscalCode = fiscalCodeIdentity(it.code);
+      const issuer = cnpjDigits(draft.supplierCnpj);
+      const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
+      const index = nextProducts.findIndex((p) => it.productId
+        ? p.id === it.productId : p.id === automaticProduct?.id);
+      const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
+        ? Number(it.stockQuantity) : Number(it.quantity);
+      const netUnitCost = Math.round(netLine / stockQuantity * 10000) / 10000;
+      let productId;
+      if (index >= 0) {
+        const old = nextProducts[index];
+        productId = old.id;
+        const supplierCodes = [...(old.supplierCodes || [])];
+        if (issuer && fiscalCode && !supplierCodes.some((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode))
+          supplierCodes.push({ cnpj: issuer, code: it.code });
+        nextProducts[index] = { ...old, supplierCodes,
+          stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
+          cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost,
+          unit: old.unit, updated: dateNow() };
+      } else {
+        productId = uid();
+        nextProducts.unshift({ id: productId, name: it.name.trim(), sku: it.code || ('PRD-' + Date.now().toString().slice(-5) + '-' + nextProducts.length), supplierCodes: issuer && fiscalCode ? [{ cnpj: issuer, code: it.code }] : [], category: 'Outros', unit: it.unit || 'un', stock: Number(it.quantity), min: 0, cost: Number.isFinite(netUnitCost) ? netUnitCost : 0, updated: dateNow() });
+      }
+      // Even when the reviewer explicitly selected "novo cadastro", never
+      // persist the sentinel; an invoice must reference the real product ID.
+      items[itemIndex] = { ...it, productId };
+      const movementId = uid();
+      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
+      nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow() });
+    });
+    setProducts(nextProducts);
+    setMovements(nextMovements);
+    let canonicalSupplier = null;
+    if (validSupplierCnpj(draft.supplierCnpj)) {
+      canonicalSupplier = suppliers.find((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj)) || {
+        id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim()
+      };
+      if (!suppliers.some((supplier) => String(supplier.id) === String(canonicalSupplier.id)))
+        setSuppliers((registered) => [...registered, canonicalSupplier]);
+    }
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, lineTotalsEdited, subtotalManuallyEdited, ...documentToSave } = draft;
+    documentToSave.supplierCnpj = formatSupplierCnpj(draft.supplierCnpj);
+    if (canonicalSupplier) documentToSave.supplierId = canonicalSupplier.id;
+    delete documentToSave.checkedBy;
+    pendingAttributionRef.current.set(documentId, {
+      userId: currentUser?.id,
+      movementIds: stockEntries.map((entry) => entry.movementId)
+    });
+    setDocuments((old) => [{ ...documentToSave,
+      subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
+      id: documentId, stockEntries,
+      pendingReceiptId:draft.pendingId||null,
+      status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
+    const nextDraft = draftQueue[0] || null;
+    setDraft(nextDraft);
+    setDraftQueue((old) => old.slice(1));
+    setDraftBatch(nextDraft && draftBatch ? { ...draftBatch, current: draftBatch.current + 1 } : null);
+    setError('');
+    if (uploadRef.current) uploadRef.current.value = '';
+    setToast(nextDraft ? 'Entrada registrada. Confira o próximo cupom antes de lançar.' : 'Entrada de ' + items.length + (items.length === 1 ? ' item registrada.' : ' itens registrada.'));
+    setView('documents');
+  }
+
+  function openMergePair(pair) {
+    if (currentUser?.role !== 'admin' || !supabase) {
+      setToast('A consolidação exige uma sessão do Gestor no banco compartilhado.');
+      return;
+    }
+    setMergePair(pair);
+    // Prefer keeping a named item with positive stock; never guess whether
+    // physical quantities describe the same contents.
+    setMergeKeepId(Number(pair.left.stock) >= Number(pair.right.stock) ?
+      pair.left.id : pair.right.id);
+    setMergeAcknowledged(false);
+    setMergeError('');
+  }
+
+  async function confirmProductMerge() {
+    if (!mergePair || currentUser?.role !== 'admin' || !supabase || !accessCode)
+      return;
+    if (!mergePair.sameUnit) {
+      setMergeError('As unidades são diferentes. Corrija o cadastro e converta as quantidades antes de consolidar.');
+      return;
+    }
+    if (!mergeAcknowledged || ![mergePair.left.id, mergePair.right.id].includes(mergeKeepId)) return;
+    if (countDraft) {
+      setMergeError('Há uma contagem de estoque em andamento. Conclua ou cancele antes de consolidar.');
+      return;
+    }
+    if (saveStatus !== 'Sincronizado') {
+      setMergeError('Aguarde a sincronização do estoque antes de continuar.');
+      return;
+    }
+    setMergeBusy(true);
+    setMergeError('');
+    try {
+      await saveQueueRef.current;
+      const removeId = mergePair.left.id === mergeKeepId ? mergePair.right.id : mergePair.left.id;
+      const { data, error: rpcError } = await supabase.rpc('inventory_merge_products', {
+        p_token: accessCode, p_keep_id: mergeKeepId, p_remove_id: removeId, p_rev: revisionRef.current
+      });
+      if (rpcError || !data?.ok) throw new Error(rpcError?.message || 'Não foi possível consolidar os produtos.');
+      if (!(await loadSharedInventory(accessCode)))
+        throw new Error('Consolidação concluída, mas não foi possível recarregar o estoque.');
+      setMergePair(null);
+      setMergeAcknowledged(false);
+      setToast('Cadastros consolidados. Saldos e vínculos das notas foram preservados.');
+    } catch (e) {
+      setMergeError(e?.message || 'Falha ao consolidar. Atualize o estoque e tente novamente.');
+    } finally { setMergeBusy(false); }
+  }
+
+  async function deleteDocument(document) {
+    if (!document?.id || currentUser?.role !== 'admin') {
+      setDeleteError('Somente o Gestor pode excluir uma nota fiscal lançada.');
+      return;
+    }
+    if (!supabase || !accessCode) {
+      setDeleteError('Entre com a conta do Gestor para remover documentos do banco compartilhado.');
+      return;
+    }
+    if (saveStatus !== 'Sincronizado') {
+      setDeleteError('Aguarde a sincronização terminar antes de excluir a nota.');
+      return;
+    }
+    const label = document.invoiceNumber ? 'nº ' + document.invoiceNumber : (document.fileName || 'selecionada');
+    if (!window.confirm(
+      'Excluir definitivamente a nota ' + label + '?\n\n' +
+      'As quantidades lançadas por esta nota serão estornadas do estoque e ' +
+      'suas movimentações de entrada serão removidas.\n\n' +
+      'Esta ação não pode ser desfeita.'
+    )) return;
+    setDeletingDocId(document.id);
+    setDeleteError('');
+    try {
+      await saveQueueRef.current;
+      const { data, error: removalError } = await supabase.rpc('inventory_delete_document', {
+        p_session_token: accessCode,
+        p_document_id: document.id
+      });
+      if (removalError || !data?.ok) {
+        throw new Error(removalError?.message || 'A nota não pôde ser excluída.');
+      }
+      revisionRef.current = Number(data.revision ?? revisionRef.current + 1);
+      const refreshed = await loadSharedInventory(accessCode);
+      if (!refreshed) throw new Error('A nota foi excluída, mas não foi possível atualizar a tela. Entre novamente.');
+      setDetailDoc(null);
+      setError('');
+      setToast('Nota excluída pelo Gestor e entrada estornada do estoque.');
+    } catch (err) {
+      const message = err?.message || 'Não foi possível excluir a nota.';
+      setDeleteError(message);
+      setError('Exclusão da nota: ' + message);
+      setToast('Exclusão não concluída. Verifique o aviso na tela.');
+    } finally {
+      setDeletingDocId('');
+    }
+  }
+
+  if (PREVIEW_UNSAFE) {
+    return <div className="auth-screen"><section className="auth-card" role="alert">
+      <h1>Ambiente de homologação bloqueado</h1>
+      <p>Esta prévia não possui autorização explícita para acessar o banco configurado.
+        Por segurança, o acesso ao estoque está bloqueado.</p>
+      <p>Para homologar com o banco existente, configure as variáveis Preview na Vercel,
+        inclusive a liberação controlada da branch de integração, e gere uma nova implantação.
+        Os logins e permissões continuam sendo verificados pelo banco.</p>
+    </section></div>;
+  }
+  if (supabase && !accessLoaded) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
+  }
+  if (supabase && !accessGranted) {
+    return <div className="auth-screen"><section className="auth-card">
+      <div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div>
+      <div className="auth-eyebrow">ACESSO INDIVIDUAL</div>
+      <h1>Entrar no estoque</h1>
+      <p className="auth-intro">Use sua conta da cafeteria para consultar e atualizar o estoque compartilhado.</p>
+      <form className="auth-form" onSubmit={handleLogin}>
+        <label className="field"><span>Login</span><input type="text" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="Seu login"/></label>
+        <label className="field"><span>Senha</span><input type="password" name="password" autoComplete="current-password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Sua senha"/></label>
+        <button className="btn primary auth-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando acesso…' : 'Entrar no estoque'}</button>
+      </form>
+      {accessMessage && <div className="auth-message" role="status" style={{marginTop: 14}}>{accessMessage}</div>}
+      <div className="auth-security"><Icon type="check" size={16}/> Sessão individual protegida, com validade de até 12 horas.</div>
+    </section></div>;
+  }
+  if (supabase && accessGranted && !dataReady) {
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
+  }
+
+  if (supabase && accessGranted && (mustChangePassword || currentUser?.role === 'superadmin')) {
+    return <main className="tenant-admin-screen"><header><h1>Estoque+ · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
+  }
+
+  return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
+    {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
+    <aside className="sidebar" id="primary-navigation">
+      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}}><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
+      <button className="sidebar-close" type="button" aria-label="Fechar menu" onClick={()=>setMenuOpen(false)}>×</button>
+      <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>Meu estoque</b><small>Ambiente de demonstração</small></span><Icon type="down" size={15}/></div>
+      <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation" aria-label="Menu principal" onClick={e=>{if(e.target.closest(".nav-link"))setMenuOpen(false);}}>
+        <button aria-label="Estoque" aria-current={view === 'stock' ? 'page' : undefined} className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
+        <button aria-label="Contagem de estoque" aria-current={view === 'count' ? 'page' : undefined} className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
+        {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
+        {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
+        <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
+        <button aria-label="Faturamento" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
+        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
+      </nav>
+
+    </aside>
+    <main className="main"><input ref={cashFileRef} type="file" multiple
+      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" hidden
+      onChange={e=>void uploadCashReportBatch(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+      {cashReportPreview&&<div className="modal-backdrop cash-report-preview-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setCashReportPreview(null);}}><section className="modal cash-report-preview" role="dialog" aria-modal="true" aria-label="Prévia do faturamento"><div className="modal-head"><h2>Prévia do arquivo</h2><button type="button" className="icon-btn" aria-label="Fechar prévia" onClick={()=>setCashReportPreview(null)}>×</button></div><div className="cash-report-preview-actions"><a className="btn secondary" href={cashReportPreview.url} download={cashReportPreview.fileName} rel="noopener">Baixar original</a><span>{cashReportPreview.fileName}</span></div>{cashReportPreview.mime==='application/pdf'?<iframe title="Prévia do PDF" src={cashReportPreview.url}/>:<img src={cashReportPreview.url} alt={'Prévia do documento '+cashReportPreview.fileName}/>}</section></div>}
+      <header className="topbar">
+        <div className="topbar-start">
+          <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
+          <button type="button" className="nav-collapse-button" aria-label={navCollapsed?'Expandir menu lateral':'Recolher menu lateral'} title={navCollapsed?'Expandir menu':'Recolher menu'} aria-pressed={navCollapsed} onClick={()=>setNavCollapsed(o=>!o)}><Icon type="grid" size={17}/></button>
+          <div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div>
+        </div>
+        <div className="top-right">
+          <span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span>
+          <button className="bell" aria-label="Ver itens com estoque baixo" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
+          <div className="account-menu">
+            <button type="button" className="account-trigger" aria-haspopup="menu" aria-expanded={accountOpen} onClick={()=>setAccountOpen(o=>!o)}>
+              <span className="user-avatar">{currentUser?.role==='admin'?'GE':'EQ'}</span>
+              <span className="account-identity"><b>{currentUser?.display_name || 'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'}</small></span>
+              <Icon type="down" size={14}/>
+            </button>
+            {accountOpen&&<><button className="account-menu-dismiss" type="button" aria-label="Fechar menu do usuário" onClick={()=>setAccountOpen(false)}/>
+              <div className="account-dropdown" role="menu">
+                <p><b>{currentUser?.display_name||'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'} · {saveStatus||'Sessão ativa'}</small></p>
+                <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('settings');}}>Configurações</button>
+                {currentUser?.role === 'admin' && <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('permissions');}}>Permissões</button>}
+                <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setToast('Os dados são sincronizados no banco compartilhado da equipe.');}}>Sobre a sincronização</button>
+                <button type="button" role="menuitem" className="signout-menu-item" onClick={()=>{setAccountOpen(false);if(supabase)handleLock();}}>Sair da conta</button>
+              </div></>}
+          </div>
+        </div>
+      </header>
+      <div className="content">
+        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
+
+        {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
+        {view === 'count' && <section className="panel" style={{padding:20}}>
+          <h2>Contagem física do estoque</h2>
+          <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
+          <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
+          {countSettings.enabled && <p style={{color:countDue?'#a33':'#356b54'}}>{countDue ? 'Prazo vencido: conferência obrigatória pendente.' : 'A contagem está em dia.'}</p>}
+          {stockCounts[0]&&<p>Última conferência: {new Date(stockCounts[0].completedAt).toLocaleString('pt-BR')} · {stockCounts[0].by}</p>}
+          {countError&&<div className="error" role="alert">{countError}</div>}
+          {currentUser?.role==='admin'&&<div className="panel" style={{padding:15,marginTop:16}}>
+            <h3>Periodicidade obrigatória · Gestor</h3>
+            <label style={{display:'flex',gap:9,alignItems:'center',margin:'12px 0'}}><input type="checkbox" checked={Boolean(settingsForm.enabled)} onChange={(e)=>setSettingsForm({...settingsForm,enabled:e.target.checked})}/> Exigir contagem periódica</label>
+            <div className="meta-fields">
+              <label><span>Periodicidade</span><select value={settingsForm.mode} onChange={(e)=>setSettingsForm({...settingsForm,mode:e.target.value})}><option value="interval">A cada X dias</option><option value="weekly">Dia fixo da semana</option><option value="monthly">Dia fixo do mês</option></select></label>
+              {settingsForm.mode==='interval'&&<label><span>Intervalo em dias (1 a 365)</span><input type="number" min="1" max="365" value={settingsForm.intervalDays} onChange={(e)=>setSettingsForm({...settingsForm,intervalDays:Number(e.target.value)})}/></label>}
+              {settingsForm.mode==='weekly'&&<label><span>Dia da semana</span><select value={settingsForm.weekday} onChange={(e)=>setSettingsForm({...settingsForm,weekday:Number(e.target.value)})}>{['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'].map((d,i)=><option value={i+1} key={d}>{d}</option>)}</select></label>}
+              {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
+            </div>
+            <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
+          </div>}<CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/>
+          {!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
+          {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
+          {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}}>Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 style={{marginTop:22}}>Histórico de contagens</h3>
+          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
+          {/* COUNT HISTORY */}
+        </section>}
+        {(view === 'settings' || (view === 'administration' && currentUser?.role === 'admin')) && <TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={false} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/>}
+        {view === 'duplicates' && currentUser?.role === 'admin' && <section className="panel duplicates-panel">
+          <div className="panel-head"><div><h2>Auditoria automática do catálogo</h2><p>Executada sempre que o estoque é atualizado. O código é comparado sem zeros iniciais e a descrição é verificada separadamente.</p></div><span className="history-count">{duplicatePairs.length} par(es)</span></div>
+          <p className="duplicate-guidance">⚠ Revise estes pares com o documento original. Quando forem o mesmo produto, escolha qual cadastro manter e clique em Consolidar. A operação soma os saldos, preserva os códigos e atualiza os vínculos das notas para manter possíveis estornos. Unidades diferentes exigem correção prévia.</p>
+          {duplicatePairs.length ? <div className="duplicate-results">{duplicatePairs.map((match) => <div key={String(match.left.id) + ':' + String(match.right.id)} className="duplicate-pair">
+            <div className="duplicate-pair-heading"><b className={match.confidence === 'alta' ? 'duplicate-high' : 'duplicate-review'}>{match.confidence === 'alta' ? 'Alta probabilidade' : 'Conferir manualmente'}</b><small>Descrição: {match.similarity}% semelhante</small></div>
+            <div className="duplicate-comparison">
+              {[match.left, match.right].map((p, i) => <div className="duplicate-product" key={p.id}><strong>{p.name}</strong><small>Código: {p.sku || 'Sem código'} · {qty(p.stock)} {p.unit}</small><small>Fornecedor(es): {(p.supplierCodes || []).map((alias) => alias.code + ' (' + alias.cnpj + ')').join(', ') || 'Não informado'}</small><button type="button" className="text-btn" onClick={() => openProduct(p)}>Editar {i === 0 ? 'primeiro' : 'segundo'} cadastro <Icon type="edit" size={14}/></button></div>)}
+            </div>
+            <p className="duplicate-reasons">{match.reasons.join(' · ')}</p>
+            <div className="duplicate-merge-actions">
+              <small>Se for o mesmo produto: saldo combinado {qty(Number(match.left.stock) + Number(match.right.stock))} {match.left.unit}.</small>
+              <button className="btn primary" type="button" disabled={!match.sameUnit || !supabase || saveStatus !== 'Sincronizado'} onClick={() => openMergePair(match)}><Icon type="check" size={15}/>Consolidar cadastros</button>
+            </div>
+            {!match.sameUnit && <small className="duplicate-unit-warning">⚠ As unidades são diferentes. Edite e converta antes de consolidar.</small>}
+          </div>)}</div>
+          : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma possível duplicata encontrada</b><p>A rotina seguirá conferindo o catálogo ao entrar ou lançar notas fiscais.</p></div>}
+        </section>}
+        {view === 'stock' && currentUser?.role === 'admin' && duplicatePairs.length > 0 && <section className="alert-strip" role="status"><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>{duplicatePairs.length} possível(is) duplicata(s) no catálogo</b><p>Compare códigos e descrições; confira antes de corrigir os cadastros.</p></div><button onClick={() => setView('duplicates')}>Revisar <Icon type="chevron" size={15}/></button></section>}
+        {view === 'stock' && <>
+          <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
+            <article className="stat"><div className="stat-top"><span>Produtos cadastrados</span><i className="stat-symbol green"><Icon type="box" size={19}/></i></div><strong className="stat-value">{products.length}</strong><div className="stat-foot"><span className="green-dot"/>Itens no catálogo</div></article>
+            {currentUser?.role === 'admin' && <article className="stat"><div className="stat-top"><span>Valor em estoque</span><i className="stat-symbol beige"><Icon type="chart" size={19}/></i></div><strong className="stat-value money-value">{money(value)}</strong><div className="stat-foot subtle">Custo estimado dos itens disponíveis</div></article>}
+            <article className="stat"><div className="stat-top"><span>Estoque baixo</span><i className="stat-symbol yellow"><Icon type="alert" size={19}/></i></div><strong className="stat-value">{low.length}</strong><div className="stat-foot">{low.length ? <span className="warn-text">Precisam de reposição</span> : <span className="green-text">Tudo em dia</span>}</div></article>
+            <article className="stat"><div className="stat-top"><span>Quantidade total</span><i className="stat-symbol blue"><Icon type="arrows" size={19}/></i></div><strong className="stat-value">{qty(units)}</strong><div className="stat-foot subtle">Soma das quantidades cadastradas</div></article>
+          </section>
+          {low.length > 0 && <section className="alert-strip"><span className="alert-icon"><Icon type="alert" size={19}/></span><div><b>{low.length} {low.length === 1 ? 'produto precisa' : 'produtos precisam'} de reposição</b><p>{low.slice(0, 3).map((p) => p.name).join(', ')}{low.length > 3 ? ' e mais ' + (low.length - 3) : ''} estão no mínimo ou abaixo dele.</p></div><button onClick={() => setFilter('Estoque baixo')}>Ver produtos <Icon type="chevron" size={15}/></button></section>}
+          <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}}><Icon type="sliders" size={16}/>Limpar filtros</button></div>
+            <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
+            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)}><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'}><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
+            <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
+          </section>
+          <section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')}>Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)}><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
+          <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')}>Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section>
+        </>}
+
+        {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
+          <div className="purchase-print-action"><button className="btn" type="button" disabled={!purchaseList.length} onClick={() => { if (currentUser?.role === 'admin' && purchaseList.length) printPurchasePlan(purchaseData); }}>Imprimir lista de compras</button></div>
+          <div className="panel-head"><div><h2>Lista de compras por categoria</h2><p>Compras sugeridas = mínimo − saldo. O preço médio é ponderado pelas quantidades de entradas fiscais anteriores.</p></div><span className="history-count">{purchaseList.length} itens</span></div>
+          {purchaseList.length ? <>
+            <div className="purchase-overview">
+              <div><small>Estimativa total</small><strong>{money(purchaseData.total)}</strong><small>{purchaseData.missingPrices ? 'Parcial: ' + purchaseData.missingPrices + ' item(ns) sem referência de preço' : 'Todos os itens têm preço de referência'}</small></div>
+              <div><small>Categorias com reposição</small><strong>{purchaseData.categories.length}</strong><small>Organizadas para facilitar a compra</small></div>
+            </div>
+            {purchaseData.categories.map((group) => <section className="purchase-category" key={group.name}>
+              <div className="purchase-category-head"><h3>{group.name}</h3><span>{group.items.length} produto(s) · subtotal {money(group.subtotal)}{group.missingPrices ? ' (parcial)' : ''}</span></div>
+              <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>FORNECEDOR HABITUAL</th><th>ATUAL / MÍNIMO</th><th>COMPRAR</th><th>MÉDIA PAGA</th><th>PREÇO BASE</th><th>TOTAL PREVISTO</th></tr></thead>
+                <tbody>{group.items.map((p) => <tr key={p.id}>
                   <td><b>{p.name}</b><small className="purchase-detail">{p.sku || 'Sem código'}</small></td>
                   <td><span>{p.usualSupplier || 'A definir'}</span><small className="purchase-detail">{p.supplierSource === 'manual' ? 'Definido pelo Gestor' : p.supplierSource === 'histórico' ? 'Mais frequente no histórico' : 'Sem compras anteriores'}</small><button className="text-btn purchase-inline-edit" type="button" onClick={() => openProduct(p)}>Alterar fornecedor</button></td>
                   <td>{qty(p.stock)} / {qty(p.min)} {p.unit}</td>
