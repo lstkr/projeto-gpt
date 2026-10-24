@@ -59,10 +59,13 @@ sql((ROOT/'tests/sql/cash-report-batch.sql').read_text(encoding='utf8'))
 # Exercise fiscal-attribution rollback without removing its audit records.
 # The rollback runs in a transaction that is deliberately reverted afterwards.
 rollback_sql = (ROOT/'supabase/rollback/20261023013000_fiscal_document_server_attribution.sql').read_text(encoding='utf8')
-sql("begin;\n" + rollback_sql + "\ndo $check$ begin "
-    "assert (select count(*) from private.fiscal_document_attribution)=2; "
-    "assert position('The JSON snapshot stays backward compatible' in "
-    "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure))=0; "
+sql("begin;\n" + rollback_sql + "\ndo $check$ declare audit_count bigint; marker_position integer; begin "
+    "select count(*) into audit_count from private.fiscal_document_attribution; "
+    "select position('The JSON snapshot stays backward compatible' in "
+    "pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) "
+    "into marker_position; "
+    "if audit_count<>2 then raise exception 'Rollback audit count expected 2, got %', audit_count; end if; "
+    "if marker_position<>0 then raise exception 'Rollback attribution marker still present at %', marker_position; end if; "
     "end $check$;\nrollback;")
 assert sql("select count(*) from private.fiscal_document_attribution") == '2'
 assert sql("select position('The JSON snapshot stays backward compatible' in pg_get_functiondef('private.inventory_save_impl(text,jsonb)'::regprocedure)) > 0") == 't'
