@@ -6,14 +6,22 @@ import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
+import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
-import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
+import { updateFiscalLine, resolveFiscalSubtotal } from '../lib/fiscal-calculation.mjs';
+import { canStartFiscalFinalReview, canConfirmFiscalDocument } from '../lib/fiscal-confirmation.mjs';
+import { filterDocumentHistory, formatDocumentIssueDate } from '../lib/document-history.mjs';
+import { cnpjDigits, formatSupplierCnpj, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
-import { parseCashReport } from '../lib/cash-report-parser.mjs';
+import { summarizeCashMonthly } from '../lib/cash-chart-references.mjs';
+import { parseCashReport, parseCashReportCandidates } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
+import { cashReportMimeFromBytes, cashReportSafeDownloadName, decodeCashReportBase64, encodeCashReportBase64, cashReportFileMatchesMime } from '../lib/cash-report-ui.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
+import { getPendingReceiptPreviewType, safePendingReceiptFilename } from '../lib/pending-receipt-preview.mjs';
+import { adaptiveBinarizeImageData } from '../lib/receipt-image-preprocess.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -34,6 +42,7 @@ const money = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currenc
 const qty = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(Number(v || 0));
 const norm = (v) => String(v || '').trim().toLocaleLowerCase('pt-BR');
 const uid = () => Math.random().toString(36).slice(2, 10);
+const uuid = () => globalThis.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
@@ -870,14 +879,19 @@ function parseReceiptTotals(text) {
     .map((match) => localizedValue(match[1]))
     .filter((value) => Number.isFinite(value) && value >= 0);
   let summary = false;
+  let printedGrossTotal = null;
   for (const line of String(text || '').split(/\r?\n/)) {
     const n = normalize(line);
     if (/QTD(?:E)?\s*TOTAL|TOTAL DE ITENS|SUB[ -]?TOTAL/.test(n)) summary = true;
     const values = amountValues(line);
     if (!values.length) continue;
-    if (/\bSUB[\s-]*TOTAL\b/.test(n)) totals.subtotal = values[0];
+    if (/\bSUB[\s-]*TOTAL\b|\bVALOR\s+TOTAL\s+DOS\s+PRODUTOS\b/.test(n)) totals.subtotal = values[0];
     if (/\bDESCONTO\b/.test(n) && summary) totals.discount = values[0];
-    if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
+    if (/\bVALOR\s+TOTAL\b/.test(n) && !/\bVALOR\s+TOTAL\s+DOS\s+PRODUTOS\b/.test(n)) printedGrossTotal = values[0];
+    if (/\bVALOR\s+A\s+PAGAR\b/.test(n)) {
+      if (totals.subtotal == null && printedGrossTotal != null) totals.subtotal = printedGrossTotal;
+      totals.total = values[0];
+    } else if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
         !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n))
       totals.total = values[0];
   }
@@ -1014,7 +1028,7 @@ function compareInvoiceItems(ocrItems, officialItems) {
   })));
 }
 
-async function prepareReceiptCanvases(file) {
+async function prepareReceiptCanvases(file, { splitReceipts = true } = {}) {
   const image = new Image();
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -1076,7 +1090,7 @@ async function prepareReceiptCanvases(file) {
   const twoReceipts = width > 500 && peakLeft > 0.48 && peakRight > 0.48 &&
     valley < Math.min(peakLeft, peakRight) * 0.80 && valley < 0.62;
   const segments = [];
-  if (twoReceipts) segments.push([0, seam], [seam, width]);
+  if (twoReceipts && splitReceipts) segments.push([0, seam], [seam, width]);
   else segments.push([0, width]);
 
   const trimX = (start, end) => {
@@ -1151,10 +1165,18 @@ async function prepareReceiptCanvases(file) {
 }
 
 
+function fiscalDocumentAuthorText(document) {
+  if (document?.checkedByVerified === true && document.checkedBy) return 'Conferido e lançado por ' + document.checkedBy;
+  if (document?.checkedBy) return 'Autoria legada não verificada: ' + document.checkedBy;
+  return 'Autoria não informada';
+}
+
 export default function Home() {
   const [supabase] = useState(() => HAS_SUPABASE_CONFIG ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
   const [accessCode, setAccessCode] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
+  const authenticatedReviewerName = currentUser?.display_name || currentUser?.username || 'Usuário autenticado';
+  const pendingAttributionRef = useRef(new Map());
   const [activeTenantName,setActiveTenantName]=useState('');
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [fiscalPermissions,setFiscalPermissions]=useState(null);
@@ -1198,7 +1220,9 @@ export default function Home() {
   const [products, setProducts] = useState(HAS_SUPABASE_CONFIG ? [] : initialProducts);
   const [movements, setMovements] = useState(HAS_SUPABASE_CONFIG ? [] : initialMovements);
   const [documents, setDocuments] = useState([]);
+  const [historyFilters, setHistoryFilters] = useState({ from: '', to: '', supplier: '', author: '' });
   const [suppliers, setSuppliers] = useState([]);
+  const [supplierIdentityLinks, setSupplierIdentityLinks] = useState([]);
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
   const [pendingSaveError,setPendingSaveError]=useState('');
@@ -1210,18 +1234,29 @@ export default function Home() {
   const pendingRevisions=useRef(new Map());
 
   const [closings,setClosings]=useState([]);
+  const [cashReports,setCashReports]=useState([]);
+  const [cashReportActive,setCashReportActive]=useState(null);
+  const [cashReportProgress,setCashReportProgress]=useState(null);
+  const [cashReportErrors,setCashReportErrors]=useState({});
+  const [cashReportPreview,setCashReportPreview]=useState(null);
+  const cashReportIdempotencyRef=useRef(new Map());
   const [cashEditId,setCashEditId]=useState('');
   const [cashSaving,setCashSaving]=useState(false);
   const cashSavingRef=useRef(false);
   const [cashEntryMode,setCashEntryMode]=useState(''); // '', upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
+  const [cashImportAlternativeText,setCashImportAlternativeText]=useState('');
   const [cashImportWarnings,setCashImportWarnings]=useState([]);
   const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
   const [cashChartScope,setCashChartScope]=useState('month');
   const [cashSelectedDay,setCashSelectedDay]=useState('');
+  const [cashSelectedClosingId,setCashSelectedClosingId]=useState('');
+  const [cashAuditHistory,setCashAuditHistory]=useState([]);
+  const [cashAuditLoading,setCashAuditLoading]=useState(false);
+  const cashCorrectionContextRef=useRef(null);
   const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
@@ -1266,7 +1301,12 @@ export default function Home() {
   const [draftQueue, setDraftQueue] = useState([]);
   const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
+  const [pendingPreview, setPendingPreview] = useState(null);
+  const pendingPreviewUrlRef = useRef('');
   const [error, setError] = useState('');
+  const errorAlertRef = useRef(null);
+  const firstFiscalFieldRef = useRef(null);
+  const focusDraftOnOpenRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [processingType, setProcessingType] = useState('xml');
   const [ocrProgress, setOcrProgress] = useState(0);
@@ -1280,23 +1320,59 @@ export default function Home() {
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
+  const sessionRevokedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
   const receiptOcrWorkerRef = useRef(null);
+  const receiptPaddleOcrRef = useRef(null);
+
+  async function runPaddleOcr(canvas) {
+    if (!receiptPaddleOcrRef.current) {
+      const { PaddleOCR } = await import('@paddleocr/paddleocr-js');
+      receiptPaddleOcrRef.current = await PaddleOCR.create({
+        lang: 'pt',
+        ocrVersion: 'PP-OCRv6',
+        worker: true,
+        textDetectionModelAsset: {
+          url: `${window.location.origin}/ocr-models/PP-OCRv6_small_det_onnx_infer.tar`
+        },
+        textRecognitionModelAsset: {
+          url: `${window.location.origin}/ocr-models/PP-OCRv6_small_rec_onnx_infer.tar`
+        },
+        ortOptions: { backend: 'wasm', numThreads: 1, simd: true }
+      });
+    }
+    const [result] = await receiptPaddleOcrRef.current.predict(canvas);
+    return (result?.items || []).map((item) => item.text).filter(Boolean).join('\n');
+  }
+
+  useEffect(() => {
+    if(error) errorAlertRef.current?.focus();
+  },[error]);
+  useEffect(() => {
+    if(!draft || !focusDraftOnOpenRef.current) return;
+    focusDraftOnOpenRef.current=false;
+    requestAnimationFrame(()=>firstFiscalFieldRef.current?.focus());
+  },[draft?.pendingId,draft?.fileName]);
   const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
   const uploadRef = useRef(null);
 
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
-  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+  const activeDialog = cashReportPreview ? 'cash-report-preview' : mergePair ? 'merge' : detailDoc ? 'details' : pendingPreview ? 'pending-preview' :
     view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useAccessibleDialog(activeDialog, () => {
-    if (mergePair) {
+    if (pendingPreview) {
+      closePendingPreview();
+    } else if (mergePair) {
       if (!mergeBusy) setMergePair(null);
+    } else if (cashReportPreview) {
+      setCashReportPreview(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
     } else if (view === 'cash' && cashSelectedDay) {
       setCashSelectedDay('');
+      setCashSelectedClosingId('');
     } else {
       setModal('');
     }
@@ -1342,11 +1418,15 @@ export default function Home() {
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
     setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
+    const { data: identityLinks } = await supabase.rpc('supplier_identity_links', { p_token: token });
+    setSupplierIdentityLinks(Array.isArray(identityLinks) ? identityLinks : []);
     const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
     const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
     if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
+    const {data:reportList,error:reportLoadError}=await supabase.rpc('cash_reports_list',{p_token:token});
+    if(!reportLoadError && Array.isArray(reportList)) setCashReports(reportList);
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
@@ -1408,7 +1488,12 @@ export default function Home() {
       setAccessLoaded(true);
       if (token) loadSharedInventory(token);
       else {
-        setAccessMessage('');
+        let logoutNotice='';
+        try {
+          logoutNotice=sessionStorage.getItem('projeto-gpt-session-message')||'';
+          sessionStorage.removeItem('projeto-gpt-session-message');
+        } catch (_) {}
+        setAccessMessage(logoutNotice);
         setAccessGranted(false);
         setDataReady(false);
       }
@@ -1430,13 +1515,67 @@ export default function Home() {
     setDataReady(true);
   }, [supabase]);
 
+  // Session revocation is enforced on every RPC by the database. This
+  // watcher only changes the UI state and clears the local token promptly.
+  // No Realtime grants and no private tables are exposed to the browser.
+  useEffect(() => {
+    if (!supabase || !accessCode || !accessGranted || currentUser?.role==='superadmin') return;
+    let live=true;
+    let pending=false;
+    sessionRevokedRef.current=false;
+    async function verifySession() {
+      if (!live || pending || sessionRevokedRef.current || document.hidden) return;
+      pending=true;
+      try {
+        const {data,error}=await supabase.rpc('inventory_validate_session',{
+          p_session_token:accessCode
+        });
+        if (!live || sessionRevokedRef.current) return;
+        if (sessionHealth({data,error}) === 'revoked') {
+          // Mark synchronously before triggering any state changes/re-render.
+          sessionRevokedRef.current=true;
+          try {
+            sessionStorage.removeItem('projeto-gpt-session');
+            sessionStorage.removeItem('projeto-gpt-access');
+            sessionStorage.setItem('projeto-gpt-session-message',
+              'Sua sessão foi encerrada ou sua conta foi desativada. Entre novamente.');
+          } catch (_) {}
+          setAccessGranted(false);
+          setDataReady(false);
+          setAccessCode('');
+          setCurrentUser(null);
+          setDraft(null);
+          setDraftQueue([]);
+          setSaveStatus('');
+          // A full reload destroys stale timers and in-flight component state.
+          window.location.replace(window.location.pathname + window.location.search);
+        }
+      } catch (_) {
+        // Offline is not proof of deactivation. The server independently
+        // rejects all mutations with an inactive/revoked token.
+      } finally { pending=false; }
+    }
+    const timer=window.setInterval(verifySession,SESSION_CHECK_INTERVAL_MS);
+    const onFocus=()=>{void verifySession();};
+    const onVisible=()=>{if (!document.hidden) void verifySession();};
+    window.addEventListener('focus',onFocus);
+    document.addEventListener('visibilitychange',onVisible);
+    void verifySession();
+    return ()=>{
+      live=false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus',onFocus);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
+  },[supabase,accessCode,accessGranted,currentUser?.role]);
+
   useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
   }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
-    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin') return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin' || sessionRevokedRef.current) return;
     if (skipNextSyncRef.current) {
       skipNextSyncRef.current = false;
       return;
@@ -1446,6 +1585,7 @@ export default function Home() {
       // Serialize snapshots: each save uses the revision acknowledged by Supabase.
       // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
+        if (sessionRevokedRef.current) return;
         const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
           p_session_token: accessCode,
           p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
@@ -1458,6 +1598,39 @@ export default function Home() {
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
+          const pendingAttributions = Array.from(pendingAttributionRef.current.entries());
+          if (pendingAttributions.length) {
+            let authoritativeState = null;
+            try {
+              const { data: serverState, error: readError } = await supabase.rpc('inventory_get', {
+                p_session_token: accessCode
+              });
+              if (!readError && serverState) authoritativeState = serverState;
+            } catch (_) {}
+            if (authoritativeState) {
+              const serverDocuments = new Map((authoritativeState.documents || []).map((document) => [document.id, document]));
+              const serverMovements = new Map((authoritativeState.movements || []).map((movement) => [movement.id, movement]));
+              const confirmedAttributions = pendingAttributions.filter(([documentId, pending]) => {
+                const document = serverDocuments.get(documentId);
+                return document?.checkedByVerified === true
+                  && document.checkedByUserId === pending.userId
+                  && Boolean(document.checkedBy)
+                  && pending.movementIds.every((movementId) => {
+                    const movement = serverMovements.get(movementId);
+                    return movement?.byVerified === true && movement.byUserId === pending.userId;
+                  });
+              });
+              if (confirmedAttributions.length) {
+                const confirmedIds = new Set(confirmedAttributions.map(([documentId]) => documentId));
+                setDocuments((current) => current.map((document) =>
+                  confirmedIds.has(document.id) ? serverDocuments.get(document.id) : document));
+                const confirmedMovementIds = new Set(confirmedAttributions.flatMap(([, pending]) => pending.movementIds));
+                setMovements((current) => current.map((movement) =>
+                  confirmedMovementIds.has(movement.id) ? serverMovements.get(movement.id) : movement));
+                confirmedAttributions.forEach(([documentId]) => pendingAttributionRef.current.delete(documentId));
+              }
+            }
+          }
           // Mark processed only after the shared stock snapshot was committed.
           for(const completed of documents.filter(d=>d.pendingReceiptId)){
             if(pendingMarking.current.has(completed.pendingReceiptId))continue;
@@ -1478,7 +1651,7 @@ export default function Home() {
   const administrationGuardRef = useRef(null);
   administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
   const invokeAdministration = useCallback(async (name, args) => {
-    if (!supabase || !accessCode) throw new Error('Sessão necessária.');
+    if (!supabase || !accessCode || sessionRevokedRef.current) throw new Error('Sessão necessária.');
     if (name === 'inventory_select_tenant') {
       // Only a stable view can switch. Token rotation at the database prevents
       // delayed requests from the previous unit from crossing this boundary.
@@ -1577,10 +1750,11 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const filteredHistoryDocuments = filterDocumentHistory(documents, historyFilters);
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Faturamento','Envie relatórios, confira cada fechamento e acompanhe a evolução.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
-  const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
+  const draftSubtotal = resolveFiscalSubtotal(draft, draftItemsSubtotal);
   const draftDiscount = draft ? Number(draft.discount || 0) : 0;
   // The net payable amount is derived from the gross subtotal and discounts, never typed manually.
   const draftTotal = Math.round((draftSubtotal - draftDiscount + Number(draft?.additionalCharges || 0)) * 100) / 100;
@@ -1661,9 +1835,7 @@ export default function Home() {
     (String(draft.source || '').startsWith('Foto') && draft.officialOrigin !== 'sefaz') ||
     String(draft.source || '').startsWith('PDF')
   ));
-  const readyForFinalReview = Boolean(draft?.items?.length &&
-    receiptReviewRows.every((row) => row.done) &&
-    (!totalsRequireReview || draft.totalsReviewed));
+  const readyForFinalReview = canStartFiscalFinalReview(draft, receiptReviewRows);
   const cashMonthly=useMemo(()=>{
     const [year,month]=cashMonth.split('-').map(Number);
     return aggregateCashMonthly(closings,year,month);
@@ -1681,12 +1853,15 @@ export default function Home() {
     });
   },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
   const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
+  const cashMonthlyReferences=summarizeCashMonthly(cashMonthly.daily);
   const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
-  const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
+  const cashChartEntries=useMemo(()=>cashSelectedClosingId
+    ? closings.filter(entry=>String(entry.id)===String(cashSelectedClosingId))
+    : cashSelectedDay?closings.filter(entry=>entry.day===cashSelectedDay):[],[closings,cashSelectedDay,cashSelectedClosingId]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
-  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
+  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents, suppliers, supplierIdentityLinks), [documents, suppliers, supplierIdentityLinks]);
   const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
   const manualMatches = useMemo(() => products.filter((p) =>
     [p.name, p.sku, ...(p.alternateSkus || [])].some((value) => norm(value).includes(norm(manualSearch)))
@@ -1723,7 +1898,7 @@ export default function Home() {
       fileName:'Nota digitada manualmente',
       supplier:'', supplierCnpj:'', invoiceNumber:'',
       date:new Date().toLocaleDateString('pt-BR'),
-      checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
+      checkedBy:'', finalReviewed:false, reviewedItems:{},
       items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
     });
@@ -1732,8 +1907,7 @@ export default function Home() {
   function selectManualInvoiceProduct(index, id) {
     const product=products.find((p)=>p.id===id);
     setDraft((d)=>({...d, reviewedItems:{...d.reviewedItems,[d.items[index]?.lineId]:false},
-      finalReviewed:false,totalsReviewed:false,
-      items:d.items.map((it,i)=>i===index && product
+      finalReviewed:false,items:d.items.map((it,i)=>i===index && product
         ? {...it,productId:product.id,name:product.name,code:product.sku,
            unit:product.unit,unitPrice:Number(product.cost)||0,
            lineTotal:Math.round(Number(it.quantity||1)*Number(product.cost||0)*100)/100,
@@ -1752,7 +1926,7 @@ export default function Home() {
       const {createWorker}=await import('tesseract.js');
       worker=await createWorker('por');
       await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
-      const texts=[];
+      const texts=[],alternativeTexts=[];
       for(let pageNumber=1;pageNumber<=Math.min(pdf.numPages,5);pageNumber++){
         const page=await pdf.getPage(pageNumber);
         const viewport=page.getViewport({scale:2.5});
@@ -1762,14 +1936,233 @@ export default function Home() {
           await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
           const recognition=await worker.recognize(canvas);
           texts.push(recognition.data.text||'');
+          try{alternativeTexts.push(await runPaddleOcr(canvas));}catch{alternativeTexts.push('');}
         }finally{canvas.width=0;canvas.height=0;page.cleanup();}
       }
-      return texts.join('\n');
+      return {text:texts.join('\n'),alternativeText:alternativeTexts.filter(Boolean).join('\n')};
     }finally{
       if(worker)await worker.terminate().catch(()=>{});
       await task.destroy();
     }
   }
+  function cashReportUuid(){
+    if(!globalThis.crypto?.getRandomValues)throw new Error('Este navegador não permite criar um identificador seguro para o lote.');
+    const bytes=globalThis.crypto.getRandomValues(new Uint8Array(16));
+    bytes[6]=(bytes[6]&0x0f)|0x40;bytes[8]=(bytes[8]&0x3f)|0x80;
+    const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+    return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
+  }
+  async function refreshCashReports(){
+    if(!supabase||!accessCode)return [];
+    const {data,error}=await supabase.rpc('cash_reports_list',{p_token:accessCode});
+    if(error||!Array.isArray(data))throw new Error(error?.message||'Não foi possível atualizar a fila de faturamentos pendentes.');
+    setCashReports(data);return data;
+  }
+  async function readCashReportText(file){
+    const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
+    if(fileKind==='pdf'){
+      const bytes=new Uint8Array(await file.arrayBuffer());
+      const base64=encodeCashReportBase64(bytes);
+      const response=await fetch('/api/cash-extract',{method:'POST',
+        headers:{'content-type':'application/json','x-estoque-session':accessCode},
+        body:JSON.stringify({base64})});
+      const parsed=await response.json();
+      if(response.ok)return {text:parsed.text||'',alternativeText:''};
+      if(response.status===422){
+        try{return await readCashPdfWithOcr(file);}
+        catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
+          '. Leitura OCR alternativa também falhou: '+ocrError.message+
+          '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
+      }
+      throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
+    }
+    if(fileKind==='image'){
+      const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+      const canvases=prepared.canvases.length?prepared.canvases:[file];
+      const {createWorker}=await import('tesseract.js');
+      const worker=await createWorker('por');
+      try{
+        await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+        const texts=[],alternativeTexts=[];
+        for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+        for(const canvas of canvases){try{alternativeTexts.push(await runPaddleOcr(canvas));}catch{alternativeTexts.push('');}}
+        return {text:texts.join('\n'),alternativeText:alternativeTexts.filter(Boolean).join('\n')};
+      }finally{await worker.terminate();}
+    }
+    throw new Error('Tipo de arquivo inválido. Use PDF, JPG, PNG ou WEBP.');
+  }
+  async function getCashReportFile(reportId){
+    if(!supabase||!accessCode)throw new Error('Entre no sistema para acessar o original.');
+    const {data,error}=await supabase.rpc('cash_report_file',{p_token:accessCode,p_id:reportId});
+    if(error||!data?.base64)throw new Error(error?.message||'O original não está disponível nesta pendência.');
+    const bytes=decodeCashReportBase64(data.base64);
+    if(!cashReportFileMatchesMime(data.mime,bytes))throw new Error('O conteúdo não corresponde ao tipo declarado; o arquivo não será aberto.');
+    return {...data,bytes,fileName:cashReportSafeDownloadName(data.fileName)};
+  }
+  async function previewCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      setCashReportPreview({url,mime:file.mime,fileName:file.fileName,id:report.id});
+      setCashError('');
+    }catch(error){setCashError(error?.message||'Não foi possível abrir o original.');}
+  }
+  async function downloadCashReport(report){
+    try{
+      const file=await getCashReportFile(report.id);
+      const url=URL.createObjectURL(new Blob([file.bytes],{type:file.mime}));
+      const link=document.createElement('a');link.href=url;link.download=file.fileName;link.rel='noopener';link.click();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(error){setCashError(error?.message||'Não foi possível baixar o original.');}
+  }
+  async function processCashReport(report){
+    setCashReportErrors(current=>({...current,[report.id]:''}));
+    setCashReportProgress(current=>({...current,activeFile:report.fileName,stage:'Lendo o documento'}));
+    try{
+      const original=await getCashReportFile(report.id);
+      const file=new File([original.bytes],original.fileName,{type:original.mime});
+      const recognition=await readCashReportText(file);
+      const text=typeof recognition==='string'?recognition:(recognition.text||'');
+      const alternativeText=typeof recognition==='string'?'':(recognition.alternativeText||'');
+      const {_recognizedFields,...parsed}=parseCashReportCandidates(text,alternativeText);
+      const draft={...parsed,sourceFileName:original.fileName,sourceText:text.slice(0,30000),
+        sourceAlternativeText:alternativeText.slice(0,30000),cashReviewed:false,
+        reviewedImport:false,cashCounted:'',importWarnings:Array.isArray(parsed.importWarnings)?parsed.importWarnings:[]};
+      setCashReportProgress(current=>({...current,stage:'Salvando rascunho'}));
+      const {data,error}=await supabase.rpc('cash_report_save',{
+        p_token:accessCode,p_id:report.id,p_draft:draft,p_expected_revision:Number(report.revision||1)
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar o rascunho reconhecido.');
+      await refreshCashReports();
+      setCashReportErrors(current=>({...current,[report.id]:''}));
+    }catch(error){
+      setCashReportErrors(current=>({...current,[report.id]:error?.message||'Falha ao ler o documento.'}));
+      throw error;
+    }
+  }
+  async function uploadCashReportBatch(event){
+    const files=Array.from(event.target.files||[]);event.target.value='';
+    if(!files.length)return;
+    if(files.length>5){setCashError('Selecione até 5 arquivos por lote.');return;}
+    if(!supabase||!accessCode){setCashError('Entre no sistema para enviar faturamentos.');return;}
+    const batchId=cashReportUuid();
+    setCashError('');setCashImporting(true);
+    setCashReportProgress({total:files.length,completed:0,activeFile:'',stage:'Enviando arquivos'});
+    const failures=[];
+    try{
+      for(let index=0;index<files.length;index++){
+        const file=files[index];
+        setCashReportProgress({total:files.length,completed:index,activeFile:file.name,stage:'Validando e enviando'});
+        try{
+          if(file.size>4000000)throw new Error('Arquivo acima do limite de 4 MB.');
+          const bytes=new Uint8Array(await file.arrayBuffer());
+          const mime=cashReportMimeFromBytes(bytes);
+          if(!mime)throw new Error('Arquivo sem assinatura PDF/JPEG/PNG/WEBP válida.');
+          const {data,error}=await supabase.rpc('cash_report_create',{
+            p_token:accessCode,p_batch_id:batchId,p_file_id:cashReportUuid(),
+            p_file_name:file.name.slice(0,180),p_mime:mime,p_base64:encodeCashReportBase64(bytes)
+          });
+          if(error||!data?.ok||!data?.id)throw new Error(error?.message||'O servidor não aceitou este arquivo.');
+          const record={id:data.id,revision:Number(data.revision||1),fileName:file.name};
+          await refreshCashReports();
+          try{await processCashReport(record);}
+          catch(error){failures.push(file.name+': '+(error?.message||'Falha na leitura.'));}
+        }catch(error){failures.push(file.name+': '+(error?.message||'Falha no envio.'));}
+      }
+      setCashReportProgress({total:files.length,completed:files.length,activeFile:'',stage:'Lote concluído'});
+      await refreshCashReports();
+      if(failures.length)setCashError('Alguns arquivos precisam de nova tentativa: '+failures.join(' · '));
+      else setToast(files.length+' faturamento(s) enviado(s) para revisão individual.');
+    }catch(error){setCashError(error?.message||'Não foi possível processar o lote.');}
+    finally{setCashImporting(false);window.setTimeout(()=>setCashReportProgress(null),1800);}
+  }
+  async function retryCashReport(report){
+    setCashReportProgress({total:1,completed:0,activeFile:report.fileName,stage:'Tentando leitura novamente'});
+    try{await processCashReport(report);setToast('Documento lido. Abra a pendência para conferir.');}
+    catch(error){setCashError(error?.message||'Falha ao tentar novamente.');}
+    finally{setCashReportProgress(null);}
+  }
+  function openCashReportReview(report){
+    if(!report?.draft){setCashReportErrors(current=>({...current,[report.id]:'Este arquivo ainda não tem dados reconhecidos. Tente a leitura novamente.'}));return;}
+    setCashReportActive({id:report.id,revision:Number(report.revision||1)});
+    const emptyDraft={day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),
+      register:'',operator:'',cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',movements:[]};
+    setCashForm({...emptyDraft,...report.draft,cashReviewed:false,reviewedImport:false,
+      sourceFileName:report.fileName,sourceText:report.draft.sourceText||''});
+    setCashImportText(report.draft.sourceText||'');
+    setCashImportAlternativeText(report.draft.sourceAlternativeText||'');
+    setCashImportWarnings(Array.isArray(report.warnings)?report.warnings:(report.draft.importWarnings||[]));
+    setCashEditId('');setCashEntryMode('report-review');setCashError('');setView('cash');
+  }
+  async function savePendingCashDraft(){
+    if(!cashReportActive)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalidValues=CASH_CHANNELS.filter(([key])=>snapshot[key]!==''&&!Number.isFinite(Number(snapshot[key])));
+    if(invalidValues.length){setCashError('Corrija os valores numéricos antes de salvar o rascunho.');return;}
+    setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:snapshot.cashCounted===''?'':Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:false,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data,error}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível salvar a pendência.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(data.revision||cashReportActive.revision+1)});
+      await refreshCashReports();setToast('Rascunho salvo. O faturamento ainda não foi lançado.');
+    }catch(error){setCashError(error?.message||'Falha ao salvar o rascunho.');}
+    finally{setCashSaving(false);}
+  }
+  async function savePendingCashReport(event){
+    event.preventDefault();if(!cashReportActive||cashSavingRef.current)return;
+    const snapshot=JSON.parse(JSON.stringify(cashForm));
+    const invalid=validateCashClosing(snapshot);
+    if(!snapshot.cashReviewed)invalid.push('Confirme a revisão individual deste faturamento.');
+    if(invalid.length){setCashError(invalid.join(' · '));return;}
+    if(!supabase||!accessCode){setCashError('Entre novamente para lançar este faturamento.');return;}
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    try{
+      const {cashReviewed,...rest}=snapshot;
+      const draft={...rest,day:snapshot.day,register:snapshot.register.trim(),operator:snapshot.operator.trim(),
+        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
+        cashCounted:Number(snapshot.cashCounted).toFixed(2),
+        movements:(snapshot.movements||[]).map(m=>({type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)})),
+        cashReviewed:true,sourceFileName:snapshot.sourceFileName,importWarnings:cashImportWarnings};
+      const {data:saved,error:saveError}=await supabase.rpc('cash_report_save',{p_token:accessCode,p_id:cashReportActive.id,
+        p_draft:draft,p_expected_revision:cashReportActive.revision});
+      if(saveError||!saved?.ok)throw new Error(saveError?.message||'Não foi possível salvar o rascunho revisado.');
+      setCashReportActive({id:cashReportActive.id,revision:Number(saved.revision||cashReportActive.revision+1)});
+      const key=cashReportIdempotencyRef.current.get(cashReportActive.id)||cashReportUuid();
+      cashReportIdempotencyRef.current.set(cashReportActive.id,key);
+      const {data:posted,error:postError}=await supabase.rpc('cash_report_post',{p_token:accessCode,p_id:cashReportActive.id,
+        p_expected_revision:Number(saved.revision||cashReportActive.revision+1),p_idempotency_key:key});
+      if(postError||!posted?.ok)throw new Error(postError?.message||'O rascunho foi salvo, mas não foi lançado.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(!listError&&Array.isArray(updated))setClosings(updated);
+      await refreshCashReports();
+      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
+      setCashEntryMode('');setCashReportActive(null);
+      setToast('Faturamento conferido e lançado.');
+    }catch(error){
+      await refreshCashReports().catch(()=>{});
+      setCashError(error?.message||'Falha ao lançar o faturamento. Revise e tente novamente.');
+    }finally{cashSavingRef.current=false;setCashSaving(false);}
+  }
+  async function cancelCashReport(report){
+    if(!window.confirm('Cancelar esta pendência? O faturamento não será lançado.'))return;
+    try{
+      const {data,error}=await supabase.rpc('cash_report_cancel',{p_token:accessCode,p_id:report.id,
+        p_expected_revision:Number(report.revision||1)});
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível cancelar a pendência.');
+      await refreshCashReports();setCashReportErrors(current=>({...current,[report.id]:''}));
+      if(cashReportActive?.id===report.id){setCashReportActive(null);setCashEntryMode('');}
+      setToast('Pendência cancelada. O histórico de faturamento não foi alterado.');
+    }catch(error){setCashError(error?.message||'Não foi possível cancelar. Somente o autor ou o Gestor podem cancelar esta pendência.');}
+  }
+  useEffect(()=>()=>{if(cashReportPreview?.url)URL.revokeObjectURL(cashReportPreview.url);},[cashReportPreview?.url]);
+
   async function importCashReport(event){
     const file=event.target.files?.[0];
     if(!file)return;
@@ -1777,9 +2170,10 @@ export default function Home() {
     if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
     if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
     newCashClosing('upload');
-    setCashImporting(true);setCashError('');setCashImportWarnings([]);
+    setCashImporting(true);setCashError('');setCashImportWarnings([]);setCashImportAlternativeText('');
     try{
       let text='';
+      let alternativeText='';
       const fileKind=detectCashFileType(new Uint8Array(await file.slice(0,12).arrayBuffer()));
       if(fileKind==='pdf'){
         const bytes=new Uint8Array(await file.arrayBuffer());
@@ -1791,21 +2185,32 @@ export default function Home() {
         const parsed=await response.json();
         if(response.ok){text=parsed.text;}
         else if(response.status===422){
-          try{text=await readCashPdfWithOcr(file);}
+          try{
+            const recognition=await readCashPdfWithOcr(file);
+            text=recognition.text||'';alternativeText=recognition.alternativeText||'';
+          }
           catch(ocrError){throw new Error((parsed.error||'Falha na leitura do PDF')+
             '. Leitura OCR alternativa também falhou: '+ocrError.message+
             '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
         }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
       }else if(fileKind==='image'){
+        const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+        const canvases=prepared.canvases.length?prepared.canvases:[file];
         const {createWorker}=await import('tesseract.js');
         const worker=await createWorker('por');
         try{
-          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
-          const result=await worker.recognize(file);
-          text=result.data.text||'';
+          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+          const texts=[];
+          for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+          text=texts.join('\n');
         }finally{await worker.terminate();}
+        try{
+          const alternatives=[];
+          for(const canvas of canvases)alternatives.push(await runPaddleOcr(canvas));
+          alternativeText=alternatives.join('\n');
+        }catch{alternativeText='';}
       }else throw new Error('Use PDF, JPG, PNG ou WEBP.');
-      const result=parseCashReport(text);
+      const {_recognizedFields,...result}=parseCashReportCandidates(text,alternativeText);
       // Missing metadata must remain editable instead of discarding recognized revenue.
       // Empty register/operator are deliberately not silently replaced by guesses.
       const duplicated=closings.some(d=>d.day===result.day&&d.register===result.register);
@@ -1817,6 +2222,7 @@ export default function Home() {
         cashCounted:''
       }));
       setCashImportText(text);
+      setCashImportAlternativeText(alternativeText);
       setCashImportWarnings([...result.importWarnings,
         ...(duplicated?['Já existe fechamento deste caixa e data. Somente o Gestor pode corrigi-lo.']:[])]);
       setCashMonth(result.day.slice(0,7));
@@ -1824,6 +2230,16 @@ export default function Home() {
       setToast('Relatório lido. Confira os dados antes de salvar.');
     }catch(error){setCashError(error?.message||'Falha ao importar o fechamento.');}
     finally{setCashImporting(false);}
+  }
+  function useAlternativeCashOcr(){
+    if(!cashImportAlternativeText)return;
+    const parsed=parseCashReport(cashImportAlternativeText);
+    setCashForm(previous=>({...previous,...parsed,day:parsed.day||previous.day,
+      sourceFileName:previous.sourceFileName,sourceText:cashImportAlternativeText.slice(0,30000),
+      cashReviewed:false,reviewedImport:false,cashCounted:''}));
+    setCashImportText(cashImportAlternativeText);
+    setCashImportWarnings(parsed.importWarnings||[]);
+    setToast('Valores substituídos pela leitura alternativa. Confira com o comprovante antes de salvar.');
   }
   function changeCashField(key,value){setCashForm(prev=>{
     const next={...prev,[key]:value};
@@ -1833,6 +2249,7 @@ export default function Home() {
     return next;
   });setCashError('');}
   function newCashClosing(mode='manual'){
+    cashCorrectionContextRef.current=null;
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
@@ -1842,12 +2259,76 @@ export default function Home() {
     setCashError('');
   }
   function editCashClosing(entry){
+    if(!entry?.updatedAt){setToast('Atualize o histórico antes de corrigir este fechamento.');return;}
+    if(!window.confirm('A edição ficará registrada com uma cópia dos dados anteriores e poderá ser recuperada depois. Continuar?'))return;
+    const reason=window.prompt('Informe o motivo da correção (obrigatório):');
+    if(!reason||reason.trim().length<5)return;
+    cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,reason:reason.trim(),idempotencyKey:uuid()};
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEntryMode('edit');
     setCashEditId(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
       movements:entry.movements||[]});
     setCashError('');setView('cash');
+  }
+
+  async function openCashClosingDetail(entry){
+    setCashSelectedClosingId(String(entry.id));
+    setCashSelectedDay(entry.day);
+    setCashAuditHistory([]);setCashAuditLoading(true);
+    if(supabase&&accessCode){
+      const {data,error}=await supabase.rpc('cash_closing_audit_list',{p_token:accessCode,p_closing_id:entry.id});
+      if(!error&&Array.isArray(data))setCashAuditHistory(data);
+      else setToast(error?.message||'Não foi possível carregar o histórico de correções.');
+    }
+    setCashAuditLoading(false);
+  }
+
+  async function restoreCashClosingVersion(entry,version){
+    if(!supabase||!accessCode||!entry?.updatedAt)return;
+    const reason=window.prompt(`Explique por que está recuperando a versão ${version}:`);
+    if(!reason||reason.trim().length<5)return;
+    if(!window.confirm(`Restaurar a versão ${version}? O estado atual será preservado no histórico e a recuperação criará uma nova versão auditada.`))return;
+    setCashSaving(true);
+    try{
+      const {data,error}=await supabase.rpc('cash_closing_correct',{
+        p_token:accessCode,p_closing_id:entry.id,p_expected_updated_at:entry.updatedAt,
+        p_entry:null,p_reason:reason.trim(),p_idempotency_key:uuid(),p_restore_version:version
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível recuperar os dados.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(listError||!Array.isArray(updated))throw new Error(listError?.message||'Correção salva, mas não foi possível atualizar o histórico.');
+      setClosings(updated);
+      const current=updated.find(row=>String(row.id)===String(entry.id));
+      if(current)await openCashClosingDetail(current);
+      setToast('Versão recuperada como nova correção auditada.');
+    }catch(error){setToast(error.message||'Falha ao recuperar versão financeira.');}
+    finally{setCashSaving(false);}
+  }
+
+  async function linkLegacySupplier(document, supplierId) {
+    const supplier = suppliers.find((row) => String(row.id) === String(supplierId));
+    if (!supplier || !document?.id || !supabase || !accessCode) return;
+    const confirmed = window.confirm(
+      `Vincular esta nota a “${supplier.name}” usando a validação do Gestor? A operação ficará auditada e não altera a nota, os produtos nem o estoque.`
+    );
+    if (!confirmed) return;
+    const { data, error } = await supabase.rpc('supplier_identity_link', {
+      p_token: accessCode,
+      p_document_id: String(document.id),
+      p_supplier_id: String(supplier.id)
+    });
+    if (error || !data?.ok) {
+      setToast(error?.message || 'Não foi possível registrar o vínculo do fornecedor.');
+      return;
+    }
+    const { data: links, error: linksError } = await supabase.rpc('supplier_identity_links', { p_token: accessCode });
+    if (linksError || !Array.isArray(links)) {
+      setToast('Vínculo salvo. Atualize a tela para recarregar o histórico auditável.');
+      return;
+    }
+    setSupplierIdentityLinks(links);
+    setToast('Fornecedor vinculado e registrado na auditoria.');
   }
   async function saveCashClosing(event){
     event.preventDefault();
@@ -1867,14 +2348,21 @@ export default function Home() {
         movements:snapshot.movements.map(m=>({
           type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
         }))};
-      const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
+      const isCorrection=cashEntryMode==='edit';
+      const correction=cashCorrectionContextRef.current;
+      if(isCorrection&&!correction)throw new Error('Reabra a revisão para iniciar uma correção auditável.');
+      const {data,error:saveError}=isCorrection
+        ? await supabase.rpc('cash_closing_correct',{p_token:accessCode,p_closing_id:cashEditId,
+          p_expected_updated_at:correction.expectedUpdatedAt,p_entry:clean,p_reason:correction.reason,
+          p_idempotency_key:correction.idempotencyKey,p_restore_version:null})
+        : await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
       if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
       const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
       if(!listError&&Array.isArray(updated))setClosings(updated);
       else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
       setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
-      setCashEditId('');setCashEntryMode('');
-      setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
+      setCashSelectedClosingId('');setCashEditId('');setCashEntryMode('');cashCorrectionContextRef.current=null;
+      setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':isCorrection?'Correção financeira salva e auditada.':'Faturamento registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
     finally{cashSavingRef.current=false;setCashSaving(false);}
   }
@@ -2073,12 +2561,26 @@ export default function Home() {
               Number(primaryResult.data.confidence));
             let alternateText = '';
             let alternateItems = [];
+            let paddleText = '';
+            let paddleWarning = '';
             if (needsRetry) {
               receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
-              await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-              const alternateResult = await worker.recognize(canvases[index]);
+              await worker.setParameters({ tessedit_pageseg_mode: '4', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+              const retryCanvas = canvases[index];
+              const retryContext = retryCanvas.getContext('2d', { willReadFrequently: true });
+              const retryImage = retryContext.getImageData(0, 0, retryCanvas.width, retryCanvas.height);
+              adaptiveBinarizeImageData(retryImage);
+              retryContext.putImageData(retryImage, 0, 0);
+              const alternateResult = await worker.recognize(retryCanvas);
               alternateText = alternateResult.data.text || '';
               alternateItems = parseReceiptOcr(alternateText);
+            }
+            // PP-OCRv6 is a second local candidate. If its model/runtime is
+            // unavailable, preserve the Tesseract result and disclose the fallback.
+            try {
+              paddleText = await runPaddleOcr(canvases[index]);
+            } catch {
+              paddleWarning = 'A leitura alternativa PP-OCRv6 ficou indisponível neste navegador.';
             }
             setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
             // If either pass recognized real coded lines inside the receipt table,
@@ -2086,25 +2588,38 @@ export default function Home() {
             // were adding Sub-Total, tax, payment and misread fragments as products.
             const primaryCoded = primaryItems.filter((item) => item.code);
             const alternateCoded = alternateItems.filter((item) => item.code);
-            const items = primaryCoded.length || alternateCoded.length
+            const paddleItems = parseReceiptOcr(paddleText);
+            const paddleCoded = paddleItems.filter((item) => item.code);
+            const tesseractItems = primaryCoded.length || alternateCoded.length
               ? mergeReceiptCandidates(primaryCoded, alternateCoded)
               : mergeReceiptCandidates(primaryItems, alternateItems);
-            const invoiceTotals = reconcileReceiptTotals(primaryText, alternateText, items);
+            const items = paddleText
+              ? mergeReceiptCandidates(tesseractItems, paddleCoded.length ? paddleCoded : paddleItems)
+              : tesseractItems;
+            const invoiceTotals = reconcileReceiptTotals(primaryText,
+              [alternateText, paddleText].filter(Boolean).join('\n'), items);
             const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
-            const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
+            const paddleMeta = detectReceiptMetadata(paddleText);
+            const meta = {
+              invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber || paddleMeta.invoiceNumber,
+              date: primaryMeta.date || alternateMeta.date || paddleMeta.date
+            };
             const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
-            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
+            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText),
+              extractAccessKeyFromText(alternateText), extractAccessKeyFromText(paddleText)]
+              .find(validateNfceAccessKey) || '';
             const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
-            const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) || hasUncertainReceiptKey(alternateText))
+            const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) ||
+              hasUncertainReceiptKey(alternateText) || hasUncertainReceiptKey(paddleText))
               ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
               : '';
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
-              supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
-              supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText),
+              supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || detectReceiptSupplier(paddleText) || (multiple ? 'Cupom ' + (index + 1) : ''),
+              supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText) || detectSupplierCnpj(paddleText),
               invoiceNumber: meta.invoiceNumber,
               date: meta.date,
               accessKey,
@@ -2115,12 +2630,17 @@ export default function Home() {
               qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
               qrReaderWarning: qr.qrReaderWarning || '',
               source: multiple
-                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — ' + (needsRetry ? '2 leituras OCR' : '1 leitura OCR consistente') + ')'
-                : 'Foto (OCR local, ' + (needsRetry ? '2 leituras' : '1 leitura consistente') + ')',
+                ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — Tesseract + PP-OCRv6 local)'
+                : 'Foto (Tesseract + PP-OCRv6 local)',
               checkedBy: '',
               fileName: multiple ? file.name + ' — cupom ' + (index + 1) : file.name,
               status: 'Aguardando conferência',
               ocrText: combinedText,
+              ocrComparison: {
+                tesseract: combinedText,
+                paddle: paddleText,
+                warning: paddleWarning
+              },
               subtotal: invoiceTotals.subtotal,
               discount: invoiceTotals.discount,
               total: invoiceTotals.total,
@@ -2193,7 +2713,13 @@ export default function Home() {
   const cleanPendingDraft=(value)=>{
     if(!value) return {};
     const {pendingId,pendingRevision, ...clean}=value;
+    const comparison=clean.ocrComparison;
     return {...clean,ocrText:String(clean.ocrText||'').slice(0,100000),
+      ocrComparison:comparison?{
+        tesseract:String(comparison.tesseract||'').slice(0,100000),
+        paddle:String(comparison.paddle||'').slice(0,100000),
+        warning:String(comparison.warning||'').slice(0,500)
+      }:undefined,
       officialText:String(clean.officialText||'').slice(0,30000)};
   };
   async function refreshPending(){
@@ -2219,8 +2745,8 @@ export default function Home() {
     return {...receipt,pendingId:data.id,pendingRevision:data.revision};
   }
   async function cancelPendingReceipt(row) {
-    if (currentUser?.role !== 'admin' || !canFiscal('fiscal.pending.cancel') || !supabase || !accessCode) {
-      setError('Somente o Gestor pode cancelar notas pendentes.'); return;
+    if (!row?.canCancel || !supabase || !accessCode) {
+      setError('Você não tem autorização para cancelar esta nota pendente.'); return;
     }
     if (!window.confirm('Cancelar definitivamente a nota "' +
       (row.draft?.supplier || row.fileName) +
@@ -2235,7 +2761,7 @@ export default function Home() {
       setPendingReceipts((rows)=>rows.filter((item)=>item.id!==row.id));
       setDraft((current)=>current?.pendingId===row.id?null:current);
       setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
-      setToast('Nota cancelada pelo Gestor.');
+      setToast('Nota pendente cancelada.');
     }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
   }
   async function openPendingReceipt(row){
@@ -2243,9 +2769,23 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
+    focusDraftOnOpenRef.current=true;
     setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
+  function closePendingPreview(){
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+    setPendingPreview(null);
+  }
+  useEffect(()=>()=>{
+    if(pendingPreviewUrlRef.current){
+      URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current='';
+    }
+  },[]);
   async function viewPendingOriginal(row){
     if(!supabase||!accessCode)return;
     try{
@@ -2254,10 +2794,16 @@ export default function Home() {
       const binary=atob(data.base64);
       const dataBytes=new Uint8Array(binary.length);
       for(let i=0;i<binary.length;i++)dataBytes[i]=binary.charCodeAt(i);
-      const url=URL.createObjectURL(new Blob([dataBytes],{type:data.mime||'application/octet-stream'}));
-      const anchor=document.createElement('a');anchor.href=url;anchor.download=data.fileName||'original';
-      anchor.click();setTimeout(()=>URL.revokeObjectURL(url),15000);
-    }catch(e){setError(e.message);}
+      const previewType=getPendingReceiptPreviewType(data.mime,dataBytes);
+      const safeType=previewType||'application/octet-stream';
+      const url=URL.createObjectURL(new Blob([dataBytes],{type:safeType}));
+      if(pendingPreviewUrlRef.current)URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      pendingPreviewUrlRef.current=url;
+      setPendingPreview({
+        url,fileName:safePendingReceiptFilename(data.fileName),mime:previewType,
+        previewable:Boolean(previewType)
+      });
+    }catch(e){setError(e?.message||'Não foi possível abrir o arquivo original.');}
   }
   async function uploadFiles(selectedFiles) {
     const files = Array.from(selectedFiles || []);
@@ -2390,6 +2936,26 @@ export default function Home() {
     setDraft((d) => d ? ({ ...d, finalReviewed: key === 'checkedBy' ? d.finalReviewed : false,
       [key]: numericFields.includes(key) ? (value === '' ? 0 : Number(value)) : value }) : d);
   }
+  function usePaddleReceiptOcr(){
+    const text=draft?.ocrComparison?.paddle;
+    if(!text)return;
+    const items=parseReceiptOcr(text);
+    if(!items.length){setError('A leitura PP-OCRv6 não encontrou linhas de produto utilizáveis. Confira a imagem e preencha manualmente.');return;}
+    const totals=reconcileReceiptTotals(text,'',items);
+    const metadata=detectReceiptMetadata(text);
+    setDraft(previous=>previous?({...previous,
+      supplier:detectReceiptSupplier(text)||previous.supplier,
+      supplierCnpj:detectSupplierCnpj(text)||previous.supplierCnpj,
+      invoiceNumber:metadata.invoiceNumber||previous.invoiceNumber,
+      date:metadata.date||previous.date,
+      items,subtotal:totals.subtotal,discount:totals.discount,total:totals.total,
+      totalsSource:totals.totalsSource,totalsWarning:totals.totalsWarning,
+      ocrText:text,reviewedItems:{},finalReviewed:false,officialVerified:false,
+      officialApplied:false,subtotalManuallyEdited:false,lineTotalsEdited:false
+    }):previous);
+    setError('');
+    setToast('Campos preenchidos pela leitura PP-OCRv6. Confira cada valor com o documento original.');
+  }
   function changeNfceAccessKey(value) {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
     setDraft((previous) => {
@@ -2410,31 +2976,20 @@ export default function Home() {
 
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
-    setDraft((d) => d ? ({ ...d, [key]: number, totalsReviewed: false,
-      finalReviewed: false, officialVerified: false }) : d);
+    setDraft((d) => d ? ({ ...d, [key]: number, subtotalManuallyEdited: key === 'subtotal' ? true : d.subtotalManuallyEdited, finalReviewed: false, officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
+      lineTotalsEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? true : d.lineTotalsEdited,
+      subtotalManuallyEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? false : d.subtotalManuallyEdited,
+      reportedSubtotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedSubtotal ?? d.subtotal) : d.reportedSubtotal,
+      reportedTotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedTotal ?? d.total) : d.reportedTotal,
       reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
-      finalReviewed: false, totalsReviewed: false,
-      officialVerified: false,
+      finalReviewed: false, officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
-        const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
-        const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
-        if (key === 'name') next.manualName = true;
-        // Printed fiscal line totals are independent facts: do not overwrite them
-        // when a reviewer fixes the quantity or unit price.
-        if (key === 'quantity' || key === 'unitPrice') {
-          if (d.manualInvoice) {
-            next.lineTotal = Math.round(Number(next.quantity||0)*Number(next.unitPrice||0)*100)/100;
-            next.readingWarning = '';
-          } else {
-            next.readingWarning = 'Quantidade ou preço alterado; confira também o total da linha.';
-          }
-        }
-        return next;
+        return updateFiscalLine(it, key, value);
       })
     }));
   }
@@ -2485,8 +3040,7 @@ export default function Home() {
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
-              officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
-              officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
+              officialTotal: totals.total, reviewedItems: {}, officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
               items: officialItems.map((item)=>({...item,itemDiscount:Number(item.itemDiscount||0)})),
               officialApplied: true, finalReviewed:false, officialVerified:true,
               subtotal: totals.subtotal ?? d.subtotal,
@@ -2525,8 +3079,7 @@ export default function Home() {
       officialCompared: true,
       officialVerified: false, officialApplied: false,
       officialOrigin: 'texto-manual',
-      reviewedItems: {}, totalsReviewed: false,
-      officialSubtotal: totals.subtotal,
+      reviewedItems: {}, finalReviewed: false, officialSubtotal: totals.subtotal,
       officialDiscount: totals.discount,
       officialTotal: totals.total
     }));
@@ -2543,7 +3096,7 @@ export default function Home() {
           Math.abs(receiptItemTotal(r.ocr) - receiptItemTotal(item)) <= 0.05);
         return { ...item, itemDiscount: Number(item.itemDiscount ?? match?.ocr?.itemDiscount ?? 0) };
       }),
-      reviewedItems: {}, totalsReviewed: false, finalReviewed:false,
+      reviewedItems: {}, finalReviewed:false,
       officialApplied: true,
       subtotal: d.officialSubtotal ?? d.subtotal,
       discount: d.officialDiscount ?? d.discount,
@@ -2578,13 +3131,9 @@ export default function Home() {
       setError('Existem linhas destacadas sem conferência. Revise-as e marque "Conferido pelo encarregado".');
       return;
     }
-    if (totalsRequireReview && !draft?.totalsReviewed) {
-      setError('Confira e marque os totais destacados antes de registrar a nota.');
-      return;
-    }
     if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
-    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
-      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    if (!canConfirmFiscalDocument(draft, receiptReviewRows, currentUser?.id)) {
+      setError('Conclua a conferência de itens, totais e responsável no quadro de confirmação final.'); return;
     }
     if (draft.manualInvoice) {
       if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
@@ -2641,7 +3190,7 @@ export default function Home() {
     ].filter(Boolean);
     if (financialWarnings.length && !window.confirm(
       'ATENÇÃO — divergências na nota:\\n\\n' + financialWarnings.join('\\n') +
-      '\\n\\nConferido por: ' + draft.checkedBy +
+      '\\n\\nUsuário autenticado: ' + authenticatedReviewerName +
       '\\nDeseja lançar a nota com os valores revisados manualmente?'
     )) return;
     // The unique fiscal access key is the primary deduplication key.
@@ -2707,17 +3256,29 @@ export default function Home() {
       items[itemIndex] = { ...it, productId };
       const movementId = uid();
       stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
-      nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
+      nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow() });
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
-      registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
-        ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
+    let canonicalSupplier = null;
+    if (validSupplierCnpj(draft.supplierCnpj)) {
+      canonicalSupplier = suppliers.find((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj)) || {
+        id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim()
+      };
+      if (!suppliers.some((supplier) => String(supplier.id) === String(canonicalSupplier.id)))
+        setSuppliers((registered) => [...registered, canonicalSupplier]);
+    }
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, lineTotalsEdited, subtotalManuallyEdited, ...documentToSave } = draft;
+    documentToSave.supplierCnpj = formatSupplierCnpj(draft.supplierCnpj);
+    if (canonicalSupplier) documentToSave.supplierId = canonicalSupplier.id;
+    delete documentToSave.checkedBy;
+    pendingAttributionRef.current.set(documentId, {
+      userId: currentUser?.id,
+      movementIds: stockEntries.map((entry) => entry.movementId)
+    });
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
-      checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
+      id: documentId, stockEntries,
       pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
@@ -2874,15 +3435,16 @@ export default function Home() {
         {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
         {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
+        <button aria-label="Faturamento" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Faturamento</span></button>
         {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
     </aside>
-    <main className="main"><input ref={cashFileRef} type="file"
-      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden
-      onChange={e=>void importCashReport(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+    <main className="main"><input ref={cashFileRef} type="file" multiple
+      accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" hidden
+      onChange={e=>void uploadCashReportBatch(e)}/><input ref={uploadRef} className="hidden-input" type="file" multiple accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,application/xml,text/xml,image/*" onChange={(e) => void uploadFiles(e.target.files)}/>
+      {cashReportPreview&&<div className="modal-backdrop cash-report-preview-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setCashReportPreview(null);}}><section className="modal cash-report-preview" role="dialog" aria-modal="true" aria-label="Prévia do faturamento"><div className="modal-head"><h2>Prévia do arquivo</h2><button type="button" className="icon-btn" aria-label="Fechar prévia" onClick={()=>setCashReportPreview(null)}>×</button></div><div className="cash-report-preview-actions"><a className="btn secondary" href={cashReportPreview.url} download={cashReportPreview.fileName} rel="noopener">Baixar original</a><span>{cashReportPreview.fileName}</span></div>{cashReportPreview.mime==='application/pdf'?<iframe title="Prévia do PDF" src={cashReportPreview.url}/>:<img src={cashReportPreview.url} alt={'Prévia do documento '+cashReportPreview.fileName}/>}</section></div>}
       <header className="topbar">
         <div className="topbar-start">
           <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
@@ -3004,9 +3566,10 @@ export default function Home() {
           <div className="panel-head"><div><h2>Compras realizadas por fornecedor</h2><p>Histórico das notas lançadas, organizado por fornecedor e CNPJ quando disponível.</p></div><span className="history-count">{supplierGroups.length} fornecedor(es)</span></div>
           <div className="filters supplier-filters"><label className="search"><Icon type="search" size={17}/><input value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} placeholder="Filtrar fornecedor ou CNPJ"/></label></div>
           {supplierGroups.filter((s) => norm(s.name + ' ' + s.cnpj).includes(norm(supplierFilter))).map((s) => <details className="supplier-summary" key={s.key}>
-            <summary><span><b>{s.name}</b><small>{s.cnpj ? 'CNPJ ' + s.cnpj : 'Sem CNPJ identificado'} · {s.documents.length} nota(s) · {s.items} linha(s) de produtos</small></span><strong>{money(s.total)}</strong></summary>
+            <summary><span><b>{s.name}</b><small>{s.cnpj ? 'CNPJ ' + s.cnpj : 'Sem CNPJ identificado'} · {s.identityStatus} · {s.documents.length} nota(s) · {s.items} linha(s) de produtos</small></span><strong>{money(s.total)}</strong></summary>
             <div className="supplier-documents">{s.documents.map((d, i) => <div className="supplier-document" key={d.id || i}>
               <div className="supplier-document-head"><b>{d.invoiceNumber ? 'Nota nº ' + d.invoiceNumber : d.fileName || 'Documento fiscal'}</b><span>{d.date || d.importedAt || 'Sem data'} · {money(d.total ?? (d.items || []).reduce((sum,item)=>sum + Number(item.lineTotal || item.unitPrice*item.quantity || 0),0))}</span></div>
+              {!validSupplierCnpj(d.supplierCnpj) && !d.supplierId && !supplierIdentityLinks.some((link) => String(link.documentId) === String(d.id)) && <label className="supplier-identity-review"><span>Identidade não confirmada. Revise antes de agrupar este histórico.</span><select value="" aria-label={`Vincular nota ${d.invoiceNumber || d.fileName || ''} a um fornecedor validado`} onChange={(event) => { const supplierId = event.target.value; if (supplierId) void linkLegacySupplier(d, supplierId); }}><option value="">Revisar vínculo com fornecedor</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {formatSupplierCnpj(supplier.cnpj)}</option>)}</select></label>}
               <ul>{(d.items || []).map((it,j) => <li key={j}><span>{it.name} <small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><b>{money(it.lineTotal ?? Number(it.quantity)*Number(it.unitPrice))}</b></li>)}</ul>
             </div>)}</div>
           </details>)}
@@ -3030,18 +3593,20 @@ export default function Home() {
           </div>)}
         </section>}
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
-          <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
-          </div>
-          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
-              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
-              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
+<section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div>
+            <div className="notice document-privacy-note" role="note"><span><b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento. O PP-OCRv6 baixa somente os pesos públicos do modelo; o documento é processado no navegador e não é enviado ao servidor do modelo.</span></div>
+          </div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
+          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" aria-labelledby="fiscal-upload-progress-title">
+            <div className="fiscal-upload-progress-head">
+              <h2 id="fiscal-upload-progress-title">Arquivos sendo processados</h2>
+              <strong>{uploadBatchProgress.completed} de {uploadBatchProgress.total} · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}%</strong>
             </div>
-            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
-            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
-            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
+            <progress value={uploadBatchProgress.completed} max={Math.max(1,uploadBatchProgress.total)} aria-label="Arquivos fiscais concluídos"/>
+            <div className="fiscal-upload-current" role="status" aria-live="polite" aria-atomic="true">
+              <span className="fiscal-upload-current-file"><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</span>
+              <span>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}</span>
+              {uploadBatchProgress.failed>0&&<strong className="fiscal-upload-failures">{uploadBatchProgress.failed} {uploadBatchProgress.failed===1?'falha':'falhas'}</strong>}
+            </div>
           </section>}
           <section className="panel pending-documents-panel">
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
@@ -3050,13 +3615,13 @@ export default function Home() {
             {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
               <span className="history-file"><Icon type="file" size={18}/></span>
               <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
-              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
+              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Visualizar arquivo</button>
               {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
-              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
+              {row.canCancel&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
           </section>
-          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
+          {error && <div ref={errorAlertRef} className="error" role="alert" tabIndex={-1}><Icon type="alert" size={18}/><span>{error}</span><button type="button" aria-label="Dispensar erro" onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
@@ -3134,10 +3699,20 @@ export default function Home() {
               </div>
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
-            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
+            {draft.ocrComparison && <details className="ocr-text-details ocr-comparison">
+              <summary>Comparar leituras OCR lado a lado</summary>
+              <p>As duas colunas são candidatos locais. Divergências precisam ser conferidas na imagem antes de lançar.</p>
+              {draft.ocrComparison.warning&&<div className="notice" role="status">{draft.ocrComparison.warning}</div>}
+              <div className="ocr-comparison-grid">
+                <section><h3>Tesseract · leitura atual</h3><pre>{draft.ocrComparison.tesseract||'Sem texto reconhecido.'}</pre></section>
+                <section><h3>PP-OCRv6 · leitura alternativa</h3><pre>{draft.ocrComparison.paddle||draft.ocrComparison.warning||'Sem texto reconhecido.'}</pre></section>
+              </div>
+              {draft.ocrComparison.paddle&&<button className="btn secondary" type="button" onClick={usePaddleReceiptOcr}>Preencher campos com PP-OCRv6 para conferir</button>}
+            </details>}
+            {!draft.ocrComparison&&draft.ocrText&&<details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input ref={firstFiscalFieldRef} value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={formatSupplierCnpj(draft.supplierCnpj||'')} onChange={(e)=>changeDraft('supplierCnpj',formatSupplierCnpj(e.target.value))} placeholder="14 dígitos" inputMode="text"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
@@ -3169,7 +3744,7 @@ export default function Home() {
                     <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} readOnly/>{it.reportedLineTotal !== undefined && Math.abs(receiptItemTotal(it)-Number(it.reportedLineTotal)) > 0.005 && <small className="fiscal-code-note">Total lido: {money(it.reportedLineTotal)}</small>}{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:225}}>
                       <label style={{display:'block',fontSize:11,marginBottom:6}}>
                         Classificação fiscal
@@ -3217,16 +3792,18 @@ export default function Home() {
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
                     </td>
                     <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
-                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
-                      totalsReviewed: false, finalReviewed: false, officialVerified: false
+                      ...d, lineTotalsEdited:true, subtotalManuallyEdited:false,
+                      reportedSubtotal:d.reportedSubtotal ?? d.subtotal, reportedTotal:d.reportedTotal ?? d.total,
+                      items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
+                      finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
                 })}</tbody>
               </table>
             </div>
             <div className="meta-fields" style={{marginTop:16}}>
-              <label><span>Subtotal fiscal (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftSubtotal} onChange={(e) => changeInvoiceAmount('subtotal', e.target.value)}/></label>
-              <label><span>Desconto total (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftDiscount} onChange={(e) => changeInvoiceAmount('discount', e.target.value)}/></label>
+              <label><span>Subtotal fiscal (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftSubtotal} onChange={(e) => changeInvoiceAmount('subtotal', e.target.value)}/></label>
+              <label><span>Desconto total (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftDiscount} onChange={(e) => changeInvoiceAmount('discount', e.target.value)}/></label>
               <label><span>Acréscimos / frete (R$)</span><input type="number" min="0" step="0.01" value={draftExtras} onChange={(e) => changeInvoiceAmount('additionalCharges', e.target.value)}/></label>
               <label><span>Total final líquido (R$) — automático</span><input aria-label="Total líquido calculado automaticamente" type="number" readOnly value={draftTotal.toFixed(2)} style={{background:'#edf8ec',fontWeight:700}}/><small style={{display:'block',fontSize:11,marginTop:5}}>Subtotal − descontos + acréscimos. Confira com o total impresso na nota.</small></label>
             </div>
@@ -3238,50 +3815,84 @@ export default function Home() {
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
             {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>{draftTotal < 0 ? 'O desconto não pode ultrapassar o subtotal acrescido dos encargos.' : 'O total líquido calculado ('+money(draftTotal)+') difere do valor extraído do documento ('+money(reportedFiscalTotal)+'). Confira subtotal, desconto e acréscimos antes de confirmar.'}</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
-            {totalsRequireReview && <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
-              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-                <input type="checkbox" checked={Boolean(draft.totalsReviewed)}
-                  onChange={(e) => setDraft((d) => ({ ...d, totalsReviewed:e.target.checked, finalReviewed:false }))}/>
-                <b>Conferi o subtotal, descontos, acréscimos e total final com a nota.</b>
-              </label>
-              <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
-            </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, lineTotalsEdited:true, subtotalManuallyEdited:false, reportedSubtotal:d.reportedSubtotal ?? d.subtotal, reportedTotal:d.reportedTotal ?? d.total, reviewedItems:{}, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
-              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? (totalsRequireReview ? 'Revise os itens, totais e divergências sinalizadas antes da confirmação final.' : 'Itens revisados. Identifique quem realizou a verificação.') : 'Conclua a revisão dos itens destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
-                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
-                <label className="field review-final-person"><span>Quem conferiu todos os itens *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável pela conferência"/></label>
+                <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>{totalsRequireReview ? 'Conferi o documento, inclusive os totais e divergências sinalizadas, e autorizo a entrada no estoque.' : 'Conferi todo o documento e autorizo a entrada no estoque.'}</span></label>
+                <label className="field review-final-person"><span>Usuário autenticado</span><input value={authenticatedReviewerName} readOnly aria-readonly="true"/></label>
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument}><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </section>}
-          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
+          <section className="panel history-panel">
+            <div className="panel-head"><div><h2>Histórico de documentos</h2><p>Notas lançadas no estoque.</p></div><span className="history-count">{filteredHistoryDocuments.length} de {documents.length}</span></div>
+            <div className="history-filters" aria-label="Filtros do histórico">
+              <label>Data do documento (fuso local)<span><input type="date" value={historyFilters.from} onChange={(event)=>setHistoryFilters((current)=>({...current,from:event.target.value}))} aria-label="Data inicial do documento"/><span aria-hidden="true">até</span><input type="date" value={historyFilters.to} onChange={(event)=>setHistoryFilters((current)=>({...current,to:event.target.value}))} aria-label="Data final do documento"/></span></label>
+              <label>Fornecedor ou CNPJ<input type="search" value={historyFilters.supplier} onChange={(event)=>setHistoryFilters((current)=>({...current,supplier:event.target.value}))} placeholder="Buscar no texto disponível" aria-label="Filtrar por fornecedor ou CNPJ"/></label>
+              <label>Autor ou situação<input type="search" value={historyFilters.author} onChange={(event)=>setHistoryFilters((current)=>({...current,author:event.target.value}))} placeholder="Nome, legado ou não informado" aria-label="Filtrar por autor ou situação da autoria"/></label>
+              <button type="button" className="btn secondary history-clear" onClick={()=>setHistoryFilters({from:'',to:'',supplier:'',author:''})} disabled={!historyFilters.from&&!historyFilters.to&&!historyFilters.supplier&&!historyFilters.author}>Limpar filtros</button>
+            </div>
+            <p className="history-filter-note">A data e o fornecedor usam somente os valores já salvos no documento. Filtro por data/hora real de lançamento e vínculo canônico de fornecedor aguardam campos validados pelo servidor. A autoria legada não é tratada como autenticada.</p>
+            {documents.length && filteredHistoryDocuments.length ? filteredHistoryDocuments.map((d) => <div className="history-row" key={d.id}>
+              <span className="history-file"><Icon type="file" size={19}/></span>
+              <span className="history-copy"><b>{d.supplier || 'Fornecedor não identificado'}</b>
+                <small>{d.supplierCnpj ? 'CNPJ ' + d.supplierCnpj + ' · ' : ''}{d.invoiceNumber ? 'Nº ' + d.invoiceNumber : 'Número não informado'}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}</small>
+                <span className={'history-author' + (d.checkedByVerified === true ? ' verified-author' : '')}>{pendingAttributionRef.current.has(d.id) ? 'Autoria aguardando confirmação do servidor' : fiscalDocumentAuthorText(d)}</span>
+              </span>
+              <span className="history-date">{formatDocumentIssueDate(d.date) || 'Data do documento indisponível'}</span>
+              <span className="status ok-status"><i/>{d.status}</span>
+              {currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}
+              <button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button>
+            </div>) : documents.length ? <div className="empty-docs"><b>Nenhum documento corresponde aos filtros</b><button type="button" className="btn secondary" onClick={()=>setHistoryFilters({from:'',to:'',supplier:'',author:''})}>Limpar filtros</button></div> : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens.</p></div>}
+          </section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
         </>}
 
         {view === 'cash' && <>
+          <section className="panel cash-report-queue" aria-labelledby="pending-cash-title">
+            <div className="panel-head"><div><h2 id="pending-cash-title">Faturamentos pendentes</h2><p>Cada arquivo é revisado e lançado separadamente.</p></div><span className="history-count">{cashReports.length} pendente(s)</span></div>
+            {cashReportProgress&&<div className="cash-report-progress" role="status" aria-live="polite"><b>{cashReportProgress.stage}</b>{cashReportProgress.activeFile&&<span>{cashReportProgress.activeFile}</span>}{cashReportProgress.total>1&&<span>Arquivo {Math.min(cashReportProgress.completed+1,cashReportProgress.total)} de {cashReportProgress.total}</span>}</div>}
+            {cashError&&<div className="error" role="alert">{cashError}</div>}
+            {cashReports.length ? <div className="cash-report-list">{cashReports.map((report)=><article className="cash-report-card" key={report.id}>
+              <div className="cash-report-copy"><b>{report.fileName||'Faturamento sem nome'}</b><span>{report.state==='uploaded'?'Aguardando leitura':report.state==='failed'?'Leitura com falha':'Aguardando conferência'}{report.updatedAt?' · Atualizado '+new Date(report.updatedAt).toLocaleString('pt-BR'):''}{report.duplicateWarning?' · Arquivo semelhante já enviado; não foi combinado':''}</span>
+                {cashReportErrors[report.id]&&<span className="cash-report-error" role="status">{cashReportErrors[report.id]}</span>}
+                {(Array.isArray(report.warnings)?report.warnings:[]).map((warning,index)=><span className="cash-report-warning" key={index}>{warning}</span>)}
+              </div>
+              <div className="cash-report-actions"><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void previewCashReport(report)}>Abrir original</button><button type="button" className="btn secondary" disabled={!report.hasOriginal} onClick={()=>void downloadCashReport(report)}>Baixar original</button>
+                {report.draft&&<button type="button" className="btn primary" onClick={()=>openCashReportReview(report)}>Revisar</button>}
+                {!report.draft&&report.hasOriginal&&<button type="button" className="btn secondary" disabled={cashImporting} onClick={()=>void retryCashReport(report)}>Tentar leitura novamente</button>}
+                <button type="button" className="btn secondary" disabled={!report.hasOriginal||cashSaving} onClick={()=>void cancelCashReport(report)}>Cancelar pendência</button></div>
+            </article>)}</div> : <div className="empty-docs"><b>Nenhum faturamento pendente</b><p>Os arquivos enviados aparecerão aqui para conferência individual.</p></div>}
+          </section>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
             <button className="btn primary" type="button" disabled={cashImporting}
               onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
-          {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
+          {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit' || cashEntryMode === 'report-review') && <section className="panel cash-entry">
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashEditId('');cashCorrectionContextRef.current=null;setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
-              <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
-              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
+              <div><b>Preencher automaticamente pelo fechamento</b><p>Selecione até cinco PDFs ou fotos. Cada arquivo terá seu próprio rascunho e confirmação; nenhum faturamento será somado automaticamente.</p></div>
+              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Enviando e lendo…':'Enviar até 5 arquivos'}</button>
             </div>
             {!cashForm.sourceFileName&&<button className="text-btn" type="button" onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
               <b>Arquivo importado: {cashForm.sourceFileName}</b>
               {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
-              <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
-              {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
+              <p>O formulário combina os campos reconhecidos por PP-OCRv6 e Tesseract. Compare as leituras com o comprovante; nenhum campo é confirmado sem sua revisão.</p>
+              {cashImportAlternativeText?<details className="ocr-comparison">
+                <summary>Comparar leituras OCR lado a lado</summary>
+                <div className="ocr-comparison-grid">
+                  <section><h3>Tesseract · leitura atual</h3><pre>{cashImportText.slice(0,20000)||'Sem texto reconhecido.'}</pre></section>
+                  <section><h3>PP-OCRv6 · leitura alternativa</h3><pre>{cashImportAlternativeText.slice(0,20000)||'Sem texto reconhecido.'}</pre></section>
+                </div>
+                <button className="btn secondary" type="button" onClick={useAlternativeCashOcr}>Usar a leitura PP-OCRv6 nos campos para conferir</button>
+              </details>:cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
             </div>}
-            <form onSubmit={saveCashClosing}>
+            <form onSubmit={cashEntryMode==='report-review'?savePendingCashReport:saveCashClosing}>
               <fieldset disabled={cashSaving} className="cash-form-fields">
               <div className="meta-fields">
                 <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
@@ -3302,14 +3913,14 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label>{cashEntryMode==='report-review'&&<button type="button" className="btn secondary" disabled={cashSaving||!accessCode} onClick={()=>void savePendingCashDraft()}>Salvar pendência</button>}<button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?(cashEntryMode==='report-review'?'Lançando…':'Salvando…'):(cashEntryMode==='report-review'?'Conferir e lançar':cashEntryMode==='edit'?'Salvar correção auditada':'Salvar faturamento')}</button></div>
               </fieldset>
             </form>
           </section>}
           <section className="panel cash-summary">
             <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
-              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
-              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');setCashSelectedClosingId('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');setCashSelectedClosingId('');}}>Ano</button></div>
+              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');setCashSelectedClosingId('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');setCashSelectedClosingId('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
             </div>
             <div className="cash-stats">
               <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
@@ -3321,26 +3932,40 @@ export default function Home() {
               {cashHighlightedEntry ? <>
                 <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
                 <strong>{money(cashHighlightedEntry.revenue)}</strong>
-              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
+              </> : <span>{cashChartData.count ? 'Passe o mouse, toque ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
             </div>
+            {cashChartScope==='month'&&<div className="cash-month-reference-legend" data-testid="cash-month-reference-legend" aria-live="polite">
+              {cashMonthlyReferences ? <>
+                <span className="cash-reference-rule">Considera apenas dias com lançamentos; dias sem fechamento ficam fora da comparação.</span>
+                {cashMonthlyReferences.maximum.revenue===cashMonthlyReferences.minimum.revenue
+                  ? <span className="cash-reference-item"><i className="cash-reference-swatch is-equal" aria-hidden="true"/>Maior e menor: <b>{money(cashMonthlyReferences.maximum.revenue)}</b> · {cashMonthlyReferences.maximum.day.slice(-2)}/{cashMonthlyReferences.maximum.day.slice(5,7)}</span>
+                  : <><span className="cash-reference-item"><i className="cash-reference-swatch is-maximum" aria-hidden="true"/>Maior: <b>{money(cashMonthlyReferences.maximum.revenue)}</b> · {cashMonthlyReferences.maximum.day.slice(-2)}/{cashMonthlyReferences.maximum.day.slice(5,7)}</span>
+                    <span className="cash-reference-item"><i className="cash-reference-swatch is-minimum" aria-hidden="true"/>Menor: <b>{money(cashMonthlyReferences.minimum.revenue)}</b> · {cashMonthlyReferences.minimum.day.slice(-2)}/{cashMonthlyReferences.minimum.day.slice(5,7)}</span></>}
+              </> : <span className="cash-reference-rule">Sem lançamentos no mês para comparar.</span>}
+            </div>}
             <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
-                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?p.day.slice(8,10)+'/'+p.day.slice(5,7):p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;const barHeight=hasRevenue?Math.max(3,p.revenue/cashChartMaxRevenue*100):0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')+(cashHighlightedDay===p.day?' is-highlighted':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onPointerDown={event=>event.pointerType==='touch'&&hasRevenue&&setCashHighlightedDay(p.day)} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
+                <div className="cash-bar-track">
+                  {cashChartScope==='month'&&cashMonthlyReferences&&<span className="cash-reference-line is-maximum" style={{bottom:`calc(${cashMonthlyReferences.maximum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
+                  {cashChartScope==='month'&&cashMonthlyReferences&&cashMonthlyReferences.minimum.revenue!==cashMonthlyReferences.maximum.revenue&&<span className="cash-reference-line is-minimum" style={{bottom:`calc(${cashMonthlyReferences.minimum.revenue/cashChartMaxRevenue*100}% - 1px)`}} aria-hidden="true"/>}
+                  {cashHighlightedDay===p.day&&hasRevenue&&<span className="cash-bar-value" style={{bottom:`calc(${barHeight}% + 4px)`}} aria-hidden="true">{money(p.revenue)}</span>}
+                  <div className="cash-bar-fill" style={{height:barHeight+'%'}}/>
+                </div>
                 <small>{axisDate}</small><small>{weekday}</small>
               </button>})}
             </div>
           </section>
-          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
+          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de faturamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
+            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{new Date(entry.day+'T12:00:00').toLocaleDateString('pt-BR')}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>void openCashClosingDetail(entry)}>Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setCashSelectedDay('');setCashSelectedClosingId('');}}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO FINANCEIRO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>{setCashSelectedDay('');setCashSelectedClosingId('');}}><Icon type="close"/></button></div><div className="cash-day-detail">
   <div className="cash-day-summary">
-    <span>Total de faturamento do dia</span>
+    <span>{cashSelectedClosingId?'Total do fechamento':'Total de faturamento do dia'}</span>
     <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
     <small>{cashChartEntries.length} {cashChartEntries.length===1?'caixa registrado':'caixas registrados'}</small>
   </div>
@@ -3353,10 +3978,15 @@ export default function Home() {
         </div>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
+        {cashSelectedClosingId===String(entry.id)&&currentUser?.role==='admin'&&<div className="cash-audit-panel">
+          <div className="cash-audit-panel-head"><h4>Histórico de versões</h4><button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Corrigir fechamento</button></div>
+          {cashAuditLoading?<p role="status">Carregando auditoria…</p>:cashAuditHistory.length?<ol>{cashAuditHistory.map((version)=><li key={version.version}><div><b>Versão {version.version} · {version.action==='baseline'?'original':version.action==='restore'?'restauração':'correção'}</b><small>{new Date(version.occurredAt).toLocaleString('pt-BR')} · {version.actor?.displayName||'Autoria anterior não registrada'} · {version.reason}</small></div>{version.version!==cashAuditHistory[0]?.version&&<button type="button" className="text-btn" disabled={cashSaving} onClick={()=>void restoreCashClosingVersion(entry,version.version)}>Recuperar esta versão</button>}</li>)}</ol>:<p>Não há versões anteriores disponíveis.</p>}
+        </div>}
+        {!cashSelectedClosingId&&currentUser?.role==='admin'&&<div className="cash-day-review-action"><button type="button" className="text-btn" onClick={()=>void openCashClosingDetail(entry)}>Revisar este fechamento e seu histórico</button></div>}
       </article>;
     }):<p className="cash-day-empty">Sem detalhes disponíveis.</p>}
   </div>
-</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>,document.body)}
+</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>{setCashSelectedDay('');setCashSelectedClosingId('');}}>Fechar</button></div></section></div>,document.body)}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
         <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
@@ -3378,7 +4008,20 @@ export default function Home() {
       </section>
     </div>}
     {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
-    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Autoria do lançamento</small><b>{pendingAttributionRef.current.has(detailDoc.id) ? 'Autoria aguardando confirmação do servidor' : fiscalDocumentAuthorText(detailDoc)}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {pendingPreview && <div className="overlay pending-file-overlay" onMouseDown={(event)=>{if(event.target===event.currentTarget)closePendingPreview();}}>
+      <section className="modal pending-file-dialog" role="dialog" aria-modal="true" aria-labelledby="pending-file-title">
+        <div className="modal-heading"><div><div className="eyebrow">ARQUIVO ORIGINAL</div><h2 id="pending-file-title">Visualização do arquivo</h2><p>{pendingPreview.fileName}</p></div>
+          <button type="button" className="close-btn" aria-label="Fechar visualização do arquivo" onClick={closePendingPreview}><Icon type="close"/></button></div>
+        {pendingPreview.previewable ? <div className="pending-file-preview">
+          {pendingPreview.mime==='application/pdf'
+            ? <iframe title={'Pré-visualização do PDF '+pendingPreview.fileName} src={pendingPreview.url}/>
+            : <img alt={'Pré-visualização do arquivo '+pendingPreview.fileName} src={pendingPreview.url}/>}
+        </div> : <div className="notice" role="status">Este formato não pode ser pré-visualizado com segurança. Você ainda pode baixar o arquivo original.</div>}
+        <div className="modal-actions"><a className="btn secondary" href={pendingPreview.url} download={pendingPreview.fileName}>Baixar arquivo original</a>
+          <button type="button" className="btn primary" onClick={closePendingPreview}>Fechar</button></div>
+      </section>
+    </div>}
     {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }

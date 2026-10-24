@@ -18,19 +18,14 @@ test('private real-image catalog has unique 13 photos and minimum 14 independent
   assert.equal(multi[0].name,'fiscal-03-duas-notas.jpeg');
 });
 
-test('all ten old golden photo references exist; three new photos await validated goldens',()=>{
+test('all 13 private photos have reviewed, anonymized textual goldens',()=>{
   const photos=new Set([...golden.cash,...golden.fiscal].map(x=>x.photo));
-  assert.equal(photos.size,10);
-  assert.equal(golden.documents,11);
+  assert.equal(photos.size,13);
+  assert.equal(golden.documents,14);
   const mapped=manifest.fixtures.filter(x=>x.golden);
-  assert.equal(mapped.length,10);
+  assert.equal(mapped.length,13);
   assert.deepEqual(new Set(mapped.map(x=>x.name)),photos);
-  const awaiting=manifest.fixtures.filter(x=>!x.golden).map(x=>x.name).sort();
-  assert.deepEqual(awaiting,[
-    'fiscal-04-danfe.jpeg',
-    'fiscal-05-cupom-termico.jpeg',
-    'fiscal-06-contingencia.jpeg'
-  ]);
+  assert.deepEqual(manifest.fixtures.filter(x=>!x.golden),[]);
 });
 
 test('each entry has immutable source fingerprint and safe private path',()=>{
