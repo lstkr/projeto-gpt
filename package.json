@@ -13,15 +13,16 @@
     "predev": "node scripts/prepare-pdf-worker.cjs"
   },
   "dependencies": {
-    "next": "^15.5.6",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "tesseract.js": "^7.0.0",
+    "@paddleocr/paddleocr-js": "^0.4.2",
     "@supabase/supabase-js": "^2.57.4",
-    "jsqr": "1.4.0",
     "@zxing/library": "0.21.3",
     "cheerio": "1.0.0",
-    "pdfjs-dist": "6.4.299"
+    "jsqr": "1.4.0",
+    "next": "^15.5.6",
+    "pdfjs-dist": "6.4.299",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tesseract.js": "^7.0.0"
   },
   "engines": {
     "node": "22.x"

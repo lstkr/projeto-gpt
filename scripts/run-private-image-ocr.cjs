@@ -115,7 +115,7 @@ async function main(){
             const imageData={width:info.width,height:info.height,data:rgba};
             adaptiveBinarizeImageData(imageData);
             const retry=await sharp(Buffer.from(imageData.data),{raw:{width:info.width,height:info.height,channels:4}}).png().toBuffer();
-            await worker.setParameters({tessedit_pageseg_mode:'11',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+            await worker.setParameters({tessedit_pageseg_mode:'4',preserve_interword_spaces:'1',user_defined_dpi:'300'});
             const retryResult=await worker.recognize(retry);
             alternateText=retryResult.data.text||'';
             alternateItems=fiscalParser.parseReceiptOcr(alternateText);
