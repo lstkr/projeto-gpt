@@ -24,12 +24,12 @@ const channelKeys={
 };
 const toIso=(ptbr)=>ptbr.split('/').reverse().join('-');
 
-test('photo registry preserves ten originals and eleven independent documents',()=>{
-  assert.equal(dataset.photos,10);
-  assert.equal(dataset.documents,11);
+test('photo registry preserves thirteen originals and fourteen independent documents',()=>{
+  assert.equal(dataset.photos,13);
+  assert.equal(dataset.documents,14);
   assert.equal(dataset.cash.length,7);
-  assert.equal(dataset.fiscal.length,4);
-  assert.equal(new Set([...dataset.cash,...dataset.fiscal].map(x=>x.photo)).size,10);
+  assert.equal(dataset.fiscal.length,7);
+  assert.equal(new Set([...dataset.cash,...dataset.fiscal].map(x=>x.photo)).size,13);
   const paired=dataset.fiscal.filter(x=>x.photo==='fiscal-03-duas-notas.jpeg');
   assert.equal(paired.length,2);
   assert.deepEqual(paired.map(x=>x.document_index),[0,1]);
@@ -104,6 +104,20 @@ for(const example of dataset.fiscal){
       assert.equal(items[0].quantity,example.expected.quantity);
     if(example.expected.manjericaoUnit)
       assert.equal(items[0].unit,example.expected.manjericaoUnit);
+    if(example.expected.lastUnit)
+      assert.equal(items.at(-1).unit,example.expected.lastUnit);
   });
 }
+
+test('contingency receipt keeps printed payable total separate from gross and discount',()=>{
+ const example=dataset.fiscal.find(row=>row.case_id==='cupom-contingencia-seven-items');
+ const text=example.transcribed_lines.join('\n');
+ const items=fiscalParser.parseReceiptOcr(text);
+ const totals=fiscalParser.reconcileReceiptTotals(text,text,items);
+ assert.equal(items.length,7);
+ assert.equal(totals.subtotal,829.79);
+ assert.equal(totals.discount,87.94);
+ assert.equal(totals.total,741.85);
+ assert.match(totals.totalsWarning,/Soma das linhas diferente do subtotal fiscal/);
+});
 

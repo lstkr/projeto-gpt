@@ -42,6 +42,7 @@ const money = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currenc
 const qty = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(Number(v || 0));
 const norm = (v) => String(v || '').trim().toLocaleLowerCase('pt-BR');
 const uid = () => Math.random().toString(36).slice(2, 10);
+const uuid = () => globalThis.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
@@ -878,14 +879,19 @@ function parseReceiptTotals(text) {
     .map((match) => localizedValue(match[1]))
     .filter((value) => Number.isFinite(value) && value >= 0);
   let summary = false;
+  let printedGrossTotal = null;
   for (const line of String(text || '').split(/\r?\n/)) {
     const n = normalize(line);
     if (/QTD(?:E)?\s*TOTAL|TOTAL DE ITENS|SUB[ -]?TOTAL/.test(n)) summary = true;
     const values = amountValues(line);
     if (!values.length) continue;
-    if (/\bSUB[\s-]*TOTAL\b/.test(n)) totals.subtotal = values[0];
+    if (/\bSUB[\s-]*TOTAL\b|\bVALOR\s+TOTAL\s+DOS\s+PRODUTOS\b/.test(n)) totals.subtotal = values[0];
     if (/\bDESCONTO\b/.test(n) && summary) totals.discount = values[0];
-    if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
+    if (/\bVALOR\s+TOTAL\b/.test(n) && !/\bVALOR\s+TOTAL\s+DOS\s+PRODUTOS\b/.test(n)) printedGrossTotal = values[0];
+    if (/\bVALOR\s+A\s+PAGAR\b/.test(n)) {
+      if (totals.subtotal == null && printedGrossTotal != null) totals.subtotal = printedGrossTotal;
+      totals.total = values[0];
+    } else if ((/\bVALOR\s*TOTAL\b|\bTOTAL\s*A\s*PAGAR\b|\bTOTAL\s*DA\s*NOTA\b/.test(n)) &&
         !/\bQTD(?:E)?\s*TOTAL\b|\bTOTAL\s*DE\s*ITENS\b/.test(n))
       totals.total = values[0];
   }
@@ -1022,7 +1028,7 @@ function compareInvoiceItems(ocrItems, officialItems) {
   })));
 }
 
-async function prepareReceiptCanvases(file) {
+async function prepareReceiptCanvases(file, { splitReceipts = true } = {}) {
   const image = new Image();
   const objectUrl = URL.createObjectURL(file);
   try {
@@ -1084,7 +1090,7 @@ async function prepareReceiptCanvases(file) {
   const twoReceipts = width > 500 && peakLeft > 0.48 && peakRight > 0.48 &&
     valley < Math.min(peakLeft, peakRight) * 0.80 && valley < 0.62;
   const segments = [];
-  if (twoReceipts) segments.push([0, seam], [seam, width]);
+  if (twoReceipts && splitReceipts) segments.push([0, seam], [seam, width]);
   else segments.push([0, width]);
 
   const trimX = (start, end) => {
@@ -1216,6 +1222,7 @@ export default function Home() {
   const [documents, setDocuments] = useState([]);
   const [historyFilters, setHistoryFilters] = useState({ from: '', to: '', supplier: '', author: '' });
   const [suppliers, setSuppliers] = useState([]);
+  const [supplierIdentityLinks, setSupplierIdentityLinks] = useState([]);
   const [pendingReceipts,setPendingReceipts]=useState([]);
   const [pendingBusy,setPendingBusy]=useState(false);
   const [pendingSaveError,setPendingSaveError]=useState('');
@@ -1245,6 +1252,10 @@ export default function Home() {
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
   const [cashChartScope,setCashChartScope]=useState('month');
   const [cashSelectedDay,setCashSelectedDay]=useState('');
+  const [cashSelectedClosingId,setCashSelectedClosingId]=useState('');
+  const [cashAuditHistory,setCashAuditHistory]=useState([]);
+  const [cashAuditLoading,setCashAuditLoading]=useState(false);
+  const cashCorrectionContextRef=useRef(null);
   const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
@@ -1339,6 +1350,7 @@ export default function Home() {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
     } else if (view === 'cash' && cashSelectedDay) {
       setCashSelectedDay('');
+      setCashSelectedClosingId('');
     } else {
       setModal('');
     }
@@ -1384,6 +1396,8 @@ export default function Home() {
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
     setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
+    const { data: identityLinks } = await supabase.rpc('supplier_identity_links', { p_token: token });
+    setSupplierIdentityLinks(Array.isArray(identityLinks) ? identityLinks : []);
     const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
@@ -1819,11 +1833,13 @@ export default function Home() {
   const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
   const cashMonthlyReferences=summarizeCashMonthly(cashMonthly.daily);
   const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
-  const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
+  const cashChartEntries=useMemo(()=>cashSelectedClosingId
+    ? closings.filter(entry=>String(entry.id)===String(cashSelectedClosingId))
+    : cashSelectedDay?closings.filter(entry=>entry.day===cashSelectedDay):[],[closings,cashSelectedDay,cashSelectedClosingId]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
   const purchaseList = purchaseData.items;
-  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents), [documents]);
+  const supplierGroups = useMemo(() => purchaseHistoryBySupplier(documents, suppliers, supplierIdentityLinks), [documents, suppliers, supplierIdentityLinks]);
   const knownSuppliers = [...new Set(supplierGroups.map((s) => s.name).filter(Boolean))];
   const manualMatches = useMemo(() => products.filter((p) =>
     [p.name, p.sku, ...(p.alternateSkus || [])].some((value) => norm(value).includes(norm(manualSearch)))
@@ -1938,11 +1954,15 @@ export default function Home() {
       throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
     }
     if(fileKind==='image'){
+      const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+      const canvases=prepared.canvases.length?prepared.canvases:[file];
       const {createWorker}=await import('tesseract.js');
       const worker=await createWorker('por');
       try{
-        await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
-        const result=await worker.recognize(file);return result.data.text||'';
+        await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+        const texts=[];
+        for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+        return texts.join('\n');
       }finally{await worker.terminate();}
     }
     throw new Error('Tipo de arquivo inválido. Use PDF, JPG, PNG ou WEBP.');
@@ -2142,12 +2162,15 @@ export default function Home() {
             '. Se possível, exporte novamente o PDF ou envie uma foto JPG/PNG.');}
         }else throw new Error(parsed.error||'Não foi possível extrair texto do PDF.');
       }else if(fileKind==='image'){
+        const prepared=await prepareReceiptCanvases(file,{splitReceipts:false});
+        const canvases=prepared.canvases.length?prepared.canvases:[file];
         const {createWorker}=await import('tesseract.js');
         const worker=await createWorker('por');
         try{
-          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});
-          const result=await worker.recognize(file);
-          text=result.data.text||'';
+          await worker.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1',user_defined_dpi:'300'});
+          const texts=[];
+          for(const canvas of canvases){const result=await worker.recognize(canvas);texts.push(result.data.text||'');}
+          text=texts.join('\n');
         }finally{await worker.terminate();}
       }else throw new Error('Use PDF, JPG, PNG ou WEBP.');
       const result=parseCashReport(text);
@@ -2178,6 +2201,7 @@ export default function Home() {
     return next;
   });setCashError('');}
   function newCashClosing(mode='manual'){
+    cashCorrectionContextRef.current=null;
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');
@@ -2187,12 +2211,76 @@ export default function Home() {
     setCashError('');
   }
   function editCashClosing(entry){
+    if(!entry?.updatedAt){setToast('Atualize o histórico antes de corrigir este fechamento.');return;}
+    if(!window.confirm('A edição ficará registrada com uma cópia dos dados anteriores e poderá ser recuperada depois. Continuar?'))return;
+    const reason=window.prompt('Informe o motivo da correção (obrigatório):');
+    if(!reason||reason.trim().length<5)return;
+    cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,reason:reason.trim(),idempotencyKey:uuid()};
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEntryMode('edit');
     setCashEditId(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
       movements:entry.movements||[]});
     setCashError('');setView('cash');
+  }
+
+  async function openCashClosingDetail(entry){
+    setCashSelectedClosingId(String(entry.id));
+    setCashSelectedDay(entry.day);
+    setCashAuditHistory([]);setCashAuditLoading(true);
+    if(supabase&&accessCode){
+      const {data,error}=await supabase.rpc('cash_closing_audit_list',{p_token:accessCode,p_closing_id:entry.id});
+      if(!error&&Array.isArray(data))setCashAuditHistory(data);
+      else setToast(error?.message||'Não foi possível carregar o histórico de correções.');
+    }
+    setCashAuditLoading(false);
+  }
+
+  async function restoreCashClosingVersion(entry,version){
+    if(!supabase||!accessCode||!entry?.updatedAt)return;
+    const reason=window.prompt(`Explique por que está recuperando a versão ${version}:`);
+    if(!reason||reason.trim().length<5)return;
+    if(!window.confirm(`Restaurar a versão ${version}? O estado atual será preservado no histórico e a recuperação criará uma nova versão auditada.`))return;
+    setCashSaving(true);
+    try{
+      const {data,error}=await supabase.rpc('cash_closing_correct',{
+        p_token:accessCode,p_closing_id:entry.id,p_expected_updated_at:entry.updatedAt,
+        p_entry:null,p_reason:reason.trim(),p_idempotency_key:uuid(),p_restore_version:version
+      });
+      if(error||!data?.ok)throw new Error(error?.message||'Não foi possível recuperar os dados.');
+      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      if(listError||!Array.isArray(updated))throw new Error(listError?.message||'Correção salva, mas não foi possível atualizar o histórico.');
+      setClosings(updated);
+      const current=updated.find(row=>String(row.id)===String(entry.id));
+      if(current)await openCashClosingDetail(current);
+      setToast('Versão recuperada como nova correção auditada.');
+    }catch(error){setToast(error.message||'Falha ao recuperar versão financeira.');}
+    finally{setCashSaving(false);}
+  }
+
+  async function linkLegacySupplier(document, supplierId) {
+    const supplier = suppliers.find((row) => String(row.id) === String(supplierId));
+    if (!supplier || !document?.id || !supabase || !accessCode) return;
+    const confirmed = window.confirm(
+      `Vincular esta nota a “${supplier.name}” usando a validação do Gestor? A operação ficará auditada e não altera a nota, os produtos nem o estoque.`
+    );
+    if (!confirmed) return;
+    const { data, error } = await supabase.rpc('supplier_identity_link', {
+      p_token: accessCode,
+      p_document_id: String(document.id),
+      p_supplier_id: String(supplier.id)
+    });
+    if (error || !data?.ok) {
+      setToast(error?.message || 'Não foi possível registrar o vínculo do fornecedor.');
+      return;
+    }
+    const { data: links, error: linksError } = await supabase.rpc('supplier_identity_links', { p_token: accessCode });
+    if (linksError || !Array.isArray(links)) {
+      setToast('Vínculo salvo. Atualize a tela para recarregar o histórico auditável.');
+      return;
+    }
+    setSupplierIdentityLinks(links);
+    setToast('Fornecedor vinculado e registrado na auditoria.');
   }
   async function saveCashClosing(event){
     event.preventDefault();
@@ -2212,14 +2300,21 @@ export default function Home() {
         movements:snapshot.movements.map(m=>({
           type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
         }))};
-      const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
+      const isCorrection=cashEntryMode==='edit';
+      const correction=cashCorrectionContextRef.current;
+      if(isCorrection&&!correction)throw new Error('Reabra a revisão para iniciar uma correção auditável.');
+      const {data,error:saveError}=isCorrection
+        ? await supabase.rpc('cash_closing_correct',{p_token:accessCode,p_closing_id:cashEditId,
+          p_expected_updated_at:correction.expectedUpdatedAt,p_entry:clean,p_reason:correction.reason,
+          p_idempotency_key:correction.idempotencyKey,p_restore_version:null})
+        : await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
       if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
       const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
       if(!listError&&Array.isArray(updated))setClosings(updated);
       else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
       setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
-      setCashEditId('');setCashEntryMode('');
-      setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Faturamento registrado com sucesso.');
+      setCashSelectedClosingId('');setCashEditId('');setCashEntryMode('');cashCorrectionContextRef.current=null;
+      setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':isCorrection?'Correção financeira salva e auditada.':'Faturamento registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
     finally{cashSavingRef.current=false;setCashSaving(false);}
   }
@@ -3064,11 +3159,17 @@ export default function Home() {
     });
     setProducts(nextProducts);
     setMovements(nextMovements);
-    if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
-      registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
-        ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
+    let canonicalSupplier = null;
+    if (validSupplierCnpj(draft.supplierCnpj)) {
+      canonicalSupplier = suppliers.find((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj)) || {
+        id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim()
+      };
+      if (!suppliers.some((supplier) => String(supplier.id) === String(canonicalSupplier.id)))
+        setSuppliers((registered) => [...registered, canonicalSupplier]);
+    }
     const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, lineTotalsEdited, subtotalManuallyEdited, ...documentToSave } = draft;
     documentToSave.supplierCnpj = formatSupplierCnpj(draft.supplierCnpj);
+    if (canonicalSupplier) documentToSave.supplierId = canonicalSupplier.id;
     delete documentToSave.checkedBy;
     pendingAttributionRef.current.set(documentId, {
       userId: currentUser?.id,
@@ -3364,9 +3465,10 @@ export default function Home() {
           <div className="panel-head"><div><h2>Compras realizadas por fornecedor</h2><p>Histórico das notas lançadas, organizado por fornecedor e CNPJ quando disponível.</p></div><span className="history-count">{supplierGroups.length} fornecedor(es)</span></div>
           <div className="filters supplier-filters"><label className="search"><Icon type="search" size={17}/><input value={supplierFilter} onChange={(e) => setSupplierFilter(e.target.value)} placeholder="Filtrar fornecedor ou CNPJ"/></label></div>
           {supplierGroups.filter((s) => norm(s.name + ' ' + s.cnpj).includes(norm(supplierFilter))).map((s) => <details className="supplier-summary" key={s.key}>
-            <summary><span><b>{s.name}</b><small>{s.cnpj ? 'CNPJ ' + s.cnpj : 'Sem CNPJ identificado'} · {s.documents.length} nota(s) · {s.items} linha(s) de produtos</small></span><strong>{money(s.total)}</strong></summary>
+            <summary><span><b>{s.name}</b><small>{s.cnpj ? 'CNPJ ' + s.cnpj : 'Sem CNPJ identificado'} · {s.identityStatus} · {s.documents.length} nota(s) · {s.items} linha(s) de produtos</small></span><strong>{money(s.total)}</strong></summary>
             <div className="supplier-documents">{s.documents.map((d, i) => <div className="supplier-document" key={d.id || i}>
               <div className="supplier-document-head"><b>{d.invoiceNumber ? 'Nota nº ' + d.invoiceNumber : d.fileName || 'Documento fiscal'}</b><span>{d.date || d.importedAt || 'Sem data'} · {money(d.total ?? (d.items || []).reduce((sum,item)=>sum + Number(item.lineTotal || item.unitPrice*item.quantity || 0),0))}</span></div>
+              {!validSupplierCnpj(d.supplierCnpj) && !d.supplierId && !supplierIdentityLinks.some((link) => String(link.documentId) === String(d.id)) && <label className="supplier-identity-review"><span>Identidade não confirmada. Revise antes de agrupar este histórico.</span><select value="" aria-label={`Vincular nota ${d.invoiceNumber || d.fileName || ''} a um fornecedor validado`} onChange={(event) => { const supplierId = event.target.value; if (supplierId) void linkLegacySupplier(d, supplierId); }}><option value="">Revisar vínculo com fornecedor</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} · {formatSupplierCnpj(supplier.cnpj)}</option>)}</select></label>}
               <ul>{(d.items || []).map((it,j) => <li key={j}><span>{it.name} <small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><b>{money(it.lineTotal ?? Number(it.quantity)*Number(it.unitPrice))}</b></li>)}</ul>
             </div>)}</div>
           </details>)}
@@ -3659,7 +3761,7 @@ export default function Home() {
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit' || cashEntryMode === 'report-review') && <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashEditId('');cashCorrectionContextRef.current=null;setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
               <div><b>Preencher automaticamente pelo fechamento</b><p>Selecione até cinco PDFs ou fotos. Cada arquivo terá seu próprio rascunho e confirmação; nenhum faturamento será somado automaticamente.</p></div>
@@ -3693,14 +3795,14 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label>{cashEntryMode==='report-review'&&<button type="button" className="btn secondary" disabled={cashSaving||!accessCode} onClick={()=>void savePendingCashDraft()}>Salvar pendência</button>}<button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?(cashEntryMode==='report-review'?'Lançando…':'Salvando…'):(cashEntryMode==='report-review'?'Conferir e lançar':'Salvar faturamento')}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label>{cashEntryMode==='report-review'&&<button type="button" className="btn secondary" disabled={cashSaving||!accessCode} onClick={()=>void savePendingCashDraft()}>Salvar pendência</button>}<button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?(cashEntryMode==='report-review'?'Lançando…':'Salvando…'):(cashEntryMode==='report-review'?'Conferir e lançar':cashEntryMode==='edit'?'Salvar correção auditada':'Salvar faturamento')}</button></div>
               </fieldset>
             </form>
           </section>}
           <section className="panel cash-summary">
             <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
-              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
-              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');setCashSelectedClosingId('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');setCashSelectedClosingId('');}}>Ano</button></div>
+              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');setCashSelectedClosingId('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');setCashSelectedClosingId('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
             </div>
             <div className="cash-stats">
               <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
@@ -3737,15 +3839,15 @@ export default function Home() {
           </section>
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de faturamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
+            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{new Date(entry.day+'T12:00:00').toLocaleDateString('pt-BR')}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>void openCashClosingDetail(entry)}>Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO FINANCEIRO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget){setCashSelectedDay('');setCashSelectedClosingId('');}}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO FINANCEIRO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>{setCashSelectedDay('');setCashSelectedClosingId('');}}><Icon type="close"/></button></div><div className="cash-day-detail">
   <div className="cash-day-summary">
-    <span>Total de faturamento do dia</span>
+    <span>{cashSelectedClosingId?'Total do fechamento':'Total de faturamento do dia'}</span>
     <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
     <small>{cashChartEntries.length} {cashChartEntries.length===1?'caixa registrado':'caixas registrados'}</small>
   </div>
@@ -3758,10 +3860,15 @@ export default function Home() {
         </div>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
+        {cashSelectedClosingId===String(entry.id)&&currentUser?.role==='admin'&&<div className="cash-audit-panel">
+          <div className="cash-audit-panel-head"><h4>Histórico de versões</h4><button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Corrigir fechamento</button></div>
+          {cashAuditLoading?<p role="status">Carregando auditoria…</p>:cashAuditHistory.length?<ol>{cashAuditHistory.map((version)=><li key={version.version}><div><b>Versão {version.version} · {version.action==='baseline'?'original':version.action==='restore'?'restauração':'correção'}</b><small>{new Date(version.occurredAt).toLocaleString('pt-BR')} · {version.actor?.displayName||'Autoria anterior não registrada'} · {version.reason}</small></div>{version.version!==cashAuditHistory[0]?.version&&<button type="button" className="text-btn" disabled={cashSaving} onClick={()=>void restoreCashClosingVersion(entry,version.version)}>Recuperar esta versão</button>}</li>)}</ol>:<p>Não há versões anteriores disponíveis.</p>}
+        </div>}
+        {!cashSelectedClosingId&&currentUser?.role==='admin'&&<div className="cash-day-review-action"><button type="button" className="text-btn" onClick={()=>void openCashClosingDetail(entry)}>Revisar este fechamento e seu histórico</button></div>}
       </article>;
     }):<p className="cash-day-empty">Sem detalhes disponíveis.</p>}
   </div>
-</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>,document.body)}
+</div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>{setCashSelectedDay('');setCashSelectedClosingId('');}}>Fechar</button></div></section></div>,document.body)}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
         <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>

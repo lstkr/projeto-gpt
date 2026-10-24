@@ -7,7 +7,7 @@ select private.bootstrap_superadmin('admin.master',replace(extensions.crypt('syn
 set role anon;
 do $$
 declare token text; old_token text; employee_token text; tenant uuid; pending uuid; employee_pending uuid; result jsonb; state jsonb; dba_token text; i integer;
- manager_id uuid; employee_id uuid; state_revision bigint;
+ manager_id uuid; employee_id uuid; state_revision bigint; close_row jsonb; old_close_updated timestamptz; correction_key uuid:=gen_random_uuid();
 begin
  result:=public.inventory_login('admin.master','synthetic-superadmin-only'); dba_token:=result->>'session_token';
  assert (result->>'must_change_password')::boolean;
@@ -23,7 +23,8 @@ begin
  state:=state||jsonb_build_object(
   'revision',coalesce((state->>'revision')::bigint,0),
   'products',jsonb_build_array(jsonb_build_object('id','a','name','Tenant A','stock',1,'cost',1,'min',0,'unit','un'))||coalesce(state->'products','[]'::jsonb),
-  'documents',jsonb_build_array(jsonb_build_object('id','fixture-manager-doc','checkedBy','Forged name','checkedByUserId','00000000-0000-4000-8000-000000000099','checkedByTenantId','00000000-0000-4000-8000-000000000099','checkedByAt','1900-01-01T00:00:00Z','checkedByVerified',false)),
+  'suppliers',jsonb_build_array(jsonb_build_object('id','fixture-canonical-supplier','name','Fornecedor Canônico','cnpj','92192798000139')),
+  'documents',jsonb_build_array(jsonb_build_object('id','fixture-manager-doc','checkedBy','Forged name','checkedByUserId','00000000-0000-4000-8000-000000000099','checkedByTenantId','00000000-0000-4000-8000-000000000099','checkedByAt','1900-01-01T00:00:00Z','checkedByVerified',false),jsonb_build_object('id','fixture-legacy-doc','supplier','OCR ilegível','supplierCnpj','')),
   'movements',jsonb_build_array(jsonb_build_object('id','fixture-manager-move','documentId','fixture-manager-doc','by','Forged name','byUserId','00000000-0000-4000-8000-000000000099','byTenantId','00000000-0000-4000-8000-000000000099','byAt','1900-01-01T00:00:00Z','byVerified',false)));
  result:=public.inventory_save(token,state); assert (result->>'ok')::boolean;
  state:=public.inventory_get(token);
@@ -36,6 +37,21 @@ begin
  assert (state->'movements'->0->>'byUserId')::uuid=manager_id;
  assert state->'movements'->0->>'byTenantId'='00000000-0000-4000-8000-000000000001';
  assert state->'movements'->0->>'byVerified'='true';
+ result:=public.supplier_identity_link(token,'fixture-legacy-doc','fixture-canonical-supplier');
+ assert (result->>'ok')::boolean;
+ assert exists(select 1 from jsonb_array_elements(public.supplier_identity_links(token)) l
+   where l->>'documentId'='fixture-legacy-doc' and l->>'supplierId'='fixture-canonical-supplier');
+ assert (public.inventory_get(token)->'documents')=state->'documents';
+ begin perform 1 from private.supplier_identity_link_audit; raise exception 'Supplier identity audit was readable'; exception when insufficient_privilege then null; end;
+ begin perform 1 from private.cash_closing_audit; raise exception 'Cash correction audit was readable'; exception when insufficient_privilege then null; end;
+ begin
+  perform public.supplier_identity_link(token,'fixture-legacy-doc','unknown-supplier');
+  raise exception 'Unknown supplier identity was linked' using errcode='XX000';
+ exception when sqlstate '22023' then null; end;
+ begin
+  perform public.supplier_identity_link('invalid-session-token','fixture-legacy-doc','fixture-canonical-supplier');
+  raise exception 'Invalid session linked a supplier' using errcode='XX000';
+ exception when invalid_authorization_specification then null; end;
  begin perform 1 from private.fiscal_document_attribution; raise exception 'Private fiscal audit was readable'; exception when insufficient_privilege then null; end;
  -- A retry after the committed revision keeps the first server attribution.
  result:=public.inventory_save(token,state); assert (result->>'ok')::boolean;
@@ -112,9 +128,41 @@ begin
  exception when insufficient_privilege then null; end;
  result:=public.cash_closing_save(employee_token,'{"day":"2026-10-21","register":"02 ","operator":"Synthetic Employee","cashCounted":"0","movements":[]}'::jsonb);
  assert result->'createdBy'->>'displayName'='Renamed Employee';
- result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb);
- assert result->'createdBy'->>'displayName'='Renamed Employee';
- assert result->'updatedBy'->>'displayName'='Synthetic Manager';
+ select value into close_row from jsonb_array_elements(public.cash_closings_list(token)) value where value->>'register'='02';
+ old_close_updated:=(close_row->>'updatedAt')::timestamptz;
+ begin
+  perform public.cash_closing_save(token,'{"day":"2026-10-21","register":"02","operator":"Bypass","cashCounted":"0","movements":[]}'::jsonb);
+  raise exception 'Unlogged cash upsert unexpectedly succeeded' using errcode='XX000';
+ exception when insufficient_privilege then null; end;
+ result:=public.cash_closing_correct(token,(close_row->>'id')::uuid,old_close_updated,
+  '{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb,
+  'Correção sintética de teste',correction_key,null);
+ assert (result->>'ok')::boolean and result->>'version'='2';
+ assert jsonb_array_length(public.cash_closing_audit_list(token,(close_row->>'id')::uuid))=2;
+ result:=public.cash_closing_correct(token,(close_row->>'id')::uuid,old_close_updated,
+  '{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb,
+  'Correção sintética de teste',correction_key,null);
+ assert result->>'replayed'='true', 'same idempotency key replays successful correction';
+ begin
+  perform public.cash_closing_correct(token,(close_row->>'id')::uuid,old_close_updated,
+   '{"day":"2026-10-21","register":"02","operator":"Stale","cashCounted":"0","movements":[]}'::jsonb,
+   'Correção obsoleta sintética',gen_random_uuid(),null);
+  raise exception 'Stale cash edit unexpectedly accepted' using errcode='XX000';
+ exception when sqlstate '40001' then null; end;
+ result:=public.cash_closing_correct(token,(close_row->>'id')::uuid,
+  ((select value from jsonb_array_elements(public.cash_closings_list(token)) value where value->>'register'='02')->>'updatedAt')::timestamptz,null,
+  'Recuperar estado original do teste',gen_random_uuid(),1);
+ assert (result->>'ok')::boolean and result->>'version'='3';
+ select value into close_row from jsonb_array_elements(public.cash_closings_list(token)) value where value->>'register'='02';
+ assert close_row->>'operator'='Synthetic Employee';
+ assert close_row->'createdBy'->>'displayName'='Renamed Employee';
+ assert close_row->'updatedBy'->>'displayName'='Synthetic Manager';
+ assert jsonb_array_length(public.cash_closing_audit_list(token,(close_row->>'id')::uuid))=3;
+ begin
+  perform public.cash_closing_correct(employee_token,(close_row->>'id')::uuid,
+   (close_row->>'updatedAt')::timestamptz,'{}'::jsonb,'Tentativa não autorizada',gen_random_uuid(),null);
+  raise exception 'Employee corrected a cash close' using errcode='XX000';
+ exception when insufficient_privilege then null; end;
  for i in 1..8 loop
   result:=public.inventory_password_change(employee_token,'incorrect-password','synthetic-other-new-password');
   assert not (result->>'ok')::boolean;

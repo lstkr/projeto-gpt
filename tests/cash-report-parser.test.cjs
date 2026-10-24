@@ -123,3 +123,38 @@ Caixa Físico`);
  assert.equal(r.outras,'0');
 });
 
+test('foto térmica sem cabeçalho NFC-e e sem sinais nas movimentações ainda lê dados impressos',async()=>{
+ const {parseCashReport}=await parser;
+ const text=`Caixa do dia: 08/10/2025
+Caixa Nº: 003
+Operador: Sintético
+CARTAO CREDITO R$ 210,00
+CARTAO DEBITO R$ 284,00
+CREDITO R$ 23,00
+DEBITO R$ 70,00
+DINHEIRO R$ 247,00
+OUTRAS R$ 177,00
+Total R$ 1.011,00
+Total em Cartão/POS R$ 494,00
+Movimentações Manuais
+DINHEIRO R$ 125,65
+Motivo: SUPRIMENTO - ABERTURA DE CAIXA
+DINHEIRO R$ 150,00
+Motivo: SANGRIA - depósito
+DINHEIRO R$ 81,85
+Motivo: SANGRIA - FECHAMENTO DE CAIXA
+Caixa Digital`;
+ const parsed=parseCashReport(text);
+ assert.equal(parsed.day,'2025-10-08');
+ assert.equal(parsed.register,'003');
+ assert.equal(parsed.reportedTotal,1011);
+ assert.equal(parsed.cartaoCredito,'210.00');
+ assert.equal(parsed.cartaoDebito,'284.00');
+ assert.equal(parsed.credito,'23.00');
+ assert.equal(parsed.debito,'70.00');
+ assert.equal(parsed.dinheiroVendas,'247.00');
+ assert.equal(parsed.outras,'177.00');
+ assert.equal(parsed.reportedPos,494);
+ assert.deepEqual(parsed.movements.map(row=>row.type),['suprimento','sangria']);
+});
+

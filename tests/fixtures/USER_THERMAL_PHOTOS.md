@@ -42,14 +42,16 @@ As imagens originais **não estão neste repositório** e não devem ser copiada
 
 ## Ampliação autorizada — 22/10/2026 (issue #94)
 
-O usuário autorizou uso interno das fotografias **reais** em testes por qualquer especialidade do projeto. O acervo privado `/Estoque+/Testes OCR` contém agora **13 fotografias / no mínimo 14 documentos** (7 fechamentos, 6 fotos fiscais, uma delas com duas notas independentes). As 10 fotos de 21/10 e seus 11 documentos continuam com golden transcrito; foram adicionadas:
+O usuário autorizou uso interno das fotografias **reais** em testes por qualquer especialidade do projeto. O acervo privado `/Estoque+/Testes OCR` contém agora **13 fotografias / no mínimo 14 documentos** (7 fechamentos, 6 fotos fiscais, uma delas com duas notas independentes). As 13 fotos e seus 14 documentos agora têm golden textual revisado; as últimas 3 adições foram:
 
 | Novo arquivo privado | Desafio | Golden humano |
 |---|---|---|
-| `fiscal-04-danfe.jpeg` | DANFE de folha, classificação de documento e campos tabulares | Pendente |
-| `fiscal-05-cupom-termico.jpeg` | Cupom amassado, linhas/valores de itens e QR | Pendente |
-| `fiscal-06-contingencia.jpeg` | Cupom com emissão em contingência, ruído e regras de conferência | Pendente |
+| `fiscal-04-danfe.jpeg` | DANFE de folha, classificação de documento e campos tabulares | Revisado visualmente; OCR em pixels pendente |
+| `fiscal-05-cupom-termico.jpeg` | Cupom amassado, linhas/valores de itens e QR | Revisado visualmente; OCR em pixels pendente |
+| `fiscal-06-contingencia.jpeg` | Cupom com emissão em contingência, ruído e regras de conferência | Revisado visualmente; OCR em pixels pendente |
 
 Catálogo rastreável: `tests/fixtures/private-real-images-20261022.json` (SHA-256/tamanho/dimensões). Para validar **as próprias imagens** em cópia local, extrair o pacote privado e executar `node scripts/verify-private-image-fixtures.cjs /caminho/images` (ou definir `ESTOQUE_REAL_FIXTURES_DIR`). Esse comando **só confere a integridade**, não executa OCR nem consulta SEFAZ. Não enviar imagens ou dados fiscais reais em logs/artefatos públicos.
 
-**Obrigatório:** QA ainda deverá validar visualmente os 3 novos goldens, executar OCR sobre pixels originais em ambiente isolado e registrar campo, falha e latência. Parser textual aprovado não implica precisão de OCR.
+**Resultado do OCR em pixels (24/10/2026):** as 13 imagens / 14 documentos foram processados localmente com o modelo `por`, recorte/contraste e segunda leitura do aplicativo. Resultado agregado: **32 de 89 campos corretos (36%) em 57 s**. Os erros remanescentes se concentram em modalidades, totais e movimentações dos fechamentos, contagem de itens/totais nas fotos fiscais e separação de duas notas. O OCR em pixels **não está aprovado**; os testes de parser/golden textual não substituem essa validação.
+
+As 13 fotos enviadas nesta conversa estão disponíveis localmente como arquivos privados, sem renomeá-las, em `project_sources/`. Execute `npm run test:private-ocr /caminho/para/as/fotos`; se usar um modelo Português já instalado, `TESSERACT_LANG_PATH` pode apontar para uma pasta com `por.traineddata` ou `por.traineddata.gz`. O runner associa os arquivos pelo SHA-256 e imprime apenas contagens, campos com falha e latência; não imprime nomes físicos, texto OCR ou dados fiscais.
