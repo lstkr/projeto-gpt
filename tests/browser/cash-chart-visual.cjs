@@ -35,7 +35,8 @@ const closings = [
 ];
 
 (async () => {
-  const launchOptions = { headless:true };
+  // Headed Chromium under Xvfb is required for real tab visibility/focus assertions.
+  const launchOptions = { headless:process.env.ESTOQUE_VISUAL_HEADED !== '1' };
   if (process.env.ESTOQUE_CHROME_PATH) launchOptions.executablePath = process.env.ESTOQUE_CHROME_PATH;
   const browser = await chromium.launch(launchOptions);
   try {
