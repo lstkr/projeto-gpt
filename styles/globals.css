@@ -838,3 +838,10 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 
 /* The mobile sidebar/backdrop sits at z-index 25/24; printable modal must remain above it. */
 .count-print-overlay{z-index:40}
+
+/* User directory changes share the normal tenant settings workflow. */
+.tenant-user-editor{margin-top:24px;padding:16px;border:1px solid var(--line);border-radius:10px}
+.tenant-user-editor>h3{margin-top:0}
+.tenant-user-editor>p{font-size:12px;color:#68776c}
+.tenant-user-editor .tenant-edit-active{flex:0 0 100%;display:flex;flex-direction:row;align-items:center;gap:10px}
+.tenant-user-editor .tenant-edit-active input{min-height:0;width:18px;height:18px}
