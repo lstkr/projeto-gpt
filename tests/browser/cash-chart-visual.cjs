@@ -210,23 +210,25 @@ const closings = [
     await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
     await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
-    // Exercise a real tab visibility/focus transition, not manually dispatched events.
-    // Hidden tabs can have their intervals throttled by the browser.
-    const backgroundTab=await context.newPage();
-    await backgroundTab.goto('about:blank');
-    await backgroundTab.bringToFront();
-    // requestAnimationFrame is suspended in background tabs; poll on a timer.
+    // In Xvfb, separate Playwright pages can remain simultaneously visible.
+    // Minimize and restore the actual Chromium window via CDP instead of
+    // dispatching synthetic visibility/focus events or assuming a new page hides it.
+    const cdp=await context.newCDPSession(page);
+    const {windowId}=await cdp.send('Browser.getWindowForTarget');
+    await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'minimized'}});
+    // requestAnimationFrame is suspended when hidden; use timer polling.
     await page.waitForFunction(()=>document.hidden===true,undefined,{timeout:2500,polling:100});
     sessionRevokedForQA=true;
     const focusStartedAt=performance.now();
+    await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
     await page.bringToFront();
     await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
     const focusLogoutLatencyMs=performance.now()-focusStartedAt;
     assert.ok(focusLogoutLatencyMs<=2500,
-      'returning a hidden tab to focus should force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+      'restoring a hidden browser window must force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
     assert.equal(await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session')),null);
-    await backgroundTab.close();
-    console.log('QA real tab-focus-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+    await cdp.detach();
+    console.log('QA real window-restore-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
 
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');
