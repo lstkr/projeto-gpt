@@ -17,6 +17,7 @@ delete from private.app_sessions;
 delete from private.app_login_attempts;
 delete from private.external_fiscal_rate_limits;
 delete from private.permission_audit;
+delete from private.fiscal_document_attribution;
 delete from private.user_permissions;
 delete from private.tenant_memberships;
 delete from private.app_users;

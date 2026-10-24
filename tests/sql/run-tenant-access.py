@@ -263,7 +263,7 @@ print('PASS login vs deactivation is serialized; no newly active orphan session'
 sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
 for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
               'tenant_inventory','cash_closings','pending_receipts','user_permissions',
-              'permission_audit','external_fiscal_rate_limits']:
+              'permission_audit','fiscal_document_attribution','external_fiscal_rate_limits']:
     assert sql(f'select count(*) from private.{table}') == '0', f'{table} reset'
 assert sql("select count(*) from auth.users") == '1', 'managed auth data preserved'
 assert sql("select count(*) from storage.buckets") == '1', 'managed storage buckets preserved'
