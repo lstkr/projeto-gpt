@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
+import { updateFiscalLine, resolveFiscalSubtotal } from '../lib/fiscal-calculation.mjs';
 import { canStartFiscalFinalReview, canConfirmFiscalDocument } from '../lib/fiscal-confirmation.mjs';
 import { filterDocumentHistory, formatDocumentIssueDate } from '../lib/document-history.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
@@ -1705,7 +1706,7 @@ export default function Home() {
   const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Faturamento','Envie relatórios, confira cada fechamento e acompanhe a evolução.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
-  const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
+  const draftSubtotal = resolveFiscalSubtotal(draft, draftItemsSubtotal);
   const draftDiscount = draft ? Number(draft.discount || 0) : 0;
   // The net payable amount is derived from the gross subtotal and discounts, never typed manually.
   const draftTotal = Math.round((draftSubtotal - draftDiscount + Number(draft?.additionalCharges || 0)) * 100) / 100;
@@ -2766,29 +2767,20 @@ export default function Home() {
 
   function changeInvoiceAmount(key, value) {
     const number = value === '' ? 0 : Math.round(Number(value) * 100) / 100;
-    setDraft((d) => d ? ({ ...d, [key]: number, finalReviewed: false, officialVerified: false }) : d);
+    setDraft((d) => d ? ({ ...d, [key]: number, subtotalManuallyEdited: key === 'subtotal' ? true : d.subtotalManuallyEdited, finalReviewed: false, officialVerified: false }) : d);
   }
   function changeItem(index, key, value) {
     setDraft((d) => ({
       ...d,
+      lineTotalsEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? true : d.lineTotalsEdited,
+      subtotalManuallyEdited: ['quantity', 'unitPrice', 'unit'].includes(key) ? false : d.subtotalManuallyEdited,
+      reportedSubtotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedSubtotal ?? d.subtotal) : d.reportedSubtotal,
+      reportedTotal: ['quantity', 'unitPrice', 'unit'].includes(key) ? (d.reportedTotal ?? d.total) : d.reportedTotal,
       reviewedItems: { ...(d.reviewedItems || {}), [d.items[index]?.lineId]: false },
       finalReviewed: false, officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
-        const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
-        const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
-        if (key === 'name') next.manualName = true;
-        // Printed fiscal line totals are independent facts: do not overwrite them
-        // when a reviewer fixes the quantity or unit price.
-        if (key === 'quantity' || key === 'unitPrice') {
-          if (d.manualInvoice) {
-            next.lineTotal = Math.round(Number(next.quantity||0)*Number(next.unitPrice||0)*100)/100;
-            next.readingWarning = '';
-          } else {
-            next.readingWarning = 'Quantidade ou preço alterado; confira também o total da linha.';
-          }
-        }
-        return next;
+        return updateFiscalLine(it, key, value);
       })
     }));
   }
@@ -3062,7 +3054,7 @@ export default function Home() {
     if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, finalReviewed, lineTotalsEdited, subtotalManuallyEdited, ...documentToSave } = draft;
     delete documentToSave.checkedBy;
     pendingAttributionRef.current.set(documentId, {
       userId: currentUser?.id,
@@ -3525,7 +3517,7 @@ export default function Home() {
                     <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} readOnly/>{it.reportedLineTotal !== undefined && Math.abs(receiptItemTotal(it)-Number(it.reportedLineTotal)) > 0.005 && <small className="fiscal-code-note">Total lido: {money(it.reportedLineTotal)}</small>}{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
                     <td style={{minWidth:225}}>
                       <label style={{display:'block',fontSize:11,marginBottom:6}}>
                         Classificação fiscal
@@ -3573,7 +3565,9 @@ export default function Home() {
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
                     </td>
                     <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
-                      ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
+                      ...d, lineTotalsEdited:true, subtotalManuallyEdited:false,
+                      reportedSubtotal:d.reportedSubtotal ?? d.subtotal, reportedTotal:d.reportedTotal ?? d.total,
+                      items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
                       finalReviewed: false, officialVerified: false
                     }))}><Icon type="close" size={15}/></button></td>
                   </tr>;
@@ -3594,7 +3588,7 @@ export default function Home() {
             {totalsItemsMismatch && <div className="notice" style={{marginTop:10}}>A soma das linhas ({money(draftItemsSubtotal)}) é diferente do subtotal informado ({money(draftSubtotal)}). Verifique itens ou descontos nas linhas.</div>}
             {totalsFinalMismatch && <div className="notice" style={{marginTop:10}}>{draftTotal < 0 ? 'O desconto não pode ultrapassar o subtotal acrescido dos encargos.' : 'O total líquido calculado ('+money(draftTotal)+') difere do valor extraído do documento ('+money(reportedFiscalTotal)+'). Confira subtotal, desconto e acréscimos antes de confirmar.'}</div>}
             {officialTotalsMismatch && <div className="notice" style={{marginTop:10}}>Totais distintos da consulta à SEFAZ. Total oficial: {money(draft.officialTotal)}. Confira antes do lançamento.</div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, lineTotalsEdited:true, subtotalManuallyEdited:false, reportedSubtotal:d.reportedSubtotal ?? d.subtotal, reportedTotal:d.reportedTotal ?? d.total, reviewedItems:{}, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
               <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? (totalsRequireReview ? 'Revise os itens, totais e divergências sinalizadas antes da confirmação final.' : 'Itens revisados. Identifique quem realizou a verificação.') : 'Conclua a revisão dos itens destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
