@@ -44,6 +44,7 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/revocation-contract.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
 credentials = sql("select md5(string_agg(to_jsonb(r)::text,'' order by id)) from private.app_users r")
 for operation in ['backup-test-reset','reset-test-data','restore-test-data']:
@@ -132,6 +133,108 @@ finally:
         writer.kill()
 assert sql(f"select count(*) from private.tenant_inventory where tenant_id in ('{tenant_a}','{tenant_b}') and state->>'revision'='2'") == '2'
 print('PASS concurrent different-tenant saves with equal revisions finish independently')
+
+# Revocation concurrency: an in-flight authorized RPC holds a session lock
+# until its transaction ends; the manager deactivation cannot commit before it.
+# This exercises actual SQL row locking across independent PG connections.
+sql("""
+insert into private.app_users(username,password_hash,role,display_name)
+values ('qa.revocation',extensions.crypt('synthetic-revocation-only',
+ extensions.gen_salt('bf',4)),'employee','Revocation QA');
+insert into private.tenant_memberships(user_id,tenant_id,role)
+ select id,'00000000-0000-4000-8000-000000000001','employee'
+ from private.app_users where username='qa.revocation';
+""")
+worker_token=sql("select public.inventory_login('qa.revocation','synthetic-revocation-only')->>'session_token'")
+# A separate browser/device must have an independently revocable session.
+worker_token_two=sql("select public.inventory_login('qa.revocation','synthetic-revocation-only')->>'session_token'")
+manager_token=sql("select public.inventory_login('qa.manager','synthetic-manager-password')->>'session_token'")
+target_id=sql("select id from private.app_users where username='qa.revocation'")
+assert len(worker_token)==64 and len(worker_token_two)==64 and len(manager_token)==64
+assert worker_token!=worker_token_two, 'Separate logins must issue distinct tokens'
+for token in [worker_token, worker_token_two]:
+    assert sql("select (public.inventory_validate_session('%s')->>'valid')::text"%token)=='true'
+baseline=sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
+# Preserve the exact synthetic inventory contents while exercising a real
+# in-flight mutation; no blind clearing of stock/documents in the test.
+baseline_state=sql("select state::text from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")
+assert baseline is not None and baseline.isdigit() and baseline_state
+safe_state=baseline_state.replace("'", "''")
+inflight=open_writer("select public.inventory_save('%s','%s'::jsonb);"%(worker_token,safe_state))
+# Both independent tokens hold transaction-scoped session locks.
+inflight_second=open_writer("select (public.inventory_validate_session('%s')->>'valid')::boolean;"%worker_token_two)
+stopper=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,text=True)
+try:
+    stopper.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
+      "select public.inventory_user_update('%s','%s','qa.revocation','Revocation QA',false);\ncommit;\n"
+      %(manager_token,target_id))
+    stopper.stdin.flush()
+    time.sleep(0.3)
+    assert stopper.poll() is None, 'Deactivation incorrectly completed while RPC transaction held session'
+    assert sql("select active from private.app_users where id='%s'"%target_id)=='t', \
+      'Account deactivated before earlier authorized RPC committed'
+    commit_writer(inflight)
+    # A protected write committed BEFORE deactivation is allowed; its revision
+    # must be durable while the other session still holds its transaction lock.
+    assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==str(int(baseline)+1), 'In-flight authorized save did not commit before account inactivation'
+    time.sleep(0.15)
+    assert stopper.poll() is None, 'Deactivation committed while the second token held an authorized RPC'
+    commit_writer(inflight_second)
+    _,stop_error=stopper.communicate(timeout=10)
+    assert stopper.returncode==0,stop_error
+finally:
+    for proc in (inflight,inflight_second,stopper):
+        if proc.poll() is None:
+            proc.kill()
+assert sql("select active from private.app_users where id='%s'"%target_id)=='f'
+assert sql("select count(*) from private.app_sessions where user_id='%s' and revoked_at is null"%target_id)=='0'
+for revoked_token in (worker_token,worker_token_two):
+    for statement in [
+        "select public.inventory_validate_session('%s');"%revoked_token,
+        "select public.inventory_get('%s');"%revoked_token,
+        ("select public.inventory_save('%s'," %revoked_token)+
+           """'{"products":[],"documents":[],"movements":[],"revision":0}'::jsonb);""",
+    ]:
+        denied=subprocess.run(psql,input="set role anon;\n"+statement,text=True,capture_output=True,timeout=10)
+        assert denied.returncode != 0 and ('28000' in denied.stderr or 'Sessão inválida' in denied.stderr), \
+          'Revoked account accepted a protected operation: '+denied.stderr[:250]
+assert sql("select state->>'revision' from private.tenant_inventory where tenant_id='00000000-0000-4000-8000-000000000001'")==str(int(baseline)+1), 'Revoked tokens changed the inventory after account inactivation'
+print('PASS authorized in-flight save commits before deactivation, and revoked tokens cannot save after commit')
+print('PASS deactivation waits for in-flight authorized RPC to finish')
+
+# Race 2: login transaction must hold the account row lock until its newly
+# created token is committed; deactivation then catches that token in its sweep.
+sql("""
+insert into private.app_users(username,password_hash,role,display_name)
+ values ('qa.loginrace',extensions.crypt('synthetic-login-race-only',
+ extensions.gen_salt('bf',4)),'employee','Login Race QA');
+insert into private.tenant_memberships(user_id,tenant_id,role)
+ select id,'00000000-0000-4000-8000-000000000001','employee'
+ from private.app_users where username='qa.loginrace';
+""")
+login_target=sql("select id from private.app_users where username='qa.loginrace'")
+login_tx=open_writer("select (public.inventory_login('qa.loginrace','synthetic-login-race-only')->>'ok')='true';")
+deactivate=subprocess.Popen(psql,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,text=True)
+try:
+    deactivate.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
+        "select public.inventory_user_update('%s','%s','qa.loginrace','Login Race QA',false);\ncommit;\n"
+        %(manager_token,login_target))
+    deactivate.stdin.flush()
+    time.sleep(0.3)
+    assert deactivate.poll() is None,'Deactivation raced past an in-flight login'
+    commit_writer(login_tx)
+    _,stderr=deactivate.communicate(timeout=10)
+    assert deactivate.returncode==0,stderr
+finally:
+    for proc in (login_tx,deactivate):
+        if proc.poll() is None:
+            proc.kill()
+assert sql("select count(*) from private.app_sessions where user_id='%s' and revoked_at is null"%login_target)=='0'
+assert sql("select (public.inventory_login('qa.loginrace','synthetic-login-race-only')->>'ok')::text")=='false'
+print('PASS login vs deactivation is serialized; no newly active orphan session')
+
 
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
