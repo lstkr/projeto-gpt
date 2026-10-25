@@ -2,6 +2,8 @@ const fs=require('node:fs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const api = import('../lib/fiscal-identity.mjs');
+const { syntheticCnpj, formatCnpj } = require('./helpers/synthetic-cnpj.cjs');
+const numericIssuer = syntheticCnpj('fiscal-numeric-issuer');
 const issuer = '11222333000181';
 const product = {id:'egg',name:'Ovo branco',unit:'un',supplierCodes:[{cnpj:issuer,code:'031232'}]};
 const page = fs.readFileSync('pages/index.js','utf8');
@@ -16,7 +18,7 @@ test('issuer recognition validates checksum and never selects recipient or ambig
   assert.equal(extractIssuerCnpj('DOCUMENTO AUXILIAR DA NOTA FISCAL DE CONSUMIDOR ELETRÔNICA\nEmitente CNPJ 11.222.333/0001-81'),issuer);
   assert.equal(extractIssuerCnpj('CNPJ 11111111111111'),'');
   assert.equal(extractIssuerCnpj('CNPJ 12.ABC.345/01DE-35'),'12ABC34501DE35');
-  assert.equal(extractIssuerCnpj('HORTI LTDA\nCNPJ:\n92 .192.798/0001-39'),'92192798000139');
+  assert.equal(extractIssuerCnpj('HORTI LTDA\nCNPJ:\n' + formatCnpj(numericIssuer).replace('.', ' .')),numericIssuer);
   assert.equal(validSupplierCnpj('12ABC34501DE35'),true);
   assert.equal(validSupplierCnpj('12ABC34501DE34'),false);
   assert.equal(extractIssuerCnpj('EMITENTE CNPJ II.222.333/0001-81'),'11222333000181');

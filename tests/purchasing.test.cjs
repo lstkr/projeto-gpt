@@ -1,6 +1,9 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const api=import('../lib/purchasing.mjs');
+const { syntheticCnpj, formatCnpj } = require('./helpers/synthetic-cnpj.cjs');
+const cnpjRudi=syntheticCnpj('purchasing-rudi');
+const cnpjBah=syntheticCnpj('purchasing-bah-q-massa');
 const p=(id,name,sku,category='Mercearia',unit='kg',stock=0,min=5,cost=12)=>({id,name,sku,category,unit,stock,min,cost});
 const document=(supplier,supplierCnpj,items,stockEntries,total=75)=>({supplier,supplierCnpj,items,stockEntries,total,invoiceNumber:'001'});
 
@@ -86,7 +89,7 @@ test('compras realizadas agrupadas por CNPJ sem misturar fornecedores',async()=>
  const docs=[
   document('Horti A','11222333000181',[{name:'Uva'}],[],22),
   document('Horti A LTDA','11222333000181',[{name:'Tomate'}],[],30),
-  document('Mercado B','92192798000139',[{name:'Leite'}],[],40)
+  document('Mercado B',cnpjRudi,[{name:'Leite'}],[],40)
  ];
  const list=purchaseHistoryBySupplier(docs);
  assert.equal(list.length,2);
@@ -96,11 +99,11 @@ test('compras realizadas agrupadas por CNPJ sem misturar fornecedores',async()=>
 
 test('histórico usa nome canônico do cadastro mesmo com OCR diferente e CNPJ mascarado',async()=>{
  const {purchaseHistoryBySupplier}=await api;
- const cnpj='92.192.798/0001-39';
+ const cnpj=formatCnpj(cnpjRudi);
  const directory=[{id:'supplier-rudi',name:'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpj}];
  const docs=[
-  {...document('RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA','92192798000139',[],[],10),id:'d1'},
-  {...document('Yï”) guPDr BoNOW COMERCIAL DE …','92.192.798/0001-39',[],[],20),id:'d2'}
+  {...document('RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpjRudi,[],[],10),id:'d1'},
+  {...document('Yï”) guPDr BoNOW COMERCIAL DE …',formatCnpj(cnpjRudi),[],[],20),id:'d2'}
  ];
  const list=purchaseHistoryBySupplier(docs,directory);
  assert.equal(list.length,1);
@@ -112,7 +115,7 @@ test('histórico usa nome canônico do cadastro mesmo com OCR diferente e CNPJ m
 
 test('vínculo legado explícito agrupa OCR divergente sem alterar nome fiscal',async()=>{
  const {purchaseHistoryBySupplier}=await api;
- const directory=[{id:'supplier-rudi',name:'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpj:'92192798000139'}];
+ const directory=[{id:'supplier-rudi',name:'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpj:cnpjRudi}];
  const docs=[
   {...document('Rudi Bonow','',[],[],10),id:'d1'},
   {...document('Yï guPDr','',[],[],20),id:'d2'}
@@ -128,8 +131,8 @@ test('legados sem vínculo seguem separados e CNPJs diferentes nunca são unidos
  const docs=[
   {...document('Fornecedor parecido','',[],[],10),id:'legacy-1'},
   {...document('Fornecedor parecido','',[],[],20),id:'legacy-2'},
-  {...document('Mesmo nome','92192798000139',[],[],30),id:'cnpj-a'},
-  {...document('Mesmo nome','08939264000117',[],[],40),id:'cnpj-b'}
+  {...document('Mesmo nome',cnpjRudi,[],[],30),id:'cnpj-a'},
+  {...document('Mesmo nome',cnpjBah,[],[],40),id:'cnpj-b'}
  ];
  const list=purchaseHistoryBySupplier(docs);
  assert.equal(list.length,4);

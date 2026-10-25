@@ -1,3 +1,37 @@
+-- Use only deterministic, checksum-valid identifiers in database fixtures.
+create temporary table _synthetic_cnpj_helper_namespace (placeholder integer);
+drop table _synthetic_cnpj_helper_namespace;
+create function pg_temp.synthetic_cnpj(p_seed text) returns text
+language plpgsql immutable strict as $$
+declare
+  v_hash text := md5(p_seed);
+  v_base text := '';
+  v_digits text;
+  v_sum integer;
+  v_weight integer;
+  v_remainder integer;
+  v_digit integer;
+  i integer;
+  pass integer;
+begin
+  for i in 1..12 loop
+    v_base := v_base || mod(ascii(substr(v_hash, i, 1)), 10)::text;
+  end loop;
+  if v_base ~ '^(.)\\1{11}$' then v_base := '314159265358'; end if;
+  v_digits := v_base;
+  for pass in 1..2 loop
+    v_sum := 0;
+    for i in 1..length(v_digits) loop
+      v_weight := ((length(v_digits) - i) % 8) + 2;
+      v_sum := v_sum + substr(v_digits, i, 1)::integer * v_weight;
+    end loop;
+    v_remainder := v_sum % 11;
+    v_digit := case when v_remainder < 2 then 0 else 11 - v_remainder end;
+    v_digits := v_digits || v_digit::text;
+  end loop;
+  return v_digits;
+end $$;
+
 -- Synthetic fixtures only. Run after schema and all versioned migrations.
 insert into private.app_users(username,password_hash,role,display_name) values
  ('sql.manager',extensions.crypt('synthetic-manager-only',extensions.gen_salt('bf',4)),'admin','Synthetic Manager');
@@ -23,7 +57,7 @@ begin
  state:=state||jsonb_build_object(
   'revision',coalesce((state->>'revision')::bigint,0),
   'products',jsonb_build_array(jsonb_build_object('id','a','name','Tenant A','stock',1,'cost',1,'min',0,'unit','un'))||coalesce(state->'products','[]'::jsonb),
-  'suppliers',jsonb_build_array(jsonb_build_object('id','fixture-canonical-supplier','name','Fornecedor Canônico','cnpj','92192798000139')),
+  'suppliers',jsonb_build_array(jsonb_build_object('id','fixture-canonical-supplier','name','Fornecedor Canônico','cnpj',pg_temp.synthetic_cnpj('tenant-supplier'))),
   'documents',jsonb_build_array(jsonb_build_object('id','fixture-manager-doc','checkedBy','Forged name','checkedByUserId','00000000-0000-4000-8000-000000000099','checkedByTenantId','00000000-0000-4000-8000-000000000099','checkedByAt','1900-01-01T00:00:00Z','checkedByVerified',false),jsonb_build_object('id','fixture-legacy-doc','supplier','OCR ilegível','supplierCnpj','')),
   'movements',jsonb_build_array(jsonb_build_object('id','fixture-manager-move','documentId','fixture-manager-doc','by','Forged name','byUserId','00000000-0000-4000-8000-000000000099','byTenantId','00000000-0000-4000-8000-000000000099','byAt','1900-01-01T00:00:00Z','byVerified',false)));
  result:=public.inventory_save(token,state); assert (result->>'ok')::boolean;
