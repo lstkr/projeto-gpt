@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const POLICY = import('../lib/preview-database-policy.mjs');
 const GUARD = import('../lib/server/inventory-session.mjs');
 const BRANCH = 'codex/homologacao-completa-20261023';
+const NEW_BRANCH = 'codex/urgent-homologacao-20261025';
 const LIVE = 'https://dpauqdihvhbbaellwjav.supabase.co';
 const KEY = 'test_publishable_key_only';
 const TOKEN = 'a'.repeat(64);
@@ -22,6 +23,7 @@ test('shared database Preview is opt-in, branch restricted, and never accepts mi
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:'other-feature'}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH}),false);
+  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:NEW_BRANCH}),false);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,publicKey:''}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:''}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:'http://dpauqdihvhbbaellwjav.supabase.co'}),true);
@@ -63,12 +65,17 @@ test('authorized shared-db Preview still requires a valid native session', async
     assert.equal(missing.code,401);
     assert.equal(callCount,1,'do not query database for a missing session');
 
+    process.env.VERCEL_GIT_COMMIT_REF=NEW_BRANCH;
+    const homologation=response();
+    assert.equal(await requireInventorySession({headers:{'x-estoque-session':TOKEN}},homologation,{clientFactory:factory}),true);
+    assert.equal(homologation.code,null);
+
     process.env.VERCEL_GIT_COMMIT_REF='unreviewed-branch';
     const denied=response();
     assert.equal(await requireInventorySession({headers:{'x-estoque-session':TOKEN}},denied,
       {clientFactory:()=>{throw Error('must not access database');}}),false);
     assert.equal(denied.code,503);
-    assert.equal(callCount,1);
+    assert.equal(callCount,2);
   } finally {
     for (const key of keys) {
       if (previous[key]===undefined) delete process.env[key];
