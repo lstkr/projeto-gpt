@@ -7,8 +7,8 @@
   "cash": [
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-26.jpeg",
-      "case_id": "26/11/2025",
+      "photo": "private-photo-07.jpeg",
+      "case_id": "cash-case-01",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 26/11/2025",
@@ -79,8 +79,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-25.jpeg",
-      "case_id": "25/11/2025",
+      "photo": "private-photo-06.jpeg",
+      "case_id": "cash-case-02",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 25/11/2025",
@@ -144,8 +144,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-14.jpeg",
-      "case_id": "14/11/2025",
+      "photo": "private-photo-05.jpeg",
+      "case_id": "cash-case-03",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 14/11/2025",
@@ -230,8 +230,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-11.jpeg",
-      "case_id": "11/11/2025",
+      "photo": "private-photo-04.jpeg",
+      "case_id": "cash-case-04",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 11/11/2025",
@@ -304,8 +304,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-08.jpeg",
-      "case_id": "08/11/2025",
+      "photo": "private-photo-03.jpeg",
+      "case_id": "cash-case-05",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 08/11/2025",
@@ -367,8 +367,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-11-04.jpeg",
-      "case_id": "04/11/2025",
+      "photo": "private-photo-02.jpeg",
+      "case_id": "cash-case-06",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 04/11/2025",
@@ -448,8 +448,8 @@
     },
     {
       "kind": "fechamento_termico",
-      "photo": "caixa-2025-10-08.jpeg",
-      "case_id": "08/10/2025",
+      "photo": "private-photo-01.jpeg",
+      "case_id": "cash-case-07",
       "transcribed_lines": [
         "Fechamento de Caixa",
         "Caixa do dia: 08/10/2025",
@@ -531,8 +531,8 @@
   "fiscal": [
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-01-ovo.jpeg",
-      "case_id": "ovo-duas-unidades",
+      "photo": "private-photo-08.jpeg",
+      "case_id": "fiscal-case-01",
       "document_index": 0,
       "transcribed_lines": [
         "CODIGO DESCRIÇÃO",
@@ -554,8 +554,8 @@
     },
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-02-tomate.jpeg",
-      "case_id": "tomate-quilo",
+      "photo": "private-photo-09.jpeg",
+      "case_id": "fiscal-case-02",
       "document_index": 0,
       "transcribed_lines": [
         "CÓDIGO DESCRIÇÃO",
@@ -573,8 +573,8 @@
     },
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-03-duas-notas.jpeg",
-      "case_id": "rio-sul-com-desconto",
+      "photo": "private-photo-10.jpeg",
+      "case_id": "fiscal-case-03",
       "document_index": 0,
       "transcribed_lines": [
         "CÓDIGO DESCRIÇÃO",
@@ -601,8 +601,8 @@
     },
     {
       "kind": "nfce_termica",
-      "photo": "fiscal-03-duas-notas.jpeg",
-      "case_id": "rudi-quatro-itens",
+      "photo": "private-photo-10.jpeg",
+      "case_id": "fiscal-case-04",
       "document_index": 1,
       "transcribed_lines": [
         "CÓDIGO DESCRIÇÃO",

@@ -15,7 +15,7 @@ test('private real-image catalog has unique 13 photos and minimum 14 independent
   assert.equal(manifest.fixtures.reduce((n,x)=>n+x.documents,0),14);
   const multi=manifest.fixtures.filter(x=>x.documents===2);
   assert.equal(multi.length,1);
-  assert.equal(multi[0].name,'fiscal-03-duas-notas.jpeg');
+  assert.equal(multi[0].name,'private-photo-10.jpeg');
 });
 
 test('all ten old golden photo references exist; three new photos await validated goldens',()=>{
@@ -27,9 +27,9 @@ test('all ten old golden photo references exist; three new photos await validate
   assert.deepEqual(new Set(mapped.map(x=>x.name)),photos);
   const awaiting=manifest.fixtures.filter(x=>!x.golden).map(x=>x.name).sort();
   assert.deepEqual(awaiting,[
-    'fiscal-04-danfe.jpeg',
-    'fiscal-05-cupom-termico.jpeg',
-    'fiscal-06-contingencia.jpeg'
+    'private-photo-11.jpeg',
+    'private-photo-12.jpeg',
+    'private-photo-13.jpeg'
   ]);
 });
 

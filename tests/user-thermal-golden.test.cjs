@@ -30,7 +30,7 @@ test('photo registry preserves ten originals and eleven independent documents',(
   assert.equal(dataset.cash.length,7);
   assert.equal(dataset.fiscal.length,4);
   assert.equal(new Set([...dataset.cash,...dataset.fiscal].map(x=>x.photo)).size,10);
-  const paired=dataset.fiscal.filter(x=>x.photo==='fiscal-03-duas-notas.jpeg');
+  const paired=dataset.fiscal.filter(x=>x.photo==='private-photo-10.jpeg');
   assert.equal(paired.length,2);
   assert.deepEqual(paired.map(x=>x.document_index),[0,1]);
   assert.notEqual(paired[0].expected.total,paired[1].expected.total);
@@ -64,13 +64,13 @@ for(const example of dataset.cash){
   });
 }
 
-test('cash-count discrepancy from photographed 2025-10-08 report remains a manual-review reference',()=>{
-  const c=dataset.cash.find(x=>x.case_id==='08/10/2025').expected.physical;
+test('cash-count discrepancy from private reference report remains a manual-review reference',()=>{
+  const c=dataset.cash.find(x=>x.case_id==='cash-case-07').expected.physical;
   assert.equal(Math.round(money(c.operador)*100)-Math.round(money(c.sistema)*100),Math.round(money(c.diferenca)*100));
   assert.equal(money(c.diferenca),3.2);
 });
 test('cash report with S/N physical difference does not invent a numeric discrepancy',()=>{
-  const c=dataset.cash.find(x=>x.case_id==='26/11/2025').expected.physical;
+  const c=dataset.cash.find(x=>x.case_id==='cash-case-01').expected.physical;
   assert.equal(c.diferenca,null);
 });
 

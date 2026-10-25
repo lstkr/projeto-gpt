@@ -12,3 +12,6 @@ tests/browser/artifacts/
 
 # Real fiscal/cash receipts are private manual OCR fixtures, never source-control artifacts.
 tests/fixtures/private-images/
+
+# Private offline review; ZIP contents must never enter Git or CI.
+/.local-fixture-review/
