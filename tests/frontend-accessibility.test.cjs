@@ -7,6 +7,34 @@ const root = join(__dirname, '..');
 const view = readFileSync(join(root, 'pages/index.js'), 'utf8');
 const styles = readFileSync(join(root, 'styles/globals.css'), 'utf8');
 const dialogHook = readFileSync(join(root, 'components/useAccessibleDialog.js'), 'utf8');
+const focusHook = readFileSync(join(root, 'components/useAccessibleFocus.js'), 'utf8');
+
+function contrastRatio(foreground, background) {
+  const luminance = (color) => {
+    const channels = color.match(/[0-9a-f]{2}/gi).map((channel) => parseInt(channel, 16) / 255);
+    const [red, green, blue] = channels.map((channel) => channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+}
+
+test('stock alerts meet readable contrast, size and persistent text requirements', () => {
+  const background = '#fffaf0';
+  assert.ok(contrastRatio('#655b46', background) >= 4.5);
+  assert.ok(contrastRatio('#785d1b', background) >= 4.5);
+  const title = styles.match(/\.alert-strip b\s*\{([^}]+)\}/)?.[1] || '';
+  const message = styles.match(/\.alert-strip p\s*\{([^}]+)\}/)?.[1] || '';
+  assert.match(title, /font-size:\s*12px/);
+  assert.match(message, /font-size:\s*12px/);
+  assert.doesNotMatch(message, /overflow:\s*hidden|text-overflow:\s*ellipsis|white-space:\s*nowrap/);
+  assert.match(view, /low\.length > 0 && <section className="alert-strip" role="status"/);
+  assert.match(view, /className="alert-strip" role="alert"/);
+});
 
 test('mobile alerts keep text-only critical actions readable', () => {
   assert.match(view, /Contagem obrigatória pendente/);
@@ -21,7 +49,7 @@ test('mobile alerts keep text-only critical actions readable', () => {
 test('all navigation entries preserve an accessible name when sidebar labels are hidden', () => {
   const menu = view.slice(view.indexOf('<nav className="navigation"'), view.indexOf('</nav>'));
   const entries = ['Estoque', 'Contagem de estoque', 'Possíveis duplicatas',
-    'Notas fiscais', 'Movimentações', 'Fechamento de caixa', 'Lista de compras', 'Fornecedores'];
+    'Notas fiscais', 'Movimentações', 'Faturamento', 'Lista de compras', 'Fornecedores'];
   entries.forEach((name) => assert.ok(menu.includes('aria-label="' + name + '"'), name));
   assert.equal((menu.match(/aria-current=/g) || []).length, entries.length);
 });
@@ -95,4 +123,24 @@ test('permissions move into the manager profile menu without changing their page
  assert.doesNotMatch(menu, /aria-label="Gestor · Permissões"/);
  assert.match(view, /currentUser\?\.role === 'admin' && <button type="button" role="menuitem" onClick=\{\(\)=>\{setAccountOpen\(false\);setMenuOpen\(false\);setView\('permissions'\);\}\}>Permissões<\/button>/);
  assert.match(view, /view === 'permissions'/);
+});
+
+
+test('focus moves once to opened tabs and panels, with opener restoration', () => {
+  assert.ok(view.includes("useAccessibleFocus(view, '.content')"));
+  assert.ok(view.includes("useAccessibleFocus(cashEntryMode, '.cash-entry:not(.cash-entry-collapsed)'"));
+  assert.ok(view.includes('data-focus-scope="manual-entry"'));
+  assert.ok(view.includes('data-focus-scope="manual-new"'));
+  assert.ok(view.includes('data-focus-scope="count"'));
+  assert.ok(focusHook.includes('previousKey.current === key'));
+  assert.ok(focusHook.includes('requestAnimationFrame'));
+  assert.ok(focusHook.includes('restoreFocus && opener.current?.isConnected'));
+  assert.ok(focusHook.includes("scrollIntoView({ block: 'nearest'"));
+  assert.ok(focusHook.includes("container.closest('[inert]')"));
+});
+
+test('dialog focus applies to every modal surface, including portaled dialogs', () => {
+  assert.ok(dialogHook.includes("const DIALOG_SELECTOR = '[role=\"dialog\"][aria-modal=\"true\"]'"));
+  assert.ok(!dialogHook.includes('.overlay [role="dialog"'));
+  assert.ok(dialogHook.includes('focusFirstRelevant(dialog)'));
 });

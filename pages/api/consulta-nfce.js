@@ -1,3 +1,4 @@
+import { parseNfceMetadata } from '../../lib/server/nfce-metadata.mjs';
 import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
 import { enforceFiscalRateLimit } from '../../lib/server/fiscal-rate-limit.mjs';
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
@@ -80,20 +81,6 @@ function parseOfficialItems(html) {
     });
   });
   return items;
-}
-
-function parseFiscalTotals(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  const result = { subtotal: null, discount: null, total: null };
-  for (const line of lines) {
-    const name = line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    const value = parseMoney(line);
-    if (value === null) continue;
-    if (result.subtotal === null && /SUB[ -]?TOTAL/.test(name)) result.subtotal = value;
-    if (result.discount === null && /\bDESCONTO\b/.test(name)) result.discount = value;
-    if (result.total === null && /VALOR A PAGAR|VALOR TOTAL|TOTAL DA NOTA/.test(name)) result.total = value;
-  }
-  return result;
 }
 
 async function fetchOfficial(url, signal) {
@@ -202,7 +189,8 @@ export default async function handler(req, res) {
     if (!items.length) {
       return res.status(502).json({ error: 'A SEFAZ abriu a página, mas a lista de produtos não veio em um formato estruturado reconhecido. Confira manualmente.' });
     }
-    return res.status(200).json({ items, totals: parseFiscalTotals(text), source: 'SVRS', accessKey: key, url: sourceUrl });
+    const metadata = parseNfceMetadata(html, text, key);
+    return res.status(200).json({ items, ...metadata, source: 'SVRS', accessKey: key, url: sourceUrl });
   } catch (e) {
     if (controller.signal.aborted || e.name === 'AbortError' || e.name === 'TimeoutError') {
       return res.status(504).json({ error: 'A consulta à SEFAZ demorou mais de 10 segundos. Confira a nota manualmente.' });

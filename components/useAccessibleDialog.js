@@ -1,13 +1,15 @@
 import { useEffect, useRef } from 'react';
+import { focusFirstRelevant } from './useAccessibleFocus';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled])',
   'select:not([disabled])', 'textarea:not([disabled])',
   '[tabindex]:not([tabindex="-1"])'
 ].join(', ');
+const DIALOG_SELECTOR = '[role="dialog"][aria-modal="true"]';
 
 /**
- * Gerencia foco e teclado dos diálogos existentes sem alterar seus fluxos de negócio.
+ * Gerencia foco, teclado e isolamento de fundo dos diálogos existentes.
  * O fechamento continua sendo decidido pelo chamador (ex.: bloquear durante salvamento).
  */
 export function useAccessibleDialog(dialogKey, onRequestClose) {
@@ -15,12 +17,11 @@ export function useAccessibleDialog(dialogKey, onRequestClose) {
   const openerRef = useRef(null);
   closeRef.current = onRequestClose;
 
-  // React autoFocus runs during mount, before this hook's dialog effect.
-  // Track the triggering control in advance so closing always restores its focus.
+  // Capture o acionador antes do clique/tecla que abre o diálogo.
   useEffect(() => {
     const rememberOpener = (event) => {
-      if (document.querySelector('.overlay [role="dialog"][aria-modal="true"]')) return;
-      const control = event.target?.closest?.('button, a, input, select, [tabindex]');
+      if (document.querySelector(DIALOG_SELECTOR)) return;
+      const control = event.target?.closest?.('button, a[href], input, select, [tabindex]');
       if (control) openerRef.current = control;
     };
     document.addEventListener('focusin', rememberOpener, true);
@@ -32,10 +33,10 @@ export function useAccessibleDialog(dialogKey, onRequestClose) {
   }, []);
 
   useEffect(() => {
-    if (!dialogKey) return;
+    if (!dialogKey) return undefined;
 
-    const dialog = document.querySelector('.overlay [role="dialog"][aria-modal="true"]');
-    if (!dialog) return;
+    const dialog = document.querySelector(DIALOG_SELECTOR);
+    if (!dialog) return undefined;
 
     const activeElement = document.activeElement;
     const previouslyFocused = dialog.contains(activeElement) ? openerRef.current : activeElement;
@@ -46,14 +47,12 @@ export function useAccessibleDialog(dialogKey, onRequestClose) {
     const previousInert = background.map((element) => element.inert);
     background.forEach((element) => { element.inert = true; });
 
-    // Permite focar o título/conteúdo do diálogo caso não haja controles disponíveis.
     if (!dialog.hasAttribute('tabindex')) dialog.tabIndex = -1;
 
     const focusableElements = () => Array.from(dialog.querySelectorAll(FOCUSABLE_SELECTOR))
       .filter((element) => element.getClientRects().length > 0 && !element.closest('[inert]'));
 
-    const initialFocus = dialog.querySelector('[autofocus]') || focusableElements()[0] || dialog;
-    initialFocus.focus({ preventScroll: true });
+    focusFirstRelevant(dialog);
 
     const handleKeyDown = (event) => {
       if (!dialog.isConnected) return;
