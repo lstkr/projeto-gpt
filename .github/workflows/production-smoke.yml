@@ -9,6 +9,8 @@ on:
     - cron: '17 12 * * *'
 permissions:
   contents: read
+env:
+  ESTOQUE_SMOKE_URL: https://estoque-homologacao-ashy.vercel.app
 jobs:
   smoke:
     runs-on: ubuntu-24.04
@@ -19,6 +21,4 @@ jobs:
         with:
           node-version: '22'
       - name: Check public production assets and reject unauthenticated operations
-        env:
-          ESTOQUE_SMOKE_URL: https://projetogpt-estoque.vercel.app
         run: node scripts/smoke-production.cjs
