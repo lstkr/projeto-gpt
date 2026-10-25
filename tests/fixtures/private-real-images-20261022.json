@@ -6,7 +6,7 @@
   "minimum_documents": 14,
   "fixtures": [
     {
-      "name": "caixa-2025-10-08.jpeg",
+      "name": "private-photo-01.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -17,7 +17,7 @@
       "sha256": "62d065367fc2b83e3b5b88179b74fa02edd5865dd543f380ba98b1b24fd995d7"
     },
     {
-      "name": "caixa-2025-11-04.jpeg",
+      "name": "private-photo-02.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -28,7 +28,7 @@
       "sha256": "8b18bff240f887c097bcc42ed2f5b08ec81baf22b19e321c61d5b37432d2dcb4"
     },
     {
-      "name": "caixa-2025-11-08.jpeg",
+      "name": "private-photo-03.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -39,7 +39,7 @@
       "sha256": "a5760347a0b5ae122e5b10e3fc9ecd87701589db4009266746b226b769c9bf42"
     },
     {
-      "name": "caixa-2025-11-11.jpeg",
+      "name": "private-photo-04.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -50,7 +50,7 @@
       "sha256": "30a54443a65ae10f303222da9337f2bb3510997a47809196de1ef0afecc1796f"
     },
     {
-      "name": "caixa-2025-11-14.jpeg",
+      "name": "private-photo-05.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -61,7 +61,7 @@
       "sha256": "060ce4c5127526beb370814acf42f71c9024a5b4ed86720e9a12fcac7c613eda"
     },
     {
-      "name": "caixa-2025-11-25.jpeg",
+      "name": "private-photo-06.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -72,7 +72,7 @@
       "sha256": "8176b14bf564699ab9742f6b967a17fdadcafd6806e7970a6c07524b136cf141"
     },
     {
-      "name": "caixa-2025-11-26.jpeg",
+      "name": "private-photo-07.jpeg",
       "type": "cash_closing",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -83,7 +83,7 @@
       "sha256": "81e78549bdbed0ad8f0fe3eaa148e5e3763b2f6b26edacf5c0f31201f1b948a7"
     },
     {
-      "name": "fiscal-01-ovo.jpeg",
+      "name": "private-photo-08.jpeg",
       "type": "fiscal_document",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -94,7 +94,7 @@
       "sha256": "16d952de9f298bd0e50a1589f08c7ba6b1cd5fb01908bec4382c1e04b5ef7065"
     },
     {
-      "name": "fiscal-02-tomate.jpeg",
+      "name": "private-photo-09.jpeg",
       "type": "fiscal_document",
       "documents": 1,
       "golden": "user-thermal-golden-20261021.json",
@@ -105,7 +105,7 @@
       "sha256": "67ddfffb68266da0d0fa18836e1decb808f0b3e8ae7a4e8da2244fde600c3f81"
     },
     {
-      "name": "fiscal-03-duas-notas.jpeg",
+      "name": "private-photo-10.jpeg",
       "type": "fiscal_document",
       "documents": 2,
       "golden": "user-thermal-golden-20261021.json",
@@ -116,7 +116,7 @@
       "sha256": "a0011bda56841d9ac083d75d64a57becc919e79df609298966f4dc6d4118fbe8"
     },
     {
-      "name": "fiscal-04-danfe.jpeg",
+      "name": "private-photo-11.jpeg",
       "type": "fiscal_document",
       "documents": 1,
       "golden": null,
@@ -127,7 +127,7 @@
       "sha256": "d685adc992292cd374af1c0c7b7e3b723fc6ece20fc9dd5156623762be1b809e"
     },
     {
-      "name": "fiscal-05-cupom-termico.jpeg",
+      "name": "private-photo-12.jpeg",
       "type": "fiscal_document",
       "documents": 1,
       "golden": null,
@@ -138,7 +138,7 @@
       "sha256": "e0deb84e3fa303799795fe99d60ccb4306ad0470dfd93bbf045c5fa06116ce92"
     },
     {
-      "name": "fiscal-06-contingencia.jpeg",
+      "name": "private-photo-13.jpeg",
       "type": "fiscal_document",
       "documents": 1,
       "golden": null,

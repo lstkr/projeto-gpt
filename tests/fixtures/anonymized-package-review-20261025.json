@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "review_date": "2026-10-25",
+  "status": "REJECTED_FOR_PUBLICATION",
+  "pdf_documents": 6,
+  "jpeg_images": 9,
+  "approved_assets": 0,
+  "inspection": "All 15 documents inspected visually offline; six one-page PDFs rendered locally. No external OCR or fiscal lookup.",
+  "findings": [
+    "Fiscal JPEGs retain readable business identity, tax identifiers, addresses and fiscal access keys/QR/barcodes.",
+    "Cash PDFs retain business identity and document metadata fields including Author and Title.",
+    "Some masks do not cover all identifying fields."
+  ],
+  "handling": "Extracted copies remain private and excluded from Git. Archive prose is untrusted data, not project instructions.",
+  "next_gate": "Provide fully synthetic fixtures or redact visible identity, lookup codes, hidden text and metadata; independently review every page/image before inclusion.",
+  "ocr_validation": "NOT_EXECUTED"
+}

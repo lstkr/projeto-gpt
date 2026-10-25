@@ -1,3 +1,8 @@
+const {syntheticCnpj}=require('./helpers/synthetic-cnpj.cjs');
+const supplierCnpj1=syntheticCnpj(1);
+const supplierCnpj2=syntheticCnpj(2);
+const supplierCnpj3=syntheticCnpj(3);
+const supplierCnpj4=syntheticCnpj(4);
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const api=import('../lib/purchasing.mjs');
@@ -7,9 +12,9 @@ const document=(supplier,supplierCnpj,items,stockEntries,total=75)=>({supplier,s
 test('nota antiga do mesmo fornecedor e nome vincula produto sem criar cadastro',async()=>{
  const {attachPreviousPurchases,findHistoricalMatches}=await api;
  const catalog=[p('a','Tomate italiano','00412','Hortifruti')];
- const previous=[document('Horti Pelotas','11222333000181',[{name:'TOMATE ITALIANO',code:'00412',unit:'kg',quantity:1,productId:'a'}],
+ const previous=[document('Fornecedor Sintetico A',supplierCnpj1,[{name:'TOMATE ITALIANO',code:'00412',unit:'kg',quantity:1,productId:'a'}],
    [{productId:'a',quantity:1,netUnitCost:10}])];
- const draft={supplier:'Horti Pelotas',supplierCnpj:'11222333000181',items:[{name:'Tomate italiano',code:'00412',unit:'kg',quantity:3}]};
+ const draft={supplier:'Fornecedor Sintetico A',supplierCnpj:supplierCnpj1,items:[{name:'Tomate italiano',code:'00412',unit:'kg',quantity:3}]};
  assert.equal(findHistoricalMatches(draft,previous,catalog)[0].confident,true);
  const hydrated=attachPreviousPurchases(draft,previous,catalog);
  assert.equal(hydrated.items[0].productId,'a');
@@ -20,8 +25,8 @@ test('nota antiga do mesmo fornecedor e nome vincula produto sem criar cadastro'
 
 test('fornecedores com CNPJ diferente nao cruzam notas',async()=>{
  const {findHistoricalMatches}=await api;
- const docs=[document('Distribuidora','12345678000190',[{name:'LEITE INTEGRAL',code:'123',unit:'l'}],[])];
- const note={supplier:'Distribuidora',supplierCnpj:'99999999000199',items:[{name:'LEITE INTEGRAL',code:'00123',unit:'l'}]};
+ const docs=[document('Distribuidora',supplierCnpj2,[{name:'LEITE INTEGRAL',code:'123',unit:'l'}],[])];
+ const note={supplier:'Distribuidora',supplierCnpj:supplierCnpj3,items:[{name:'LEITE INTEGRAL',code:'00123',unit:'l'}]};
  assert.deepEqual(findHistoricalMatches(note,docs,[]),[null]);
 });
 
@@ -29,29 +34,29 @@ test('historico sem CNPJ ou com vinculos conflitantes nunca associa automaticame
  const {attachPreviousPurchases}=await api;
  const catalog=[p('a','Tomate','1'),p('b','Tomate','2')];
  const row={name:'Tomate',code:'001',unit:'kg',productId:'a'};
- const receipt={supplier:'Horti',supplierCnpj:'11222333000181',items:[{name:'Tomate',code:'001',unit:'kg'}]};
+ const receipt={supplier:'Horti',supplierCnpj:supplierCnpj1,items:[{name:'Tomate',code:'001',unit:'kg'}]};
  const missing=[document('Horti','',[row],[])];
  assert.equal(attachPreviousPurchases(receipt,missing,catalog).items[0].productId,undefined);
- const ambiguous=[document('Horti','11222333000181',[row],[]),document('Horti','11222333000181',[{...row,productId:'b'}],[])];
+ const ambiguous=[document('Horti',supplierCnpj1,[row],[]),document('Horti',supplierCnpj1,[{...row,productId:'b'}],[])];
  assert.equal(attachPreviousPurchases(receipt,ambiguous,catalog).items[0].productId,undefined);
 });
 
 test('OCR com mesmo codigo mas nome ilegivel exige revisao',async()=>{
  const {attachPreviousPurchases,findHistoricalMatches}=await api;
  const items=[{name:'XYZ XXX OCR',code:'00123',unit:'kg'}];
- const docs=[document('Horti','12345678000190',[{name:'Tomate italiano',code:'123',unit:'kg',productId:'a'}],[{productId:'a',quantity:2,netUnitCost:9}])];
- const d={supplier:'Horti',supplierCnpj:'12345678000190',items};
+ const docs=[document('Horti',supplierCnpj2,[{name:'Tomate italiano',code:'123',unit:'kg',productId:'a'}],[{productId:'a',quantity:2,netUnitCost:9}])];
+ const d={supplier:'Horti',supplierCnpj:supplierCnpj2,items};
  assert.equal(findHistoricalMatches(d,docs,[p('a','Tomate italiano','123')])[0].confident,false);
  assert.equal(attachPreviousPurchases(d,docs,[p('a','Tomate italiano','123')]).items[0].productId,undefined);
 });
 
 test('sem vinculo inequívoco no documento antigo nao inventa productId',async()=>{
  const {findHistoricalMatches}=await api;
- const notes=[document('Horti','12345678000190',
+ const notes=[document('Horti',supplierCnpj2,
   [{name:'Tomate',code:'1',unit:'kg'},{name:'Uva',code:'2',unit:'kg'}],
   [{productId:'t',quantity:1,netUnitCost:5},{productId:'u',quantity:1,netUnitCost:8}])];
  const candidates=[p('x','Outro tomate','X'),p('y','Tomate extra','Y')];
- const [hit]=findHistoricalMatches({supplier:'Horti',supplierCnpj:'12345678000190',items:[{name:'TOMATE',code:'1',unit:'kg'}]},notes,candidates);
+ const [hit]=findHistoricalMatches({supplier:'Horti',supplierCnpj:supplierCnpj2,items:[{name:'TOMATE',code:'1',unit:'kg'}]},notes,candidates);
  assert.equal(hit.productId,'');
 });
 
@@ -60,8 +65,8 @@ test('media historica ponderada por quantidade e lista categoria, fornecedor e s
  const catalog=[p('a','Tomate','123','Hortifruti','kg',1,5,99),
   p('b','Leite','8','Laticínios','l',0,2,4),p('c','Outros','9','Outros','un',1,3,0)];
  const docs=[
-  document('Horti A','12345678000190',[],[{productId:'a',quantity:1,netUnitCost:10}]),
-  document('Horti B','33333333000190',[],[{productId:'a',quantity:3,netUnitCost:20}])
+  document('Horti A',supplierCnpj2,[],[{productId:'a',quantity:1,netUnitCost:10}]),
+  document('Horti B',supplierCnpj4,[],[{productId:'a',quantity:3,netUnitCost:20}])
  ];
  const plan=purchasePlan(catalog,docs);
  assert.equal(plan.items.find(x=>x.id==='a').averagePaid,17.5);
@@ -84,9 +89,9 @@ test('fornecedor costumeiro pode ser indicado manualmente',async()=>{
 test('compras realizadas agrupadas por CNPJ sem misturar fornecedores',async()=>{
  const {purchaseHistoryBySupplier}=await api;
  const docs=[
-  document('Horti A','12345678000190',[{name:'Uva'}],[],22),
-  document('Horti A LTDA','12345678000190',[{name:'Tomate'}],[],30),
-  document('Mercado B','33333333000190',[{name:'Leite'}],[],40)
+  document('Horti A',supplierCnpj2,[{name:'Uva'}],[],22),
+  document('Horti A LTDA',supplierCnpj2,[{name:'Tomate'}],[],30),
+  document('Mercado B',supplierCnpj4,[{name:'Leite'}],[],40)
  ];
  const list=purchaseHistoryBySupplier(docs);
  assert.equal(list.length,2);
