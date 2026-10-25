@@ -41,7 +41,7 @@ test('a Vercel Preview with production or missing Supabase variables is rejected
 test('UI and Next build environment include a fail-closed Preview gate', () => {
   const nextConfig=fs.readFileSync('next.config.js','utf8');
   const ui=fs.readFileSync('pages/index.js','utf8');
-  assert.match(nextConfig,/ESTOQUE_DEPLOY_ENV:\s*process\.env\.VERCEL_ENV/);
+  assert.match(nextConfig,/const deployEnv = process\.env\.VERCEL_ENV/);
   assert.match(ui,/const PREVIEW_UNSAFE = deploymentDatabaseIsBlocked/);
   assert.match(ui,/if \(PREVIEW_UNSAFE\)/);
   assert.match(ui,/HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE/);
