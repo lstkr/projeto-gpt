@@ -51,6 +51,7 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         assert 'checkedByVerified' not in definition and 'active_tenant' not in definition
         print('PASS failed fiscal-attribution migration rolls back table and RPC patch')
     sql(migration.read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/cnpj-alphanumeric.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/revocation-contract.sql').read_text(encoding='utf8'))

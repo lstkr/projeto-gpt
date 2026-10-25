@@ -13,6 +13,7 @@ import { updateFiscalLine, resolveFiscalSubtotal } from '../lib/fiscal-calculati
 import { canStartFiscalFinalReview, canConfirmFiscalDocument } from '../lib/fiscal-confirmation.mjs';
 import { filterDocumentHistory, formatDocumentIssueDate } from '../lib/document-history.mjs';
 import { cnpjDigits, formatSupplierCnpj, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
+import { validateNfceAccessKey as validateFiscalNfceAccessKey, extractNfceAccessKeyFromText, issuerCnpjFromNfceAccessKey } from '../lib/fiscal-key.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
@@ -583,47 +584,19 @@ function mergeReceiptCandidates(primary, alternate) {
   return merged;
 }
 
-// Each NFC-e key is exactly 44 digits. Validate the document model (65) and
-// the final modulo-11 check digit before ever opening an official consultation.
 function validateNfceAccessKey(raw) {
-  const key = String(raw || '').replace(/\D/g, '');
-  if (!/^\d{44}$/.test(key)) return false;
-  if (key.slice(20, 22) !== '65') return false;
-  let sum = 0;
-  let weight = 2;
-  for (let i = 42; i >= 0; i--) {
-    sum += Number(key[i]) * weight;
-    weight = weight === 9 ? 2 : weight + 1;
-  }
-  const remainder = sum % 11;
-  const digit = remainder === 0 || remainder === 1 ? 0 : 11 - remainder;
-  return digit === Number(key[43]);
+  return validateFiscalNfceAccessKey(raw);
 }
 
 function extractAccessKeyFromText(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  for (const line of lines) {
-    const digits = line.replace(/\D/g, '');
-    // A normal NFC-e key is printed in eleven groups of four. OCR may add one
-    // spurious digit; look for validated 44-digit windows instead of trusting
-    // the first 44 characters of a damaged line.
-    if (digits.length < 44 || digits.length > 65) continue;
-    for (let i = 0; i <= digits.length - 44; i++) {
-      const candidate = digits.slice(i, i + 44);
-      if (validateNfceAccessKey(candidate)) return candidate;
-    }
-  }
-  return '';
+  return extractNfceAccessKeyFromText(text);
 }
-
 function hasUncertainReceiptKey(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  return lines.some((line) => {
-    const digits = line.replace(/\D/g, '');
-    return digits.length >= 44 && digits.length <= 65 && !extractAccessKeyFromText(line);
+  return String(text || '').split(/\r?\n/).some((line) => {
+    const compact = line.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return compact.length >= 44 && compact.length <= 80 && !extractAccessKeyFromText(line);
   });
 }
-
 const PUBLIC_NFCE_CONSULTA_URL = 'https://dfe-portal.svrs.rs.gov.br/Dfe/ConsultaPublicaDfe';
 
 function parseNfceQrPayload(raw) {
@@ -637,12 +610,12 @@ function parseNfceQrPayload(raw) {
   let accessKey = '';
   if (parsed) {
     for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
-      const digits = String(parsed.searchParams.get(key) || '').replace(/\D/g, '');
+      const digits = String(parsed.searchParams.get(key) || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (validateNfceAccessKey(digits)) { accessKey = digits; break; }
     }
     if (!accessKey) {
       const p = parsed.searchParams.get('p') || '';
-      const first = p.split('|')[0].replace(/\D/g, '');
+      const first = p.split('|')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (validateNfceAccessKey(first)) accessKey = first;
     }
   }
@@ -681,7 +654,7 @@ function parseNfceQrPayload(raw) {
   return { accessKey, consultaUrl, qrRaw: value.slice(0, 700), qrUrlPreserved };
 }
 
-async function decodeNfceQrWithZXing(canvas) {
+async function decodeNfceQrWithZXing(canvas, formats = null) {
   const z = await import('@zxing/library');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -691,7 +664,7 @@ async function decodeNfceQrWithZXing(canvas) {
   }
 
   const hints = new Map();
-  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE]);
+  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, formats || [z.BarcodeFormat.QR_CODE]);
   hints.set(z.DecodeHintType.TRY_HARDER, true);
   for (const invert of [false, true]) {
     const luminance = invert ? Uint8ClampedArray.from(gray, (v) => 255 - v) : gray;
@@ -708,6 +681,21 @@ async function decodeNfceQrWithZXing(canvas) {
     }
   }
   return '';
+}
+
+function createIssuerBarcodeCrop(canvas) {
+  const x = Math.floor(canvas.width * 0.46);
+  const y = Math.floor(canvas.height * 0.04);
+  const width = Math.max(1, canvas.width - x);
+  const height = Math.max(1, Math.floor(canvas.height * 0.5) - y);
+  const scale = Math.min(2, 1600 / Math.max(width, height));
+  const crop = document.createElement('canvas');
+  crop.width = Math.max(1, Math.round(width * scale));
+  crop.height = Math.max(1, Math.round(height * scale));
+  crop.getContext('2d', { willReadFrequently: true }).drawImage(
+    canvas, x, y, width, height, 0, 0, crop.width, crop.height
+  );
+  return crop;
 }
 
 // Inspired by pcelias-ctrl/nfc-e: isolate the code from the footer and retry
@@ -755,7 +743,7 @@ async function decodeQrViaExternalApi(canvas, sessionToken) {
   }
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -800,26 +788,20 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
       }
       if (found.qrUrlPreserved) break;
     }
-    // No opt-in button: request the generic external QR decoder automatically as
-    // a fallback. Only the footer crop is transmitted, not the full note.
-    if (!found.qrUrlPreserved) {
+    if (!found.accessKey) {
       try {
-        found = await decodeQrViaExternalApi(reference, sessionToken);
-      } catch (error) {
-        const warning = error?.message || 'Leitor QR complementar indisponível.';
-        // Keep an offline recovery path when the external API times out.
-        for (const target of [footer, rotated]) {
-          try {
-            const result = await decodeNfceQrWithZXing(target);
-            if (result) {
-              const candidate = parseNfceQrPayload(result);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-              if (candidate.accessKey && !found.accessKey) found = candidate;
-            }
-          } catch (_) {}
+        const z = await import('@zxing/library');
+        const result = await decodeNfceQrWithZXing(createIssuerBarcodeCrop(reference), [z.BarcodeFormat.CODE_128]);
+        const candidate = parseNfceQrPayload(result);
+        if (validateNfceAccessKey(candidate.accessKey)) {
+          found = { ...candidate, accessKeySource: 'código de barras Code128', qrRaw: result };
         }
-        if (!found.qrUrlPreserved) found = { ...found, qrReaderWarning: warning };
-      }
+      } catch (_) {}
+    }
+    // External decoding remains off so receipt images are not sent without
+    // per-document consent. Local OCR, QR and Code128 remain available.
+    if (!found.accessKey) {
+      found = { ...found, qrReaderWarning: 'Leitura externa desativada; confira o QR, o código de barras ou anexe o XML.' };
     }
     results.push(found);
   }
@@ -2562,14 +2544,14 @@ export default function Home() {
     if (xml) {
       const content = await file.text();
       const parsed = parseNfeXml(content);
-      return [{ ...parsed, checkedBy: '', fileName: file.name, status: 'Aguardando conferência' }];
+      return [{ ...parsed, supplierCnpjSource: parsed.supplierCnpj ? 'XML' : '', supplierCnpjConfidence: parsed.supplierCnpj ? 'alta (XML)' : '', accessKeySource: parsed.accessKey ? 'XML' : '', accessKeyConfidence: parsed.accessKey ? 'alta (XML)' : '', checkedBy: '', fileName: file.name, status: 'Aguardando conferência' }];
     }
     if (file.type.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(file.name)) {
       {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
           if (!receiptOcrWorkerRef.current) {
@@ -2651,6 +2633,10 @@ export default function Home() {
               extractAccessKeyFromText(alternateText), extractAccessKeyFromText(paddleText)]
               .find(validateNfceAccessKey) || '';
             const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
+            const ocrSupplierCnpj = detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText) || detectSupplierCnpj(paddleText);
+            const derivedIssuerCnpj = issuerCnpjFromNfceAccessKey(accessKey);
+            const issuerCnpjMismatch = Boolean(ocrSupplierCnpj && derivedIssuerCnpj && cnpjDigits(ocrSupplierCnpj) !== cnpjDigits(derivedIssuerCnpj));
+            const supplierCnpj = ocrSupplierCnpj || derivedIssuerCnpj;
             const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) ||
               hasUncertainReceiptKey(alternateText) || hasUncertainReceiptKey(paddleText))
               ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
@@ -2658,15 +2644,21 @@ export default function Home() {
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
               supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || detectReceiptSupplier(paddleText) || (multiple ? 'Cupom ' + (index + 1) : ''),
-              supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText) || detectSupplierCnpj(paddleText),
+              supplierCnpj,
+              supplierCnpjSource: ocrSupplierCnpj ? 'OCR' : derivedIssuerCnpj ? 'derivado da chave' : '',
+              supplierCnpjConfidence: supplierCnpj ? 'alta (DV validado)' : '',
+              derivedIssuerCnpj,
+              issuerCnpjMismatch,
+              accessKeySource: accessKey ? (qr.accessKeySource || (qr.accessKey === accessKey ? 'QR Code' : 'OCR')) : '',
+              accessKeyConfidence: accessKey ? 'alta (DV validado)' : '',
               invoiceNumber: meta.invoiceNumber,
               date: meta.date,
               accessKey,
               consultaUrl,
               keyWarning,
-              qrDetected: Boolean(qr.qrRaw) && Boolean(accessKey),
+              qrDetected: Boolean(qr.qrRaw) && Boolean(accessKey) && qr.accessKeySource !== 'código de barras Code128',
               qrUrlPreserved: Boolean(qr.qrUrlPreserved),
-              qrReader: qr.qrReader || (qr.qrRaw ? 'Leitura QR local' : ''),
+              qrReader: qr.qrReader || (qr.accessKeySource === 'código de barras Code128' ? 'Leitura local Code128' : qr.qrRaw ? 'Leitura QR local' : ''),
               qrReaderWarning: qr.qrReaderWarning || '',
               source: multiple
                 ? 'Foto (cupom ' + (index + 1) + ' de ' + canvases.length + ' — Tesseract + PP-OCRv6 local)'
@@ -2996,7 +2988,7 @@ export default function Home() {
     setToast('Campos preenchidos pela leitura PP-OCRv6. Confira cada valor com o documento original.');
   }
   function changeNfceAccessKey(value) {
-    const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
+    const key = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 44);
     setDraft((previous) => {
       if (!previous) return previous;
       const valid = validateNfceAccessKey(key);
@@ -3004,6 +2996,11 @@ export default function Home() {
         ...previous,
         accessKey: valid ? key : '',
         accessKeyInput: key,
+        accessKeySource: valid ? 'edição manual' : '',
+        accessKeyConfidence: valid ? 'alta (DV validado)' : '',
+        derivedIssuerCnpj: valid ? issuerCnpjFromNfceAccessKey(key) : '',
+        issuerCnpjMismatch: Boolean(valid && previous.supplierCnpj && issuerCnpjFromNfceAccessKey(key) && cnpjDigits(previous.supplierCnpj) !== cnpjDigits(issuerCnpjFromNfceAccessKey(key))),
+        ...(valid && !previous.supplierCnpj && issuerCnpjFromNfceAccessKey(key) ? { supplierCnpj: issuerCnpjFromNfceAccessKey(key), supplierCnpjSource: 'derivado da chave', supplierCnpjConfidence: 'alta (DV validado)' } : {}),
         consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
         qrUrlPreserved: false,
         officialCompared: false, officialItems: [], officialVerified: false,
@@ -3726,7 +3723,7 @@ export default function Home() {
             {(draft.accessKey || draft.consultaUrl) && <div className="notice qr-identified-card" role="region" aria-label="Identificação fiscal da nota">
               <div className="qr-identified-content">
                 <div className="qr-identified-title"><Icon type="check" size={17}/><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave fiscal identificada'}</b></div>
-                {draft.accessKey ? <code className="qr-identified-key">{draft.accessKey}</code> : <span>QR Code encontrado com endereço de consulta.</span>}
+                {draft.accessKey ? <><code className="qr-identified-key">{draft.accessKey}</code>{draft.accessKeySource&&<small>Origem: {draft.accessKeySource} · confiança: {draft.accessKeyConfidence}</small>}</> : <span>QR Code encontrado com endereço de consulta.</span>}
                 {draft.qrReader?.includes('API externa') ? <small>QR Code obtido pela API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e ↗</a>.</small> :
                   draft.qrReader ? <small>Origem da leitura: {draft.qrReader} (leitura local, sem API externa).</small> :
                   <small>Chave obtida pelo reconhecimento do documento; confira com a nota original.</small>}
@@ -3763,7 +3760,7 @@ export default function Home() {
             {!draft.ocrComparison&&draft.ocrText&&<details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input ref={firstFiscalFieldRef} value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={formatSupplierCnpj(draft.supplierCnpj||'')} onChange={(e)=>changeDraft('supplierCnpj',formatSupplierCnpj(e.target.value))} placeholder="14 dígitos" inputMode="text"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input ref={firstFiscalFieldRef} value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label>{draft.issuerCnpjMismatch && currentUser?.role==='admin' && <div className="notice warning" role="alert">O CNPJ lido pelo OCR ({formatSupplierCnpj(draft.supplierCnpj)}) diverge do derivado da chave ({formatSupplierCnpj(draft.derivedIssuerCnpj)}). O Gestor deve conferir a nota antes de continuar.</div>}<label><span>CNPJ do emitente (opcional)</span><input value={formatSupplierCnpj(draft.supplierCnpj||'')} onChange={event=>setDraft(d=>d?({...d,supplierCnpj:formatSupplierCnpj(event.target.value),supplierCnpjSource:'edição manual',supplierCnpjConfidence:validSupplierCnpj(event.target.value)?'alta (DV validado)':'inválida',issuerCnpjMismatch:false,finalReviewed:false}):d)} placeholder="14 caracteres" inputMode="text"/>{draft.supplierCnpjSource&&<small>Origem: {draft.supplierCnpjSource} · confiança: {draft.supplierCnpjConfidence}</small>}</label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>

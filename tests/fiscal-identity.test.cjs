@@ -1,8 +1,10 @@
+const fs=require('node:fs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const api = import('../lib/fiscal-identity.mjs');
 const issuer = '11222333000181';
 const product = {id:'egg',name:'Ovo branco',unit:'un',supplierCodes:[{cnpj:issuer,code:'031232'}]};
+const page = fs.readFileSync('pages/index.js','utf8');
 
 test('issuer recognition validates checksum and never selects recipient or ambiguous header', async()=>{
   const {validSupplierCnpj,extractIssuerCnpj,formatSupplierCnpj} = await api;
@@ -15,7 +17,13 @@ test('issuer recognition validates checksum and never selects recipient or ambig
   assert.equal(extractIssuerCnpj('CNPJ 11111111111111'),'');
   assert.equal(extractIssuerCnpj('CNPJ 12.ABC.345/01DE-35'),'12ABC34501DE35');
   assert.equal(extractIssuerCnpj('HORTI LTDA\nCNPJ:\n92 .192.798/0001-39'),'92192798000139');
-  assert.equal(validSupplierCnpj('12ABC34501DE35'),false);
+  assert.equal(validSupplierCnpj('12ABC34501DE35'),true);
+  assert.equal(validSupplierCnpj('12ABC34501DE34'),false);
+  assert.equal(extractIssuerCnpj('EMITENTE CNPJ II.222.333/0001-81'),'11222333000181');
+  assert.equal(extractIssuerCnpj('EMITENTE CNPJ 11.222.333/OO01-81'),'11222333000181');
+  assert.equal(extractIssuerCnpj('EMITENTE CNPJ 11.222.333/0001-8I'),'11222333000181');
+  assert.equal(extractIssuerCnpj('NOTA SINTETICA 11222333000181'),'11222333000181');
+  assert.equal(extractIssuerCnpj('EMITENTE CNPJ 11.222.333/0001-80'),'');
   assert.equal(formatSupplierCnpj('87397865000979'),'87.397.865/0009-79');
   assert.equal(formatSupplierCnpj('12ABC34501DE35'),'12.ABC.345/01DE-35');
   assert.equal(formatSupplierCnpj('87-397'),'87.397');
@@ -67,4 +75,37 @@ test('conversion supports equivalent physical units and requires an explicit fac
   const unsafe = {...milk,supplierCodes:[{cnpj:issuer,code:'LEITE-1'}]};
   assert.equal(supplierAliasConversion(item,unsafe,issuer),null);
   assert.equal(prepareFiscalIdentity({supplierCnpj:issuer,items:[item]},null,[unsafe],[]).items[0].name,item.name);
+});
+
+
+test('synthetic CNPJ capture corpus improves only validated identifier recovery', async()=>{
+  const {extractIssuerCnpj,validSupplierCnpj}=await api;
+  const cases=[
+    {text:'EMITENTE CNPJ 11.222.333/0001-81',expected:'11222333000181'},
+    {text:'EMITENTE CNPJ II.222.333/0001-81',expected:'11222333000181'},
+    {text:'NOTA SINTETICA 11222333000181',expected:'11222333000181'},
+    {text:'EMITENTE CNPJ 12.ABC.345/01DE-35',expected:'12ABC34501DE35'},
+    {text:'EMITENTE CNPJ 11.222.333/0001-80',expected:''}
+  ];
+  const legacyNumeric=raw=>{
+    if(!/^\d{14}$/.test(raw)||/^(\d)\1+$/.test(raw))return false;
+    const digit=(base)=>{const weights=base.length===12?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2];const sum=[...base].reduce((n,c,i)=>n+Number(c)*weights[i],0)%11;return String(sum<2?0:11-sum)};
+    return raw[12]===digit(raw.slice(0,12))&&raw[13]===digit(raw.slice(0,13));
+  };
+  const legacyCapture=text=>{
+    const header=String(text||'').split(/\b(?:DESTINAT|DADOS\s+DO\s+CLIENTE|CONSUMIDOR\s*(?=:|CNPJ\b|CPF\b|NAO\b|IDENTIFICADO\b))/i)[0];
+    const candidates=[...header.matchAll(/\bCNPJ\s*[:.-]?\s*([A-Z\d]{2}\s*\.?\s*[A-Z\d]{3}\s*\.?\s*[A-Z\d]{3}\s*\/?\s*[A-Z\d]{4}\s*-?\s*[A-Z\d]{2})(?!\s*[A-Z\d])/gi)].map(m=>m[1].replace(/[.\/\s-]/g,'').toUpperCase()).filter(legacyNumeric);
+    return new Set(candidates).size===1?candidates[0]:'';
+  };
+  let oldHits=0,newHits=0;
+  for(const sample of cases){
+    const old=legacyCapture(sample.text);
+    const current=extractIssuerCnpj(sample.text);
+    if(sample.expected&&old===sample.expected&&legacyNumeric(old))oldHits++;
+    if(sample.expected&&current===sample.expected&&validSupplierCnpj(current))newHits++;
+  }
+  assert.equal(oldHits,1);
+  assert.equal(newHits,4);
+  assert.ok(page.includes("supplierCnpjConfidence: supplierCnpj ? 'alta (DV validado)'"));
+  assert.match(page,/derivedIssuerCnpj/);
 });
