@@ -19,7 +19,10 @@ test('cash correction closes the modal before opening the editable form', () => 
   const edit = source.slice(source.indexOf('function editCashClosing(entry)'),source.indexOf('async function openCashClosingDetail'));
   assert.ok(edit.indexOf("setCashSelectedDay('')") < edit.indexOf("setCashEntryMode('edit')"));
   assert.match(edit,/expectedUpdatedAt:entry.updatedAt/);
-  assert.match(edit,/reason:reason.trim\(\)/);
+  const save = source.slice(source.indexOf('async function saveCashClosing('),source.indexOf('function openManualEntry('));
+  assert.match(save,/p_reason:correction\.reason/);
+  assert.match(save,/reason.length<5||reason.length>300/);
+  assert.match(save,/!cashCorrectionConfirmed/);
   assert.match(edit,/cashReviewed:false/);
 });
 

@@ -1272,6 +1272,8 @@ export default function Home() {
   const [cashAuditHistory,setCashAuditHistory]=useState([]);
   const [cashAuditLoading,setCashAuditLoading]=useState(false);
   const cashCorrectionContextRef=useRef(null);
+  const [cashCorrectionReason,setCashCorrectionReason]=useState('');
+  const [cashCorrectionConfirmed,setCashCorrectionConfirmed]=useState(false);
   const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
@@ -2271,7 +2273,7 @@ export default function Home() {
     else if(key==='reviewedImport')next.cashReviewed=Boolean(value);
     else{next.cashReviewed=false;if(prev.sourceFileName)next.reviewedImport=false;}
     return next;
-  });setCashError('');}
+  });if(cashEntryMode==='edit'&&cashCorrectionContextRef.current)cashCorrectionContextRef.current={...cashCorrectionContextRef.current,idempotencyKey:uuid()};setCashError('');}
   function newCashClosing(mode='manual'){
     cashCorrectionContextRef.current=null;
     setCashEntryMode(mode);
@@ -2284,10 +2286,9 @@ export default function Home() {
   }
   function editCashClosing(entry){
     if(!entry?.updatedAt){setToast('Atualize o histórico antes de corrigir este fechamento.');return;}
-    if(!window.confirm('A edição ficará registrada com uma cópia dos dados anteriores e poderá ser recuperada depois. Continuar?'))return;
-    const reason=window.prompt('Informe o motivo da correção (obrigatório):');
-    if(!reason||reason.trim().length<5)return;
-    cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,reason:reason.trim(),idempotencyKey:uuid()};
+    if(currentUser?.role!=='admin'){setToast('Somente o Gestor pode corrigir fechamentos existentes.');return;}
+    cashCorrectionContextRef.current={expectedUpdatedAt:entry.updatedAt,idempotencyKey:uuid()};
+    setCashCorrectionReason('');setCashCorrectionConfirmed(false);
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashSelectedDay('');setCashSelectedClosingId('');
     setCashEntryMode('edit');
@@ -2369,6 +2370,16 @@ export default function Home() {
     if(!snapshot.cashReviewed)invalid.push('Marque a conferência ao lado do botão salvar.');
     if(invalid.length){setCashError(invalid.join(' · '));return;}
     if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
+    const isCorrection=cashEntryMode==='edit';
+    const correctionContext=cashCorrectionContextRef.current;
+    let correction=null;
+    if(isCorrection){
+      const reason=cashCorrectionReason.trim();
+      if(!correctionContext){setCashError('Reabra o fechamento para iniciar uma correção auditável.');return;}
+      if(reason.length<5||reason.length>300){setCashError('Informe um motivo com pelo menos 5 caracteres (máximo de 300).');return;}
+      if(!cashCorrectionConfirmed){setCashError('Confirme que deseja salvar esta correção auditada.');return;}
+      correction={...correctionContext,reason};
+    }
     cashSavingRef.current=true;setCashSaving(true);setCashError('');
     try{
       const {cashReviewed,...entrySnapshot}=snapshot;
@@ -2379,9 +2390,6 @@ export default function Home() {
         movements:snapshot.movements.map(m=>({
           type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
         }))};
-      const isCorrection=cashEntryMode==='edit';
-      const correction=cashCorrectionContextRef.current;
-      if(isCorrection&&!correction)throw new Error('Reabra a revisão para iniciar uma correção auditável.');
       const {data,error:saveError}=isCorrection
         ? await supabase.rpc('cash_closing_correct',{p_token:accessCode,p_closing_id:cashEditId,
           p_expected_updated_at:correction.expectedUpdatedAt,p_entry:clean,p_reason:correction.reason,
@@ -2392,7 +2400,7 @@ export default function Home() {
       if(!listError&&Array.isArray(updated))setClosings(updated);
       else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
       setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
-      setCashSelectedClosingId('');setCashEditId('');setCashEntryMode('');cashCorrectionContextRef.current=null;
+      setCashSelectedClosingId('');setCashEditId('');setCashEntryMode('');cashCorrectionContextRef.current=null;setCashCorrectionReason('');setCashCorrectionConfirmed(false);
       setToast(listError||!Array.isArray(updated)?'Faturamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':isCorrection?'Correção financeira salva e auditada.':'Faturamento registrado com sucesso.');
     }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
     finally{cashSavingRef.current=false;setCashSaving(false);}
@@ -3916,7 +3924,7 @@ export default function Home() {
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit' || cashEntryMode === 'report-review') && <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashEditId('');cashCorrectionContextRef.current=null;setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir faturamento':cashEntryMode==='report-review'?'Revisar faturamento pendente':'Conferir novo faturamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashEditId('');cashCorrectionContextRef.current=null;setCashCorrectionReason('');setCashCorrectionConfirmed(false);setCashReportActive(null);setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
               <div><b>Preencher automaticamente pelo fechamento</b><p>Selecione até cinco PDFs ou fotos. Cada arquivo terá seu próprio rascunho e confirmação; nenhum faturamento será somado automaticamente.</p></div>
@@ -3957,6 +3965,7 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
+              {cashEntryMode==='edit'&&<section className="cash-correction-confirmation" aria-labelledby="cash-correction-title"><h3 id="cash-correction-title">Confirmar correção do fechamento</h3><label className="field"><span>Motivo obrigatório (mínimo 5 caracteres) *</span><textarea required minLength={5} maxLength={300} value={cashCorrectionReason} onChange={event=>{setCashCorrectionReason(event.target.value);if(cashCorrectionContextRef.current)cashCorrectionContextRef.current={...cashCorrectionContextRef.current,idempotencyKey:uuid()};setCashError('');}} /></label><label className="cash-correction-ack"><input required type="checkbox" checked={cashCorrectionConfirmed} onChange={event=>{setCashCorrectionConfirmed(event.target.checked);setCashError('');}}/>Confirmo salvar estes valores como correção auditada.</label></section>}
               <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label>{cashEntryMode==='report-review'&&<button type="button" className="btn secondary" disabled={cashSaving||!accessCode} onClick={()=>void savePendingCashDraft()}>Salvar pendência</button>}<button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?(cashEntryMode==='report-review'?'Lançando…':'Salvando…'):(cashEntryMode==='report-review'?'Conferir e lançar':cashEntryMode==='edit'?'Salvar correção auditada':'Salvar faturamento')}</button></div>
               </fieldset>
             </form>

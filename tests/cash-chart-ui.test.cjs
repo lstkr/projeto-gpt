@@ -59,6 +59,19 @@ test('cash labels, chart values, references and modal stay accessible', () => {
   assert.match(styles, /\.cash-day-channels\{display:grid;grid-template-columns:repeat\(2/);
 });
 
+test('cash correction requires a reason and explicit confirmation at save time', () => {
+  const editFlow = page.slice(page.indexOf('function editCashClosing('), page.indexOf('function openCashDay('));
+  const saveFlow = page.slice(page.indexOf('async function saveCashClosing('), page.indexOf('function openManualEntry('));
+  assert.doesNotMatch(editFlow, /window\.(?:prompt|confirm)/);
+  assert.match(saveFlow, /cashCorrectionReason\.trim\(\)/);
+  assert.match(saveFlow, /reason.length<5||reason.length>300/);
+  assert.match(saveFlow, /!cashCorrectionConfirmed/);
+  assert.match(saveFlow, /p_expected_updated_at:correction.expectedUpdatedAt/);
+  assert.match(saveFlow, /p_reason:correction.reason/);
+  assert.ok(page.includes('textarea required minLength={5} maxLength={300}'));
+  assert.match(page, /cashCorrectionConfirmed} onChange/);
+});
+
 test('compact fiscal progress shows the current file and failure summary without listing the batch', () => {
   assert.match(page, /className="(?:panel )?fiscal-upload-progress"/);
   assert.match(page, /role="status" aria-live="polite" aria-atomic="true"/);

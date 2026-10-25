@@ -573,6 +573,12 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .cash-movement-row input,.cash-movement-row select{min-width:0;border:1px solid #d9e4db;border-radius:6px;padding:9px;font:inherit}
 .cash-counted{max-width:360px;display:grid;gap:6px;margin:16px 0}
 .cash-save-row{display:flex;align-items:center;justify-content:flex-end;gap:18px;flex-wrap:wrap;margin-top:18px}
+.cash-correction-confirmation{display:grid;gap:10px;margin:16px 0;padding:14px;border:1px solid #e3d6b9;border-radius:9px;background:#fffaf0}
+.cash-correction-confirmation h3{margin:0;color:#4b4030;font-size:14px}
+.cash-correction-confirmation .field>span{color:#5e5038;font-size:12px}
+.cash-correction-confirmation textarea{width:100%;min-height:76px;padding:10px;border:1px solid #cfc2a3;border-radius:7px;font:inherit;resize:vertical}
+.cash-correction-ack{display:flex;align-items:flex-start;gap:9px;color:#4b4030;font-size:12px;line-height:1.45}
+.cash-correction-ack input{margin-top:2px}
 .cash-save-row label{display:flex;align-items:center;gap:8px;font-size:12px;color:#465b49}
 .cash-form-fields{border:0;margin:0;padding:0;min-width:0}
 .cash-chart-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}

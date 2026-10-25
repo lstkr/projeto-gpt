@@ -41,6 +41,7 @@ test('financial corrections preserve snapshots, reject stale writes and support 
  assert.match(page,/cash_closing_correct/);
  assert.match(page,/Recuperar esta versão/);
  assert.match(page,/Corrigir fechamento/);
- assert.match(page,/window\.confirm\('A edição ficará registrada/);
+ assert.match(page,/p_reason:correction\.reason/);
+ assert.match(page,/cashCorrectionConfirmed/);
  assert.match(page,/openCashClosingDetail\(entry\)/);
 });
