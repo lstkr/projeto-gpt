@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
-import { deploymentDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
+import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
@@ -38,7 +38,7 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
-const PREVIEW_UNSAFE = deploymentDatabaseIsBlocked({
+const PREVIEW_UNSAFE = previewDatabaseIsBlocked({
   deploymentEnv: process.env.ESTOQUE_DEPLOY_ENV,
   databaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

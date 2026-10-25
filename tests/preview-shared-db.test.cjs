@@ -9,7 +9,8 @@ const URL = 'https://testref.supabase.co';
 const KEY = 'test_publishable_key_only';
 
 test('Preview and Production accept only the exact configured Supabase ref', async () => {
-  const { deploymentDatabaseIsBlocked } = await POLICY;
+  const { deploymentDatabaseIsBlocked, previewDatabaseIsBlocked } = await POLICY;
+  assert.equal(previewDatabaseIsBlocked, deploymentDatabaseIsBlocked);
   for (const deploymentEnv of ['preview', 'production']) {
     const allowed = { deploymentEnv, databaseUrl: URL, publicKey: KEY, allowedRef: REF };
     assert.equal(deploymentDatabaseIsBlocked(allowed), false);
