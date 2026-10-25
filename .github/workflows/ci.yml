@@ -42,6 +42,9 @@ jobs:
         env:
           VERCEL: '1'
           VERCEL_ENV: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+          NEXT_PUBLIC_SUPABASE_URL: https://cifixture.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-public-placeholder-not-a-key
+          ESTOQUE_SUPABASE_ALLOWED_REF: cifixture
         run: |
           echo "Node $(node --version); npm $(npm --version); VERCEL_ENV=${VERCEL_ENV}"
           npm run build

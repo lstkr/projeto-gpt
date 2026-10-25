@@ -6,6 +6,7 @@ import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { deploymentDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
+import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
