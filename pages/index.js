@@ -2825,9 +2825,8 @@ export default function Home() {
   if (PREVIEW_UNSAFE) {
     return <div className="auth-screen"><section className="auth-card" role="alert">
       <h1>Ambiente bloqueado</h1>
-      <p>O banco configurado nao esta autorizado para este ambiente.</p>
-      <p>Configure NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY e
-        ESTOQUE_SUPABASE_ALLOWED_REF para Preview ou Production na Vercel.</p>
+      <p>A conexão com o banco deste ambiente não está autorizada.</p>
+      <p>Entre em contato com o responsável técnico para verificar a configuração.</p>
     </section></div>;
   }
   if (supabase && !accessLoaded) {
