@@ -21,7 +21,7 @@ test('mobile alerts keep text-only critical actions readable', () => {
 test('all navigation entries preserve an accessible name when sidebar labels are hidden', () => {
   const menu = view.slice(view.indexOf('<nav className="navigation"'), view.indexOf('</nav>'));
   const entries = ['Estoque', 'Contagem de estoque', 'Possíveis duplicatas',
-    'Notas fiscais', 'Movimentações', 'Fechamento de caixa', 'Lista de compras', 'Fornecedores'];
+    'Notas fiscais', 'Movimentações', 'Faturamento', 'Lista de compras', 'Fornecedores'];
   entries.forEach((name) => assert.ok(menu.includes('aria-label="' + name + '"'), name));
   assert.equal((menu.match(/aria-current=/g) || []).length, entries.length);
 });

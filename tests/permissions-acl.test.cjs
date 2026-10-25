@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const acl=fs.readFileSync('db/access-permissions.sql','utf8');
 const pending=fs.readFileSync('db/pending-receipts.sql','utf8');
+const tenantPending=fs.readFileSync('supabase/migrations/20261024010000_tenant_scoped_receipt_actions.sql','utf8');
 const page=fs.readFileSync('pages/index.js','utf8');
 
 test('acl is deny-by-default for unknown permissions and inactive users',()=>{
@@ -32,7 +33,10 @@ test('pending receipt RPCs enforce server-side permission checks',()=>{
  }
  const start=pending.indexOf('create or replace function public.pending_receipt_cancel(');
  const body=pending.slice(start,pending.indexOf('$function$;',start));
- assert.match(body,/actor_role is distinct from 'admin' or not private.has_permission\(actor_id,'fiscal.pending.cancel'\)/);
+ assert.match(body,/actor_role<>'admin' and existing\.owner_id is distinct from actor_id/);
+ const tenantCancel=tenantPending.slice(tenantPending.indexOf('create or replace function public.pending_receipt_cancel('));
+ assert.match(tenantCancel,/actor\.role<>'admin' and existing\.owner_id is distinct from actor\.id/);
+ assert.match(tenantCancel,/actor\.role='admin' and not private\.has_permission\(actor\.id,'fiscal\.pending\.cancel'\)/);
 });
 test('admin configuration uses server-derived identity and audit trail',()=>{
  assert.match(acl,/join private.app_users u on u.id=s.user_id/);
@@ -42,5 +46,5 @@ test('admin configuration uses server-derived identity and audit trail',()=>{
 test('frontend permissions come from server and cannot substitute for authorization',()=>{
  assert.match(page,/supabase.rpc\('inventory_permissions_list'/);
  assert.match(page,/supabase.rpc\('inventory_permission_set'/);
- assert.match(page,/canFiscal\('fiscal.pending.cancel'\)/);
+ assert.match(page,/row\.canCancel&&<button/);
 });

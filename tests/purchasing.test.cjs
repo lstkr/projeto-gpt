@@ -39,19 +39,19 @@ test('historico sem CNPJ ou com vinculos conflitantes nunca associa automaticame
 test('OCR com mesmo codigo mas nome ilegivel exige revisao',async()=>{
  const {attachPreviousPurchases,findHistoricalMatches}=await api;
  const items=[{name:'XYZ XXX OCR',code:'00123',unit:'kg'}];
- const docs=[document('Horti','12345678000190',[{name:'Tomate italiano',code:'123',unit:'kg',productId:'a'}],[{productId:'a',quantity:2,netUnitCost:9}])];
- const d={supplier:'Horti',supplierCnpj:'12345678000190',items};
+ const docs=[document('Horti','11222333000181',[{name:'Tomate italiano',code:'123',unit:'kg',productId:'a'}],[{productId:'a',quantity:2,netUnitCost:9}])];
+ const d={supplier:'Horti',supplierCnpj:'11222333000181',items};
  assert.equal(findHistoricalMatches(d,docs,[p('a','Tomate italiano','123')])[0].confident,false);
  assert.equal(attachPreviousPurchases(d,docs,[p('a','Tomate italiano','123')]).items[0].productId,undefined);
 });
 
 test('sem vinculo inequívoco no documento antigo nao inventa productId',async()=>{
  const {findHistoricalMatches}=await api;
- const notes=[document('Horti','12345678000190',
+ const notes=[document('Horti','11222333000181',
   [{name:'Tomate',code:'1',unit:'kg'},{name:'Uva',code:'2',unit:'kg'}],
   [{productId:'t',quantity:1,netUnitCost:5},{productId:'u',quantity:1,netUnitCost:8}])];
  const candidates=[p('x','Outro tomate','X'),p('y','Tomate extra','Y')];
- const [hit]=findHistoricalMatches({supplier:'Horti',supplierCnpj:'12345678000190',items:[{name:'TOMATE',code:'1',unit:'kg'}]},notes,candidates);
+ const [hit]=findHistoricalMatches({supplier:'Horti',supplierCnpj:'11222333000181',items:[{name:'TOMATE',code:'1',unit:'kg'}]},notes,candidates);
  assert.equal(hit.productId,'');
 });
 
@@ -84,13 +84,55 @@ test('fornecedor costumeiro pode ser indicado manualmente',async()=>{
 test('compras realizadas agrupadas por CNPJ sem misturar fornecedores',async()=>{
  const {purchaseHistoryBySupplier}=await api;
  const docs=[
-  document('Horti A','12345678000190',[{name:'Uva'}],[],22),
-  document('Horti A LTDA','12345678000190',[{name:'Tomate'}],[],30),
-  document('Mercado B','33333333000190',[{name:'Leite'}],[],40)
+  document('Horti A','11222333000181',[{name:'Uva'}],[],22),
+  document('Horti A LTDA','11222333000181',[{name:'Tomate'}],[],30),
+  document('Mercado B','92192798000139',[{name:'Leite'}],[],40)
  ];
  const list=purchaseHistoryBySupplier(docs);
  assert.equal(list.length,2);
  assert.equal(list[0].documents.length,2);
  assert.equal(list[0].total,52);
+});
+
+test('histórico usa nome canônico do cadastro mesmo com OCR diferente e CNPJ mascarado',async()=>{
+ const {purchaseHistoryBySupplier}=await api;
+ const cnpj='92.192.798/0001-39';
+ const directory=[{id:'supplier-rudi',name:'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpj}];
+ const docs=[
+  {...document('RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA','92192798000139',[],[],10),id:'d1'},
+  {...document('Yï”) guPDr BoNOW COMERCIAL DE …','92.192.798/0001-39',[],[],20),id:'d2'}
+ ];
+ const list=purchaseHistoryBySupplier(docs,directory);
+ assert.equal(list.length,1);
+ assert.equal(list[0].supplierId,'supplier-rudi');
+ assert.equal(list[0].name,'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA');
+ assert.equal(list[0].documents.length,2);
+ assert.equal(list[0].total,30);
+});
+
+test('vínculo legado explícito agrupa OCR divergente sem alterar nome fiscal',async()=>{
+ const {purchaseHistoryBySupplier}=await api;
+ const directory=[{id:'supplier-rudi',name:'RUDI BONOW COMERCIAL DE HORTIFRUTIGRANJEIROS LTDA',cnpj:'92192798000139'}];
+ const docs=[
+  {...document('Rudi Bonow','',[],[],10),id:'d1'},
+  {...document('Yï guPDr','',[],[],20),id:'d2'}
+ ];
+ const list=purchaseHistoryBySupplier(docs,directory,[{documentId:'d1',supplierId:'supplier-rudi'},{documentId:'d2',supplierId:'supplier-rudi'}]);
+ assert.equal(list.length,1);
+ assert.equal(list[0].name,directory[0].name);
+ assert.equal(list[0].documents.length,2);
+});
+
+test('legados sem vínculo seguem separados e CNPJs diferentes nunca são unidos',async()=>{
+ const {purchaseHistoryBySupplier}=await api;
+ const docs=[
+  {...document('Fornecedor parecido','',[],[],10),id:'legacy-1'},
+  {...document('Fornecedor parecido','',[],[],20),id:'legacy-2'},
+  {...document('Mesmo nome','92192798000139',[],[],30),id:'cnpj-a'},
+  {...document('Mesmo nome','08939264000117',[],[],40),id:'cnpj-b'}
+ ];
+ const list=purchaseHistoryBySupplier(docs);
+ assert.equal(list.length,4);
+ assert.equal(list.filter((group)=>group.identityVerified).length,2);
 });
 

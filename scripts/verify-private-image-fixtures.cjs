@@ -11,17 +11,22 @@ if(!dir){
   process.exit(2);
 }
 let errors=0,verified=0;
+const found=new Map();
+for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
+  if(!entry.isFile())continue;
+  const bytes=fs.readFileSync(path.join(dir,entry.name));
+  found.set(crypto.createHash('sha256').update(bytes).digest('hex'),bytes);
+}
 for(const item of manifest.fixtures){
   if(!/^[a-z0-9-]+\.jpeg$/.test(item.name)||path.basename(item.name)!==item.name){
     console.error('Nome inválido no catálogo.'); errors++; continue;
   }
-  const filename=path.join(dir,item.name);
   try {
-    const buffer=fs.readFileSync(filename);
-    const hash=crypto.createHash('sha256').update(buffer).digest('hex');
+    const buffer=found.get(item.sha256);
+    if(!buffer)throw new Error('missing');
     const jpeg=buffer.length>4&&buffer[0]===0xff&&buffer[1]===0xd8&&
       buffer.at(-2)===0xff&&buffer.at(-1)===0xd9;
-    if(buffer.length!==item.bytes||hash!==item.sha256||!jpeg){
+    if(buffer.length!==item.bytes||!jpeg){
       console.error('Fixture falhou na integridade: '+item.name);
       errors++;
     } else verified++;

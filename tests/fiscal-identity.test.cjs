@@ -5,7 +5,7 @@ const issuer = '11222333000181';
 const product = {id:'egg',name:'Ovo branco',unit:'un',supplierCodes:[{cnpj:issuer,code:'031232'}]};
 
 test('issuer recognition validates checksum and never selects recipient or ambiguous header', async()=>{
-  const {validSupplierCnpj,extractIssuerCnpj} = await api;
+  const {validSupplierCnpj,extractIssuerCnpj,formatSupplierCnpj} = await api;
   assert.equal(validSupplierCnpj(issuer),true);
   assert.equal(validSupplierCnpj('11111111111111'),false);
   assert.equal(validSupplierCnpj('11222333000180'),false);
@@ -14,7 +14,11 @@ test('issuer recognition validates checksum and never selects recipient or ambig
   assert.equal(extractIssuerCnpj('DOCUMENTO AUXILIAR DA NOTA FISCAL DE CONSUMIDOR ELETRÔNICA\nEmitente CNPJ 11.222.333/0001-81'),issuer);
   assert.equal(extractIssuerCnpj('CNPJ 11111111111111'),'');
   assert.equal(extractIssuerCnpj('CNPJ 12.ABC.345/01DE-35'),'12ABC34501DE35');
+  assert.equal(extractIssuerCnpj('HORTI LTDA\nCNPJ:\n92 .192.798/0001-39'),'92192798000139');
   assert.equal(validSupplierCnpj('12ABC34501DE35'),false);
+  assert.equal(formatSupplierCnpj('87397865000979'),'87.397.865/0009-79');
+  assert.equal(formatSupplierCnpj('12ABC34501DE35'),'12.ABC.345/01DE-35');
+  assert.equal(formatSupplierCnpj('87-397'),'87.397');
 });
 
 test('supplier code match requires valid issuer and a unique catalog target', async()=>{

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import UserDirectoryEditor from './UserDirectoryEditor';
 
 // invoke(name, args) must use the authenticated RPC transport. The database owns
 // all role/tenant checks; no password is stored in browser persistence.
@@ -124,6 +125,7 @@ export default function TenantAdministration({ invoke, user, mustChangePassword,
         <button className="btn" disabled={busy}>Redefinir senha e encerrar sessões</button>
       </form>
       <h3>Usuários cadastrados</h3><ul>{directory.users.map((record) => <li key={record.id}>{record.displayName} · {record.username} · {record.role === 'superadmin' ? 'DBA' : record.role === 'admin' ? 'Gestor' : 'Funcionário'}{record.active ? '' : ' · Inativo'}</li>)}</ul>
+      <UserDirectoryEditor users={directory.users} user={user} invoke={invoke} onChanged={load}/>
     </>}
   </section>;
 }

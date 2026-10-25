@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "notes": "Transcrições manualmente revisadas a partir de 10 fotos, sem CNPJ/CPF, chaves NFC-e, QR, fornecedor ou dados de cliente; NÃO medem precisão OCR na imagem. Fotografias originais armazenadas apenas na Biblioteca privada do usuário (/Estoque+/Testes OCR).",
-  "photos": 10,
-  "documents": 11,
+  "notes": "Transcrições humanas revisadas de 13 fotos e 14 documentos, com campos fiscais e pessoais removidos. Valores e linhas necessários à regressão permanecem. Estes goldens textuais não equivalem a OCR automatizado sobre pixels. Originais em acervo privado.",
+  "photos": 13,
+  "documents": 14,
   "combined_photo_documents": 2,
   "cash": [
     {
@@ -621,6 +621,104 @@
         "products": 4,
         "total": "45,05",
         "manjericaoUnit": "ml"
+      }
+    },
+    {
+      "kind": "danfe_a4",
+      "photo": "fiscal-04-danfe.jpeg",
+      "case_id": "danfe-a4-three-products",
+      "document_index": 0,
+      "review_notes": "Transcrição revisada visualmente. Identificadores do emitente/cliente, CNPJ, chave fiscal, endereço e códigos de barras foram excluídos. Documento de página inteira com tabela alinhada; testar quantidade, unidade e valor por coluna.",
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO QTD UN VL UNIT VL TOTAL",
+        "198 Quiche Carne de Panela - 10 unid",
+        "20,00 UN 5,20 104,00",
+        "200 Quiche Frango - 10 unid",
+        "20,00 UN 4,80 96,00",
+        "199 Quiche 4 Queijos - 10 unid",
+        "20,00 UN 5,20 104,00",
+        "VALOR TOTAL DOS PRODUTOS 304,00",
+        "VALOR TOTAL DA NOTA 304,00"
+      ],
+      "expected": {
+        "products": 3,
+        "total": "304,00",
+        "subtotal": "304,00",
+        "discount": "0,00",
+        "issueDate": "22/10/2026",
+        "invoiceNumber": "32664"
+      }
+    },
+    {
+      "kind": "nfce_contingency",
+      "photo": "fiscal-05-cupom-termico.jpeg",
+      "case_id": "cupom-contingencia-seven-items",
+      "document_index": 0,
+      "review_notes": "Transcrição revisada visualmente. Emitente, CNPJ/chave/QR, consumidor, operador e códigos fiscais foram removidos. Há 7 itens e contingência pendente. Dois nomes de produto permanecem mascarados por baixa nitidez. Totais impressos foram lidos; não somar subtotal e desconto ao total a pagar. A multiplicação 11,115 × 21,90 resulta em 243,42 e a soma das linhas transcritas difere do subtotal impresso; o alerta é intencional e deve persistir para revisão.",
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO QTD UN VL UNIT VL ITEM",
+        "001 ITEM_01 FATIADO 100G",
+        "5 UN 11,99 59,95",
+        "002 ITEM_02 500G",
+        "6 UN 7,99 47,94",
+        "desconto item 002 5,50",
+        "003 ITEM_03 INTEGRAL PET",
+        "12 UN 5,19 62,28",
+        "004 QUEIJO MUSSARELA INTERFOLHADO KG",
+        "9,868 KG 39,90 393,73",
+        "desconto item 004 60,31",
+        "005 PRESUNTO MAGRO COZIDO KG",
+        "11,115 KG 21,90 243,42",
+        "desconto item 005 22,13",
+        "006 BEBIDA DE UVA 1,5L",
+        "1 UN 11,98 11,98",
+        "007 ITEM_07",
+        "1 UN 10,00 10,00",
+        "QTD TOTAL DE ITENS 7",
+        "VALOR TOTAL 829,79",
+        "DESCONTO 87,94",
+        "VALOR A PAGAR 741,85",
+        "EMITIDA EM CONTINGÊNCIA Pendente Autorização"
+      ],
+      "expected": {
+        "products": 7,
+        "total": "741,85",
+        "subtotal": "829,79",
+        "discount": "87,94",
+        "issueDate": "22/10/2026",
+        "contingency": true
+      }
+    },
+    {
+      "kind": "nfce_termica",
+      "photo": "fiscal-06-contingencia.jpeg",
+      "case_id": "contingency-five-items",
+      "document_index": 0,
+      "review_notes": "Transcrição revisada visualmente. Dados de emitente, CNPJ/chave/QR, endereço e operador excluídos. Documento em contingência com cinco itens; a linha de ovos mantém embalagem CX para evitar conversão indevida.",
+      "transcribed_lines": [
+        "CÓDIGO DESCRIÇÃO QTD UN VL UNIT VL TOTAL",
+        "465 COENTRO",
+        "1,0000 ML 4,0000 4,00",
+        "682 TOMATE CEREJA",
+        "1,0000 KG 19,4800 19,48",
+        "836 TOMATE",
+        "1,0000 KG 11,5600 11,56",
+        "980 ALECRIM",
+        "1,0000 UN 4,0000 4,00",
+        "1629 OVOS BRANCO 6 X 30 UN",
+        "1,0000 CX 100,0000 100,00",
+        "QTD TOTAL DE ITENS 5",
+        "VALOR TOTAL R$ 139,04",
+        "EMITIDA EM CONTINGÊNCIA Pendente Autorização"
+      ],
+      "expected": {
+        "products": 5,
+        "total": "139,04",
+        "quantity": 1,
+        "unit": "ml",
+        "issueDate": "22/10/2026",
+        "contingency": true,
+        "lastUnit": "cx"
       }
     }
   ]

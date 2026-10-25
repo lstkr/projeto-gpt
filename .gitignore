@@ -7,6 +7,8 @@ out/
 .DS_Store
 npm-debug.log*
 public/vendor/pdf.worker-*.min.js
+public/vendor/pdf.worker-*.min.mjs
+/*.traineddata*
 tests/browser/artifacts/
 
 
