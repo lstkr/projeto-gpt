@@ -11,7 +11,7 @@ concurrency:
 jobs:
   postgres:
     name: Fiscal integrity / PostgreSQL ${{ matrix.postgres }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
       fail-fast: false
@@ -42,7 +42,7 @@ jobs:
         run: python3 tests/sql/run-fiscal-integrity.py
 
   application-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
