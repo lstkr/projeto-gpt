@@ -15,13 +15,9 @@ await db.exec(`create schema auth; create table auth.users(id uuid primary key);
  insert into auth.users values ('00000000-0000-4000-8000-0000000000a1');
  create schema storage; create table storage.buckets(id text primary key); create table storage.objects(id uuid primary key);
  insert into storage.buckets values ('fixture-bucket'); insert into storage.objects values ('00000000-0000-4000-8000-0000000000a2');`);
-for (const file of ['db/schema.sql','db/access-permissions.sql','db/pending-receipts.sql','db/cash-closing.sql',
- 'supabase/migrations/20261019201520_inventory_validate_session.sql',
- 'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
- 'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
- 'supabase/migrations/20261021232050_tenant_access.sql',
- 'supabase/migrations/20261021233206_count_guard_search_path.sql',
- 'supabase/migrations/20261022020602_cash_closing_integrity.sql']) {
+const migrations = (await fs.readdir('supabase/migrations')).filter(file => file.endsWith('.sql')).sort();
+for (const migration of migrations) {
+ const file = path.join('supabase/migrations', migration);
  try {
   const source=await fs.readFile(file,'utf8');
   if(file.endsWith('_tenant_access.sql')) {

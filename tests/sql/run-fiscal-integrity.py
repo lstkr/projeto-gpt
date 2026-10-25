@@ -29,9 +29,7 @@ def file(name):
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database is not empty'
 sql('create role anon nologin; create role authenticated nologin; create schema extensions;')
-file('db/schema.sql')
-file('db/access-permissions.sql')
-file('db/pending-receipts.sql')
+file('supabase/migrations/20261019000000_legacy_baseline.sql')
 migration = ROOT / 'supabase/migrations/20261020221500_fiscal_write_integrity.sql'
 sql(migration.read_text())
 file('tests/sql/fiscal-write-integrity.sql')

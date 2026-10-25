@@ -46,7 +46,7 @@ Os endpoints fiscais externos exigem **sessão Estoque+ válida** antes de consu
 
 O projeto usa Supabase. A linha JSONB em `public.shared_inventory` guarda o estado compartilhado. RLS bloqueia acesso direto à tabela; RPCs validam a sessão e aplicam regras por papel. As tabelas internas ficam em `private`.
 
-O esquema canônico está em [db/schema.sql](db/schema.sql). As senhas reais de produção não devem ser adicionadas ao repositório.
+O esquema canônico está nas [migrações versionadas](supabase/migrations), aplicadas em ordem pelo timestamp. A [baseline histórica](docs/baseline-replay.md) permite reconstruir um banco novo e vazio sem dump remoto. As senhas reais de produção não devem ser adicionadas ao repositório.
 
 O Supabase Security Advisor foi consultado após as mudanças de permissão e não retornou alertas.
 
@@ -62,12 +62,14 @@ O Supabase Security Advisor foi consultado após as mudanças de permissão e n�
 
 ## Aplicação Next.js
 
-Requisitos: Node.js 20.9 ou superior.
+Requisitos: Node.js 22.x, conforme `package.json` e CI.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
+
+Para validar, execute `npm test` e `npm run build` separadamente. A instalação de banco novo usa somente `supabase/migrations/*.sql`, em ordem lexical; consulte o [replay em PostgreSQL descartável 15/17](docs/baseline-replay.md) antes de instalar. Os testes de banco exigem instância local vazia e recusam conexões remotas. Não reaplique a baseline em ambientes existentes.
 
 As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem ser definidas no ambiente. O projeto usa uma publishable key pública no cliente. Nunca incluir uma chave `service_role` ou secret key em código de frontend.
 
@@ -106,7 +108,7 @@ A operação mantém o histórico original de contagens físicas (fotografia do 
 
 Na conferência fiscal, se um código já existe mas a descrição está muito diferente, o sistema exige vincular um produto existente ou marcar explicitamente que o cadastro é distinto; não cria mais outro registro silenciosamente por essa divergência.
 
-**Implantação:** aplicar a nova definição SQL do arquivo `db/schema.sql` ao banco já existente (especificamente a atualização de `private.inventory_save_impl` e a criação de `public.inventory_merge_products`) antes de usar o botão de consolidação. Nunca execute um reset do banco, que apagaria o estoque e pode comprometer os vínculos.
+**Implantação:** validar as migrações versionadas e os contratos de `private.inventory_save_impl` e `public.inventory_merge_products` antes de usar o botão de consolidação. Em banco existente, comparar o histórico aplicado e planejar somente migrações pendentes compatíveis; não reaplicar a baseline histórica. Nunca execute um reset do banco, que apagaria o estoque e pode comprometer os vínculos.
 
 
 ## Conferência final, compras por categoria e histórico de fornecedores
@@ -131,5 +133,5 @@ A visualização gráfica mostra faturamentos **diários** do mês ou ano escolh
 
 **Importante:** o modelo corresponde às rubricas do PDF de 10/10/2026, mas não presume que suprimentos sejam vendas ou que a diferença do caixa digital do PDF represente uma perda financeira. O relatório original indica R$ 569,00 na seção NFC-e, R$ 151,00 em cartões POS e R$ 241,50 tanto em suprimentos quanto em sangrias. O saldo físico depende do momento em que o numerário foi contado.
 
-**Migrações necessárias:** em banco novo, aplicar os SQLs base na ordem descrita na seção de instalação. No projeto com acesso multinegócio, aplicar `supabase/migrations/20261022020602_cash_closing_integrity.sql` depois da migração de tenants antes de publicar a interface correspondente. A migração preserva os fechamentos existentes e não exige reset de dados ou usuários.
+**Migrações necessárias:** em banco novo e vazio, aplicar `supabase/migrations/*.sql` em ordem lexical, começando pela baseline. No projeto com acesso multinegócio, validar que `supabase/migrations/20261022020602_cash_closing_integrity.sql` foi aplicada depois da migração de tenants antes de publicar a interface correspondente. A migração preserva os fechamentos existentes e não exige reset de dados ou usuários. Bancos existentes exigem análise do histórico e backup antes de qualquer alteração.
 

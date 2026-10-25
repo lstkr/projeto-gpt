@@ -33,7 +33,7 @@ def file(path):
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database must be empty'
 sql("create role anon nologin; create role authenticated nologin; create schema extensions;")
-file('db/schema.sql')
+file('supabase/migrations/20261019000000_legacy_baseline.sql')
 migration = next(ROOT.glob('supabase/migrations/*_inventory_validate_session.sql'))
 file(migration)
 file('tests/sql/inventory-validate-session.sql')
