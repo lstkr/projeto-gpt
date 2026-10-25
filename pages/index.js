@@ -38,15 +38,11 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
-const PREVIEW_DEPLOY = process.env.ESTOQUE_DEPLOY_ENV === 'preview';
-// Fail closed unless Preview uses a separate database or explicitly allows
-// the existing one on this homologation branch. This is not an auth bypass.
-const PREVIEW_UNSAFE = PREVIEW_DEPLOY && previewDatabaseIsBlocked({
+const PREVIEW_UNSAFE = previewDatabaseIsBlocked({
   deploymentEnv: process.env.ESTOQUE_DEPLOY_ENV,
   databaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  allowSharedDatabase: process.env.ESTOQUE_SHARED_DB_PREVIEW === 'true',
-  branch: process.env.ESTOQUE_PREVIEW_BRANCH
+  allowedRef: process.env.ESTOQUE_SUPABASE_ALLOWED_REF
 });
 const HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE && Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -2901,12 +2897,9 @@ export default function Home() {
 
   if (PREVIEW_UNSAFE) {
     return <div className="auth-screen"><section className="auth-card" role="alert">
-      <h1>Ambiente de homologação bloqueado</h1>
-      <p>Esta prévia não possui autorização explícita para acessar o banco configurado.
-        Por segurança, o acesso ao estoque está bloqueado.</p>
-      <p>Para homologar com o banco existente, configure as variáveis Preview na Vercel,
-        inclusive a liberação controlada da branch de integração, e gere uma nova implantação.
-        Os logins e permissões continuam sendo verificados pelo banco.</p>
+      <h1>Ambiente bloqueado</h1>
+      <p>A conexão com o banco deste ambiente não está autorizada.</p>
+      <p>Entre em contato com o responsável técnico para verificar a configuração.</p>
     </section></div>;
   }
   if (supabase && !accessLoaded) {

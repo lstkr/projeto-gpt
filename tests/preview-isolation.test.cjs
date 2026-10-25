@@ -4,7 +4,7 @@ const fs = require('node:fs');
 
 test('a Vercel Preview with production or missing Supabase variables is rejected before session validation', async () => {
   const { requireInventorySession } = await import('../lib/server/inventory-session.mjs');
-  const names = ['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY'];
+  const names = ['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','ESTOQUE_SUPABASE_ALLOWED_REF'];
   const previous = Object.fromEntries(names.map(k=>[k,process.env[k]]));
   const reply = () => ({
     code: 0, status(code) {this.code = code; return this;},
@@ -12,6 +12,7 @@ test('a Vercel Preview with production or missing Supabase variables is rejected
   });
   try {
     process.env.VERCEL_ENV = 'preview';
+    process.env.ESTOQUE_SUPABASE_ALLOWED_REF = 'zybnekctgrjmygdkuwyr';
     for (const [url,key] of [
       [undefined,undefined],
       ['https://dpauqdihvhbbaellwjav.supabase.co','sb_publishable_a'],
@@ -40,9 +41,9 @@ test('a Vercel Preview with production or missing Supabase variables is rejected
 test('UI and Next build environment include a fail-closed Preview gate', () => {
   const nextConfig=fs.readFileSync('next.config.js','utf8');
   const ui=fs.readFileSync('pages/index.js','utf8');
-  assert.match(nextConfig,/ESTOQUE_DEPLOY_ENV:\s*process\.env\.VERCEL_ENV/);
-  assert.match(ui,/const PREVIEW_UNSAFE = PREVIEW_DEPLOY/);
+  assert.match(nextConfig,/const deployEnv = process\.env\.VERCEL_ENV/);
+  assert.match(ui,/const PREVIEW_UNSAFE = previewDatabaseIsBlocked/);
   assert.match(ui,/if \(PREVIEW_UNSAFE\)/);
   assert.match(ui,/HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE/);
-  assert.match(ui,/Ambiente de homologação bloqueado/);
+  assert.match(ui,/Ambiente bloqueado/);
 });
