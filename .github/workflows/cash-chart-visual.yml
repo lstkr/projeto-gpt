@@ -39,8 +39,10 @@ jobs:
         run: |
           npm run start > /tmp/estoque-visual-server.log 2>&1 &
           node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
-      - name: Verify layout across viewports
-        run: node tests/browser/cash-chart-visual.cjs
+      - name: Verify layout across viewports and real tab focus
+        run: |
+          command -v xvfb-run
+          xvfb-run -a env ESTOQUE_VISUAL_HEADED=1 node tests/browser/cash-chart-visual.cjs
       - name: Verify A4 and thermal stock-count layouts
         run: node tests/browser/count-print-visual.cjs
       - name: Preserve synthetic visual QA screenshots
