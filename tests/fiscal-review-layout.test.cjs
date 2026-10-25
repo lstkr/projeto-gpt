@@ -48,3 +48,12 @@ test('notas prontas ficam disponíveis para conferência durante OCR de outras n
   assert.doesNotMatch(documents, /disabled=\{busy\} onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
   assert.ok(view.includes('await refreshPending();'), 'a fila é atualizada durante o processamento');
 });
+
+
+test('conversão de unidades usa fator explícito e pode ser salva por fornecedor e código', () => {
+  assert.ok(review.includes('Fator de conversão da linha'));
+  assert.ok(review.includes('Entrada calculada:'));
+  assert.ok(review.includes('o sistema não presume o conteúdo de caixas ou pacotes'));
+  assert.ok(review.includes('Salvar este fator para o mesmo código e fornecedor'));
+  assert.ok(view.includes('stockConversion'));
+});

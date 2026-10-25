@@ -522,8 +522,8 @@ function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
 function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
   if (supplierAliasProducts(item, catalog, supplierCnpj).length > 1) return null;
   const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
-  if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
-    return bySupplier;
+  if (bySupplier && (normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit) ||
+      supplierAliasConversion(item, bySupplier, supplierCnpj))) return bySupplier;
   // Internal SKUs and descriptions are only review hints. Fiscal codes are
   // issuer-scoped text; padding is not proof of equivalence.
   return null;
@@ -1819,13 +1819,15 @@ export default function Home() {
         normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.originalName ?? it.name))
       issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
         '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
-    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
+    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit) && !supplierAliasConversion(it, aliasProduct, draft.supplierCnpj))
       issues.push('Código fiscal cadastrado em outra unidade. Selecione o produto interno e informe a quantidade convertida.');
     if (targetProduct && normalizeReceiptName(targetProduct.name) !== normalizeReceiptName(it.name))
       issues.push('Produto da nota associado a cadastro de outro nome: confira o vínculo.');
     const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
-    if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
-    if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
+    const unitFactor = stockMismatch ? (Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, targetProduct.unit)) : 1;
+    const convertedQuantity = unitFactor ? Number(it.quantity) * unitFactor : 0;
+    if (stockMismatch && !(Number.isFinite(convertedQuantity) && convertedQuantity > 0 && convertedQuantity <= 1000000000)) issues.push('Informe um fator de conversão válido para a unidade cadastrada no estoque.');
+    if (stockMismatch && unitFactor) issues.push('Conversão de unidade aplicada: confira o fator e a quantidade calculada.');
 
     const row = officialComparison.find((r) => r.ocrIndex === index);
     if (row && row.issues.length) issues.push(...row.issues);
@@ -3195,11 +3197,12 @@ export default function Home() {
     }
     if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
       const mapped = findSupplierAliasProduct(it, products, draft.supplierCnpj);
-      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
+      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit) && !supplierAliasConversion(it, mapped, draft.supplierCnpj)) return true;
       const target = products.find((p) => p.id === it.productId);
-      return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
-        !(Number(it.stockQuantity) > 0));
-    })) { setError('Selecione o produto interno e informe sua quantidade quando a unidade fiscal for diferente.'); return; }
+      if (!target || normalizeReceiptUnit(target.unit) === normalizeReceiptUnit(it.unit)) return false;
+      const factor = Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, target.unit);
+      return !(Number.isFinite(factor) && factor > 0 && factor <= 1000000 && Number(it.quantity) * factor <= 1000000000);
+    })) { setError('Selecione o insumo e informe ou confira o fator de conversão para a unidade do estoque.'); return; }
     if (!draft || !draft.items.length || draft.items.some((it) =>
       !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
       !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
@@ -3259,16 +3262,23 @@ export default function Home() {
       const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
       const index = nextProducts.findIndex((p) => it.productId
         ? p.id === it.productId : p.id === automaticProduct?.id);
-      const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
-        ? Number(it.stockQuantity) : Number(it.quantity);
+      const targetProduct = index >= 0 ? nextProducts[index] : null;
+      const hasUnitMismatch = Boolean(targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit));
+      const conversionFactor = hasUnitMismatch ? (Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, targetProduct.unit)) : 1;
+      const stockQuantity = Number(it.quantity) * conversionFactor;
       const netUnitCost = Math.round(netLine / stockQuantity * 10000) / 10000;
       let productId;
       if (index >= 0) {
         const old = nextProducts[index];
         productId = old.id;
         const supplierCodes = [...(old.supplierCodes || [])];
-        if (issuer && fiscalCode && !supplierCodes.some((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode))
+        let aliasIndex = supplierCodes.findIndex((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode);
+        if (issuer && fiscalCode && aliasIndex < 0) {
           supplierCodes.push({ cnpj: issuer, code: it.code });
+          aliasIndex = supplierCodes.length - 1;
+        }
+        if (issuer && fiscalCode && hasUnitMismatch && it.saveUnitConversion && aliasIndex >= 0)
+          supplierCodes[aliasIndex] = { ...supplierCodes[aliasIndex], unitConversion: { invoiceUnit: it.unit, stockUnit: old.unit, factor: conversionFactor } };
         nextProducts[index] = { ...old, supplierCodes,
           stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
           cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost,
@@ -3279,9 +3289,10 @@ export default function Home() {
       }
       // Even when the reviewer explicitly selected "novo cadastro", never
       // persist the sentinel; an invoice must reference the real product ID.
-      items[itemIndex] = { ...it, productId };
+      items[itemIndex] = { ...it, productId, ...(hasUnitMismatch ? { stockConversion: { invoiceQuantity: Number(it.quantity), invoiceUnit: it.unit, stockQuantity, stockUnit: targetProduct.unit, factor: conversionFactor } } : {}) };
       const movementId = uid();
-      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
+      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost,
+        ...(hasUnitMismatch ? { invoiceQuantity: Number(it.quantity), invoiceUnit: it.unit, stockUnit: targetProduct.unit, conversionFactor } : {}) });
       nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow() });
     });
     setProducts(nextProducts);
@@ -3797,14 +3808,15 @@ export default function Home() {
                       </div>}
                       {(() => {
                         const target = products.find((p) => p.id === it.productId);
-                        return target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit)
-                          ? <label style={{display:'block',marginTop:6,fontSize:12,color:'#92400e'}}>
-                            ⚠ Quantidade real no estoque ({target.unit}) *
-                            <input className="inline-input small-field" type="number" min="0.001" step="any"
-                              value={it.stockQuantity || ''} onChange={(e) => changeItem(i,'stockQuantity',e.target.value)}
-                              placeholder={'Quantidade em ' + target.unit}/>
-                            </label>
-                          : null;
+                        if (!target || normalizeReceiptUnit(target.unit) === normalizeReceiptUnit(it.unit)) return null;
+                        const automaticFactor = receiptUnitFactor(it.unit, target.unit);
+                        const factor = Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : automaticFactor;
+                        const converted = factor ? Number(it.quantity) * factor : null;
+                        return <div style={{display:'grid',gap:5,marginTop:7,fontSize:12,color:'#92400e'}}>
+                          <label>Conversão: 1 {it.unit} = <input className="inline-input small-field" aria-label={'Fator de conversão da linha '+(i+1)} type="number" min="0.000001" max="1000000" step="any" value={factor || ''} readOnly={automaticFactor !== null} onChange={(e) => changeItem(i,'conversionFactor',e.target.value)} placeholder={'quantos '+target.unit}/> {target.unit}</label>
+                          <span>{converted && Number.isFinite(converted) ? 'Entrada calculada: '+qty(converted)+' '+target.unit : 'Informe o fator; o sistema não presume o conteúdo de caixas ou pacotes.'}</span>
+                          {!automaticFactor && it.code && validSupplierCnpj(draft.supplierCnpj) && <label style={{display:'flex',gap:6,alignItems:'flex-start'}}><input type="checkbox" checked={Boolean(it.saveUnitConversion)} onChange={(e)=>changeItem(i,'saveUnitConversion',e.target.checked)}/><span>Salvar este fator para o mesmo código e fornecedor após o lançamento revisado</span></label>}
+                        </div>;
                       })()}
                     </td>
                     <td className="review-check-cell">
