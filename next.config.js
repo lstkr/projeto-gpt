@@ -1,9 +1,7 @@
-// Expose only non-secret deployment metadata, never session tokens or credentials.
-// Shared-db Preview is disabled unless the operator explicitly opts in.
+// Only non-secret deployment metadata is exposed to the browser bundle.
 module.exports = {
   env: {
     ESTOQUE_DEPLOY_ENV: process.env.VERCEL_ENV || '',
-    ESTOQUE_SHARED_DB_PREVIEW: process.env.ESTOQUE_ALLOW_SHARED_DB_PREVIEW === 'true' ? 'true' : 'false',
-    ESTOQUE_PREVIEW_BRANCH: process.env.VERCEL_GIT_COMMIT_REF || ''
+    ESTOQUE_SUPABASE_ALLOWED_REF: process.env.ESTOQUE_SUPABASE_ALLOWED_REF || ''
   }
 };
