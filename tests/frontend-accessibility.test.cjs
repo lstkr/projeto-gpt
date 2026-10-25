@@ -9,6 +9,33 @@ const styles = readFileSync(join(root, 'styles/globals.css'), 'utf8');
 const dialogHook = readFileSync(join(root, 'components/useAccessibleDialog.js'), 'utf8');
 const focusHook = readFileSync(join(root, 'components/useAccessibleFocus.js'), 'utf8');
 
+function contrastRatio(foreground, background) {
+  const luminance = (color) => {
+    const channels = color.match(/[0-9a-f]{2}/gi).map((channel) => parseInt(channel, 16) / 255);
+    const [red, green, blue] = channels.map((channel) => channel <= 0.04045
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  return (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+}
+
+test('stock alerts meet readable contrast, size and persistent text requirements', () => {
+  const background = '#fffaf0';
+  assert.ok(contrastRatio('#655b46', background) >= 4.5);
+  assert.ok(contrastRatio('#785d1b', background) >= 4.5);
+  const title = styles.match(/\.alert-strip b\s*\{([^}]+)\}/)?.[1] || '';
+  const message = styles.match(/\.alert-strip p\s*\{([^}]+)\}/)?.[1] || '';
+  assert.match(title, /font-size:\s*12px/);
+  assert.match(message, /font-size:\s*12px/);
+  assert.doesNotMatch(message, /overflow:\s*hidden|text-overflow:\s*ellipsis|white-space:\s*nowrap/);
+  assert.match(view, /low\.length > 0 && <section className="alert-strip" role="status"/);
+  assert.match(view, /className="alert-strip" role="alert"/);
+});
+
 test('mobile alerts keep text-only critical actions readable', () => {
   assert.match(view, /Contagem obrigatória pendente/);
   assert.match(view, />Conferir agora<\/button>/);
