@@ -7,6 +7,7 @@ const root = join(__dirname, '..');
 const view = readFileSync(join(root, 'pages/index.js'), 'utf8');
 const styles = readFileSync(join(root, 'styles/globals.css'), 'utf8');
 const dialogHook = readFileSync(join(root, 'components/useAccessibleDialog.js'), 'utf8');
+const focusHook = readFileSync(join(root, 'components/useAccessibleFocus.js'), 'utf8');
 
 test('mobile alerts keep text-only critical actions readable', () => {
   assert.match(view, /Contagem obrigatória pendente/);
@@ -95,4 +96,24 @@ test('permissions move into the manager profile menu without changing their page
  assert.doesNotMatch(menu, /aria-label="Gestor · Permissões"/);
  assert.match(view, /currentUser\?\.role === 'admin' && <button type="button" role="menuitem" onClick=\{\(\)=>\{setAccountOpen\(false\);setMenuOpen\(false\);setView\('permissions'\);\}\}>Permissões<\/button>/);
  assert.match(view, /view === 'permissions'/);
+});
+
+
+test('focus moves once to opened tabs and panels, with opener restoration', () => {
+  assert.ok(view.includes("useAccessibleFocus(view, '.content')"));
+  assert.ok(view.includes("useAccessibleFocus(cashEntryMode, '.cash-entry:not(.cash-entry-collapsed)'"));
+  assert.ok(view.includes('data-focus-scope="manual-entry"'));
+  assert.ok(view.includes('data-focus-scope="manual-new"'));
+  assert.ok(view.includes('data-focus-scope="count"'));
+  assert.ok(focusHook.includes('previousKey.current === key'));
+  assert.ok(focusHook.includes('requestAnimationFrame'));
+  assert.ok(focusHook.includes('restoreFocus && opener.current?.isConnected'));
+  assert.ok(focusHook.includes("scrollIntoView({ block: 'nearest'"));
+  assert.ok(focusHook.includes("container.closest('[inert]')"));
+});
+
+test('dialog focus applies to every modal surface, including portaled dialogs', () => {
+  assert.ok(dialogHook.includes("const DIALOG_SELECTOR = '[role=\"dialog\"][aria-modal=\"true\"]'"));
+  assert.ok(!dialogHook.includes('.overlay [role="dialog"'));
+  assert.ok(dialogHook.includes('focusFirstRelevant(dialog)'));
 });

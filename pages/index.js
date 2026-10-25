@@ -4,6 +4,7 @@ import CountPrintAction from '../components/CountPrintAction';
 import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
+import { useAccessibleFocus } from '../components/useAccessibleFocus';
 import { createClient } from '@supabase/supabase-js';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
@@ -1391,6 +1392,11 @@ export default function Home() {
       setModal('');
     }
   });
+  useAccessibleFocus(view, '.content');
+  useAccessibleFocus(cashEntryMode, '.cash-entry:not(.cash-entry-collapsed)', { restoreFocus: true });
+  useAccessibleFocus(manualMode, '[data-focus-scope="manual-entry"]', { restoreFocus: true });
+  useAccessibleFocus(manualNew, '[data-focus-scope="manual-new"]', { restoreFocus: true });
+  useAccessibleFocus(view === 'count' && Boolean(countDraft), '[data-focus-scope="count"]', { restoreFocus: true });
 
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
@@ -3512,7 +3518,7 @@ export default function Home() {
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
-        {view === 'count' && <section className="panel" style={{padding:20}}>
+        {view === 'count' && <section className="panel" data-focus-scope="count" style={{padding:20}}>
           <h2>Contagem física do estoque</h2>
           <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
           <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
@@ -3660,7 +3666,7 @@ export default function Home() {
           </section>
           {error && <div ref={errorAlertRef} className="error" role="alert" tabIndex={-1}><Icon type="alert" size={18}/><span>{error}</span><button type="button" aria-label="Dispensar erro" onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
-          {manualMode && <section className="panel manual-entry-panel">
+          {manualMode && <section className="panel manual-entry-panel" data-focus-scope="manual-entry">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
             <form onSubmit={saveManualEntry}>
               <label className="field full"><span>Buscar produto existente por nome ou código</span><input value={manualSearch} autoFocus onChange={(e)=>{setManualSearch(e.target.value);setManualChosenId('');setManualNew(false);setError('');}} placeholder="Ex.: Café em grãos, leite, 00123..."/></label>
@@ -3672,7 +3678,7 @@ export default function Home() {
                 {products.length>30&&!manualSearch&&<small>Exibindo 30 produtos. Digite um nome ou código para pesquisar todos os cadastros.</small>}
               </div>
               {currentUser?.role==='admin'&&<button className="btn secondary manual-new-toggle" type="button" onClick={()=>{setManualNew((v)=>!v);setManualChosenId('');setError('');}}>{manualNew?'← Voltar para o catálogo':'Não encontrei — cadastrar um novo produto'}</button>}
-              {manualNew&&currentUser?.role==='admin'&&<div className="manual-new-fields">
+              {manualNew&&currentUser?.role==='admin'&&<div className="manual-new-fields" data-focus-scope="manual-new">
                 <h3>Dados do novo produto</h3>
                 <div className="form-grid">
                   <label className="field"><span>Descrição *</span><input required value={manualForm.name} onChange={(e)=>setManualForm({...manualForm,name:e.target.value})}/></label>
