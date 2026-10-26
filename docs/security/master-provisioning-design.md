@@ -25,7 +25,7 @@ A MASTER só autoriza bootstrap do primeiro superadmin, quando ainda não existe
 
 ## Alternativa e recomendação
 
-**Alternativa:** criar usuários somente por script do proprietário, conectado ao banco por credencial server-side e sem tela pública. Prós: menor superfície pública e sem risco de lockout por terceiros; contras: exige operação manual e acesso técnico em cada cadastro.
+**Alternativa operacional para os dois fluxos excepcionais:** utilitário privado do proprietário, sem tela pública, para o primeiro bootstrap ou recuperação. Não substituir o cadastro rotineiro: gestores/funcionários continuam usando sessão válida de superadmin e as RPCs existentes. A alternativa reduz superfície pública, mas exige operação técnica autorizada no evento excepcional.
 
 **Recomendação:** usar MASTER somente nos dois fluxos excepcionais, com rota desligável, limite por origem e auditoria. Manter utilitário privado do proprietário como recuperação operacional; rotina de gestores/funcionários usa sessão de superadmin. Implementação somente depois da aprovação explícita deste desenho, em PR separado.
 
