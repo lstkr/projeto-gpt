@@ -28,8 +28,6 @@ sql("create schema auth; create table auth.users(id uuid primary key); "
     "create table storage.objects(id uuid primary key); "
     "insert into storage.buckets values ('fixture-bucket'); "
     "insert into storage.objects values ('00000000-0000-4000-8000-0000000000a2')")
-for file in ['db/schema.sql','db/access-permissions.sql','db/pending-receipts.sql','db/cash-closing.sql']:
-    sql((ROOT/file).read_text(encoding='utf8'))
 for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     if migration.name.endswith('_tenant_access.sql'):
         sql("insert into private.app_users(username,password_hash,role,display_name) values ('recovery.fixture',extensions.crypt('synthetic-recovery-password',extensions.gen_salt('bf',4)),'admin','Recovery Fixture')")
