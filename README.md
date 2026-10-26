@@ -85,6 +85,8 @@ responsável em cada ambiente; igualdade entre variáveis não comprova separaç
 Valores NEXT_PUBLIC_* são públicos e incorporados no build; alterações exigem
 novo build. A prévia estática é preparada por node scripts/prepare-static-preview.mjs,
 com as mesmas variáveis obrigatórias; nunca publique docs/index.html isoladamente.
+O preparo rejeita chaves secret e JWTs com papel service_role antes de gerar arquivos;
+a inspeção do payload não verifica assinatura nem substitui autorização.
 No ambiente github-pages, o responsável deve selecionar o banco isolado nas vars
 NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY; o gate adicional de
 NEXT_PUBLIC_SUPABASE_PREVIEW_URL se aplica ao Preview Next.js/Vercel.
@@ -153,3 +155,12 @@ A visualização gráfica mostra faturamentos **diários** do mês ou ano escolh
 
 **Migrações necessárias:** em banco novo, aplicar os SQLs base na ordem descrita na seção de instalação. No projeto com acesso multinegócio, aplicar `supabase/migrations/20261022020602_cash_closing_integrity.sql` depois da migração de tenants antes de publicar a interface correspondente. A migração preserva os fechamentos existentes e não exige reset de dados ou usuários.
 
+
+### Rollback do isolamento Supabase
+
+Reverter a PR + ajustar variáveis de ambiente somente em alteração revisada.
+A versão resultante deve continuar exigindo configuração explícita: é proibido
+restaurar fallback, chave embutida ou referência ao projeto legado. Se a reversão
+trouxer esses trechos, removê-los na mesma alteração antes de qualquer publicação.
+Conferir o banco isolado nas variáveis de cada ambiente e refazer o build quando
+a publicação for autorizada; nenhuma escrita no banco ou reset faz parte do rollback.
