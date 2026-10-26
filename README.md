@@ -69,7 +69,27 @@ npm install
 npm run dev
 ```
 
-As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem ser definidas no ambiente. O projeto usa uma publishable key pública no cliente. Nunca incluir uma chave `service_role` ou secret key em código de frontend.
+### Configuração obrigatória por ambiente
+
+Copie .env.example para .env.local e configure NEXT_PUBLIC_SUPABASE_URL e
+NEXT_PUBLIC_SUPABASE_ANON_KEY (somente chave pública publishable/anon). Não há
+fallback: configuração ausente interrompe a aplicação com erro em português.
+Nenhuma chave privilegiada deve receber prefixo NEXT_PUBLIC_.
+
+Em preview, configure também NEXT_PUBLIC_SUPABASE_PREVIEW_URL com exatamente a
+mesma URL autorizada para esse preview; ausência ou divergência bloqueia o acesso.
+Local, preview/homologação e produção devem usar bancos distintos. Nesta fase,
+o destino remoto autorizado para homologação é Estoque+ DB. Nunca reutilize o
+banco de produção no desenvolvimento. A configuração deve ser conferida pelo
+responsável em cada ambiente; igualdade entre variáveis não comprova separação.
+Valores NEXT_PUBLIC_* são públicos e incorporados no build; alterações exigem
+novo build. A prévia estática é preparada por node scripts/prepare-static-preview.mjs,
+com as mesmas variáveis obrigatórias; nunca publique docs/index.html isoladamente.
+No ambiente github-pages, o responsável deve selecionar o banco isolado nas vars
+NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY; o gate adicional de
+NEXT_PUBLIC_SUPABASE_PREVIEW_URL se aplica ao Preview Next.js/Vercel.
+
+Ao mesclar, qualquer ambiente sem variável passará a falhar. O projeto antigo da Vercel deve ter o Git desconectado ANTES do merge.
 
 ## Cuidados operacionais
 

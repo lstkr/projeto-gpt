@@ -8,6 +8,11 @@ concurrency:
   group: fiscal-integrity-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+  NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+
 jobs:
   postgres:
     name: Fiscal integrity / PostgreSQL ${{ matrix.postgres }}
