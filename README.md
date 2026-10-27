@@ -2,6 +2,8 @@
 
 Aplicação web para o estoque da cafeteria, com contas individuais, leitura assistida de cupons e notas e controle de reposição.
 
+Ambiente de homologação com banco descartável: https://estoque-homologacao-ashy.vercel.app.
+
 ## Funcionalidades
 
 - Consulta e alteração das quantidades em estoque.
