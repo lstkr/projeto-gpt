@@ -40,6 +40,12 @@ Segurança automatizada: workflow `.github/workflows/security-redteam.yml` roda 
 
 Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de perfil não criam agentes autônomos automaticamente**: orientam o agente convocado no chat ou na ferramenta de desenvolvimento.
 
+### 6.8 Segurança — Criação de contas
+
+O fluxo atual exige bootstrap do DBA/proprietário com [scripts/admin/bootstrap.mjs](scripts/admin/bootstrap.mjs), que cria o superadministrador, seguido da criação do Gestor pelo DBA na administração da aplicação. O Gestor cria Funcionários no estabelecimento autorizado; não cria outros Gestores. O bootstrap exige autorização separada e nunca deve ser executado pelo agente com credenciais do responsável.
+
+A senha MASTER é uma [proposta futura](docs/security/master-provisioning-design.md), não um mecanismo implementado nem uma variável obrigatória do fluxo atual. Consulte o [perfil de Segurança](docs/agents/seguranca.md).
+
 ### Coordenação obrigatória
 
 - Alterar **endpoint ou contrato de API**: Back-end lidera; UI/UX valida consumidores; Database Architect valida impactos persistentes.
