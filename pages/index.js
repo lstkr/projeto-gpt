@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseConfig } from '../lib/supabase-config.mjs';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
@@ -36,17 +37,14 @@ const qty = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).
 const norm = (v) => String(v || '').trim().toLocaleLowerCase('pt-BR');
 const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
+const { url: SUPABASE_URL, publicKey: SUPABASE_ANON_KEY } = getSupabaseConfig();
 const PREVIEW_DEPLOY = process.env.ESTOQUE_DEPLOY_ENV === 'preview';
-// Fail closed unless Preview uses a separate database or explicitly allows
-// the existing one on this homologation branch. This is not an auth bypass.
+// Preview só utiliza o destino explicitamente autorizado para homologação.
 const PREVIEW_UNSAFE = PREVIEW_DEPLOY && previewDatabaseIsBlocked({
   deploymentEnv: process.env.ESTOQUE_DEPLOY_ENV,
   databaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  allowSharedDatabase: process.env.ESTOQUE_SHARED_DB_PREVIEW === 'true',
-  branch: process.env.ESTOQUE_PREVIEW_BRANCH
+  previewUrl: process.env.NEXT_PUBLIC_SUPABASE_PREVIEW_URL
 });
 const HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE && Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
