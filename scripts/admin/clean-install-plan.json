@@ -1,0 +1,39 @@
+{
+  "postgresMajor": 17,
+  "supabaseRef": "zybnekctgrjmygdkuwyr",
+  "baseSha256": "709a3120d8b24cff182a8ab070c819f48362a2cff4579dc9f3cca22c5506ef48",
+  "base": [
+    "db/schema.sql",
+    "db/access-permissions.sql",
+    "db/pending-receipts.sql",
+    "db/cash-closing.sql"
+  ],
+  "migrations": [
+    "supabase/migrations/20261019201520_inventory_validate_session.sql",
+    "supabase/migrations/20261020221500_fiscal_write_integrity.sql",
+    "supabase/migrations/20261021143000_external_fiscal_rate_limit.sql",
+    "supabase/migrations/20261021232050_tenant_access.sql",
+    "supabase/migrations/20261021233206_count_guard_search_path.sql",
+    "supabase/migrations/20261022020602_cash_closing_integrity.sql",
+    "supabase/migrations/20261022145500_admin_password_recovery.sql",
+    "supabase/migrations/20261022174354_expose_cancel_audit_columns_on_tenant_pending_view.sql",
+    "supabase/migrations/20261023000500_user_directory_update.sql"
+  ],
+  "authorizedDrops": [
+    { "file": "db/schema.sql", "line": 15, "kind": "POLICY" },
+    { "file": "db/schema.sql", "line": 35, "kind": "POLICY" },
+    { "file": "db/schema.sql", "line": 50, "kind": "POLICY" },
+    { "file": "db/schema.sql", "line": 62, "kind": "POLICY" },
+    { "file": "db/access-permissions.sql", "line": 16, "kind": "POLICY" },
+    { "file": "db/pending-receipts.sql", "line": 16, "kind": "POLICY" },
+    { "file": "db/pending-receipts.sql", "line": 142, "kind": "CONSTRAINT" },
+    { "file": "db/cash-closing.sql", "line": 13, "kind": "POLICY" },
+    { "file": "supabase/migrations/20261021232050_tenant_access.sql", "line": 9, "kind": "CONSTRAINT" },
+    { "file": "supabase/migrations/20261021232050_tenant_access.sql", "line": 62, "kind": "CONSTRAINT" },
+    { "file": "supabase/migrations/20261021232050_tenant_access.sql", "line": 78, "kind": "CONSTRAINT" }
+  ],
+  "authorizedDeleteCascades": [
+    { "file": "db/schema.sql", "line": 41, "table": "private.app_sessions" },
+    { "file": "db/access-permissions.sql", "line": 5, "table": "private.user_permissions" }
+  ]
+}
