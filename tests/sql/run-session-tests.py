@@ -5,9 +5,10 @@ No application secrets or production connection strings are used. Requires psql.
 Run from repository root: PGHOST=127.0.0.1 PGDATABASE=estoque_rpc_test ... python3 tests/sql/run-session-tests.py
 """
 import os
+import json
 from pathlib import Path
-import selectors
 import subprocess
+from process_barrier import wait_for_marker
 
 ROOT = Path(__file__).resolve().parents[2]
 if os.environ.get('PGHOST') not in ('localhost', '127.0.0.1', '::1'):
@@ -15,7 +16,8 @@ if os.environ.get('PGHOST') not in ('localhost', '127.0.0.1', '::1'):
 if not os.environ.get('PGDATABASE', '').startswith('estoque_rpc_test'):
     raise SystemExit('PGDATABASE must start with estoque_rpc_test and be disposable.')
 
-PSQL = ['psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1']
+PSQL = json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) + [
+    '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', os.environ['PGDATABASE']]
 
 
 def sql(statement, expected_error=None):
@@ -32,7 +34,9 @@ def file(path):
 
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database must be empty'
-sql("create role anon nologin; create role authenticated nologin; create schema extensions;")
+sql("do $$ begin create role anon nologin; exception when duplicate_object then null; end $$; "
+    "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$; "
+    "create schema if not exists extensions;")
 file('db/schema.sql')
 migration = next(ROOT.glob('supabase/migrations/*_inventory_validate_session.sql'))
 file(migration)
@@ -54,10 +58,7 @@ def concurrent_change(change, commit=True):
     try:
         writer.stdin.write('begin;\n' + change + '\n\\echo WRITER_READY\n')
         writer.stdin.flush()
-        with selectors.DefaultSelector() as selector:
-            selector.register(writer.stdout, selectors.EVENT_READ)
-            assert selector.select(timeout=10), 'Writer did not reach barrier'
-            assert writer.stdout.readline().strip() == 'WRITER_READY'
+        wait_for_marker(writer, 'WRITER_READY', 10, 'Writer did not reach barrier')
         # Validation must neither block on the writer nor observe dirty data.
         assert sql("set statement_timeout='2s'; " + VALIDATE) == 'true'
         writer.stdin.write(('commit' if commit else 'rollback') + ';\n\\q\n')
