@@ -72,14 +72,76 @@ O fingerprint SHA-256 do SQL-base fica em `supabase_migrations.estoque_installat
 
 ## Bootstrap do DBA (responsável executa localmente)
 
-O bootstrap é uma ação separada do roteiro e não é executado por agente. Instale as dependências já travadas do script e rode no terminal interativo do DBA:
+O bootstrap é uma ação separada da instalação do schema e deve ser executado pelo DBA/proprietário em um terminal PowerShell interativo. Não execute o bootstrap antes da instalação do schema estar concluída e confirmada.
+
+No PowerShell, `npm` pode resolver para `npm.ps1`, bloqueado pela política de execução configurada no Windows.
+Os comandos abaixo usam `npm.cmd` para chamar o executável do npm sem depender desse script PowerShell.
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` é uma alternativa de configuração do usuário, não o padrão deste guia.
+
+### Passo 1 — instalar as dependências
+
+Na raiz do repositório, execute este comando sozinho. `npm.cmd ci` instala exatamente as versões registradas no lockfile de `scripts/admin`:
 
 ```powershell
-npm ci --prefix scripts/admin
+npm.cmd ci --prefix scripts/admin
+```
+
+Espere o npm terminar com código de saída zero e sem erro de instalação. Depois, verifique a dependência exigida pelo bootstrap:
+
+```powershell
+Test-Path scripts\admin\node_modules\bcryptjs
+```
+
+O resultado esperado é `True`. Se for `False`, não execute o bootstrap: confira a mensagem do npm e repita somente a instalação das dependências.
+
+### Passo 2 — executar o bootstrap
+
+Só depois da instalação confirmada, execute este comando separadamente. Substitua o marcador pelo ref do projeto já verificado; não acrescente senha, URL ou chave ao comando:
+
+```powershell
 node scripts/admin/bootstrap.mjs <ref-confirmado-do-projeto>
 ```
 
-O script lê a URL de conexão, senha provisória do DBA e confirmação da senha em prompts ocultos. A URL deve pertencer ao ref passado no argumento; não use variáveis com senha, não compartilhe esses valores e não os envie ao agente. `ESTOQUE_SUPABASE_ALLOWED_REF` é usado pelo instalador limpo; o script de bootstrap existente recebe o ref como argumento. O DBA/proprietário cria o superadministrador; em seguida o DBA cria o Gestor pela administração da aplicação. MASTER continua apenas uma proposta em `docs/security/master-provisioning-design.md`.
+O script primeiro pede `Database URL (hidden)`: essa URL contém a senha do PostgreSQL, que autentica a conexão com o banco. Em seguida pede `Provisional DBA password (hidden)` e sua confirmação: é a senha provisória escolhida para a conta superadministradora Estoque+, não a senha do banco. As entradas são ocultas: nenhum caractere digitado aparece na tela. Após sucesso, espere `DBA created. First login requires a new password.`; no primeiro login, a senha do DBA deve ser trocada.
+
+Use uma URL copiada em Dashboard → Connect e substitua os marcadores localmente. Estes formatos são apenas modelos:
+
+```text
+postgresql://postgres:<SENHA_CODIFICADA>@db.<REF_AUTORIZADO>.supabase.co:5432/postgres
+postgresql://postgres.<REF_AUTORIZADO>:<SENHA_CODIFICADA>@<HOST_EXATO_DO_SESSION_POOLER>:5432/postgres
+```
+
+Na senha da URL, codifique caracteres reservados como `@`, `:`, `/`, `?`, `#`, `&` e espaços com percent-encoding antes de colar. O bootstrap aceita conexão direta ou Session pooler compartilhado, sempre na porta `5432`; a porta `6543` é recusada. Ele exige TLS com validação de certificado usando os certificados confiáveis do Node.js. Não exige `sslmode`, arquivo CA ou variável de ambiente de senha; parâmetros de query da URL não substituem a configuração TLS do cliente.
+
+Para o instalador limpo, defina `ESTOQUE_SUPABASE_ALLOWED_REF`, `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` e `PGSSLROOTCERT` na mesma janela PowerShell em que executará o instalador. Variáveis `$env:` pertencem ao processo da janela e não aparecem automaticamente em uma nova janela. O bootstrap não lê essas variáveis: recebe o ref como argumento e a URL no prompt oculto. Não defina `PGPASSWORD` nem salve a URL em arquivo. O DBA/proprietário cria o superadministrador; em seguida o DBA cria o Gestor pela administração da aplicação. MASTER continua apenas uma proposta em `docs/security/master-provisioning-design.md`.
+
+### Erros comuns
+
+| Mensagem ou sintoma | Causa provável | Ação segura |
+| --- | --- | --- |
+| `npm.ps1 cannot be loaded` ou execução bloqueada por política | O PowerShell selecionou o shim `npm.ps1` e a política local bloqueou scripts. | Use `npm.cmd ci --prefix scripts/admin` conforme o Passo 1. A alternativa `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` é opcional e altera a configuração do usuário. |
+| `ERR_MODULE_NOT_FOUND` para `bcryptjs` ou `pg` | As dependências ainda não foram instaladas ou a instalação não terminou. | Rode o Passo 1 separadamente e confirme `Test-Path scripts\admin\node_modules\bcryptjs` como `True` antes do Passo 2. |
+| `Ref inválido. Informe o ref confirmado do projeto Estoque+ DB.` | O argumento do comando está ausente ou não contém o formato de ref esperado. | Passe somente o ref confirmado como argumento; não use uma URL nesse lugar. |
+| `A URL ainda contém o marcador [YOUR-PASSWORD]. Substitua-o pela senha do banco.` | O marcador de exemplo não foi substituído pela senha do banco. | Copie a URL do Dashboard e substitua o marcador localmente; não envie a URL a ninguém. |
+| `Formato de URL inválido. Use uma URL PostgreSQL copiada em Dashboard → Connect.` | A URL está incompleta ou foi alterada de forma inválida. | Copie novamente a URL em Dashboard → Connect. |
+| `Protocolo inválido. A URL deve começar com postgres:// ou postgresql://.` | A URL não é PostgreSQL. | Copie a URL PostgreSQL apresentada em Dashboard → Connect. |
+| `A senha contém caracteres reservados sem codificação URL. Codifique-os antes de montar a URL.` | Um caractere da senha foi interpretado como separador da URL. | Codifique os caracteres reservados localmente e tente de novo; não compartilhe a URL. |
+| `A URL não contém a senha do banco. Copie novamente a conexão PostgreSQL.` | A URL está sem senha ou o conteúdo foi truncado. | Copie a URL novamente e confirme a senha do banco localmente, sem colá-la no chat ou em logs. |
+| `A porta 6543 (pooler em modo transação) não é aceita. Use conexão direta ou Session pooler na porta 5432.` | Foi escolhida conexão transaction pooler ou a porta de pooler transacional. | Use conexão direta ou Session pooler, ambos na porta 5432; copie host e usuário pelo Dashboard. |
+| `Porta não aceita. Use a conexão direta ou Session pooler na porta 5432.` | A URL usa outra porta não suportada pelo bootstrap. | Copie a URL do Dashboard para conexão direta ou Session pooler na porta 5432. |
+| `O banco da URL deve ser postgres.` | A URL aponta para um banco diferente do esperado pelo script. | Copie a URL PostgreSQL padrão exibida em Dashboard → Connect. |
+| `O usuário da conexão direta deve ser postgres.` | A conexão direta usa outro usuário. | Copie a URL direta do projeto autorizado. |
+| `O usuário da conexão não contém o ref esperado. No Session pooler, use postgres.<ref>.` | O nome de usuário do Session pooler não contém o ref do projeto. | Copie a URL Session pooler completa do projeto autorizado pelo Dashboard. |
+| `O host não corresponde ao ref confirmado. Copie a conexão do projeto autorizado.` | O host da URL é de outro projeto ou foi editado manualmente. | Cancele e copie novamente a conexão de Estoque+ DB, conferindo o ref passado no argumento. |
+| `O PostgreSQL recusou a autenticação. Confira a senha do banco e a codificação dos caracteres reservados.` | Senha do banco incorreta ou caracteres reservados não codificados. | Confirme a senha no gerenciador do responsável e a codificação da URL; nunca inclua a URL completa em mensagens. |
+| `A validação TLS falhou. Confira a data do computador, a rede e os certificados confiáveis do Node.js; não desative a validação.` | O Node não conseguiu validar a cadeia de certificados, ou o relógio/rede do computador está incorreto. | Confira a data do Windows, a conexão e os certificados confiáveis do Node; não desative a verificação TLS. |
+| `Não foi possível alcançar o PostgreSQL. Confira a rede, o endereço escolhido no Dashboard e a disponibilidade do destino.` | Rede/DNS indisponível, host incorreto ou destino temporariamente inacessível. | Confirme o modo e o host copiados do Dashboard e tente novamente quando a rede estiver disponível. |
+| `A função de bootstrap não foi encontrada. Confirme que a migração de instalação limpa terminou.` | A migração que cria a função ainda não foi aplicada ou o schema esperado está ausente. | Confirme no histórico que as nove migrações foram concluídas; não rode SQL manualmente para contornar o erro. |
+| `O usuário do banco não tem permissão para concluir o bootstrap. Confirme o usuário administrativo e as migrações.` | A conta PostgreSQL conectada não tem privilégio para chamar a função privada. | Confirme que copiou a conexão administrativa do projeto e que a migração terminou; peça ao DBA para revisar se continuar. |
+| `O bootstrap já foi realizado. Não tente criar outra conta DBA; peça ao responsável para revisar o acesso.` | Já existe uma conta superadministradora ou o bootstrap anterior foi concluído. | Não tente criar outra conta; peça ao responsável para recuperar o acesso pelo fluxo aprovado. |
+| `Bootstrap não concluído por uma falha não classificada. Confira o projeto, a conexão e as migrações sem compartilhar credenciais.` | O driver retornou um erro sem classificação segura. | Confira localmente a conexão e as migrações; peça revisão ao DBA sem enviar valores ou logs com credenciais. |
+| `O banco não confirmou a proteção dos parâmetros nos logs. Peça ao DBA para revisar a configuração.` | O servidor não confirmou os ajustes que impedem registro de parâmetros sensíveis. | Não continue; peça ao DBA para verificar a configuração de logging do projeto. |
+| `A senha provisória do DBA e a confirmação não coincidem ou excedem o limite aceito.` | As duas entradas ocultas divergem ou a senha tem menos de 6 ou mais de 72 bytes. | Reinicie o comando e informe a mesma senha provisória nas duas entradas, respeitando o limite de 6 a 72 bytes. |
 
 ## Validação local descartável
 
