@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
@@ -7,6 +9,35 @@ const test = require('node:test');
 const { scanInstallSql, scanSql } = require('../scripts/admin/clean-install-safety.cjs');
 const root = path.resolve(__dirname, '..');
 const plan = require('../scripts/admin/clean-install-plan.json');
+
+function createFakePsqlScript(temporaryDirectory) {
+  const scriptPath = path.join(temporaryDirectory, 'fake-psql.cjs');
+  const script = `const fs = require('node:fs');
+const args = process.argv.slice(2);
+const sql = args[args.indexOf('-c') + 1];
+fs.appendFileSync(process.env.ESTOQUE_TEST_PSQL_LOG, JSON.stringify(sql) + '\\n');
+if (sql.includes('server_version_num')) process.stdout.write('17\\n');
+else if (sql.includes('string_agg')) process.stdout.write('|f\\n');
+else if (sql.includes('pg_roles')) process.stdout.write('t\\n');
+else process.stdout.write('f\\n');`;
+  fs.writeFileSync(scriptPath, script);
+  return scriptPath;
+}
+
+function runReadOnlyPreflight(fakePsqlPath, logPath) {
+  const ref = 'abcdefghijklmnopqrst';
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  return spawnSync(python, [
+    'scripts/admin/install-clean-database.py', '--confirm-ref', ref, '--local-disposable', '--preflight'
+  ], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ESTOQUE_SUPABASE_ALLOWED_REF: ref,
+      ESTOQUE_INSTALL_PSQL_PREFIX_JSON: JSON.stringify([process.execPath, fakePsqlPath]),
+      ESTOQUE_TEST_PSQL_LOG: logPath, PGHOST: '127.0.0.1', PGDATABASE: 'estoque_rpc_test_preflight' },
+    timeout: 5000
+  });
+}
 
 test('roteiro só contém as instruções destrutivas autorizadas', () => {
   const files = [...plan.base, ...plan.migrations];
@@ -25,6 +56,13 @@ test('roteiro só contém as instruções destrutivas autorizadas', () => {
     'supabase/migrations/20261023000500_user_directory_update.sql'
   ]);
   assert.equal(plan.supabaseRef, 'zybnekctgrjmygdkuwyr');
+  assert.deepEqual(plan.explicitTransactionFiles, [
+    'supabase/migrations/20261019201520_inventory_validate_session.sql',
+    'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
+    'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
+    'supabase/migrations/20261021232050_tenant_access.sql',
+    'supabase/migrations/20261023000500_user_directory_update.sql'
+  ]);
   const baselineHash = crypto.createHash('sha256');
   for (const file of plan.base) {
     baselineHash.update(`${file}\0${require('node:fs').readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')}\0`);
@@ -89,4 +127,34 @@ test('executável recusa outro ref remoto antes de solicitar credenciais ou cone
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /projeto Estoque\+ DB autorizado/);
+});
+
+test('migrações transacionais mantêm somente um wrapper externo por arquivo', () => {
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const script = [
+    'from pathlib import Path',
+    'import runpy',
+    "module = runpy.run_path('scripts/admin/install-clean-database.py', run_name='install_module')",
+    "for filename in module['PLAN']['explicitTransactionFiles']:",
+    " source = (Path('.') / filename).read_text(encoding='utf8')",
+    " stripped = module['strip_explicit_transaction'](filename, source)",
+    " assert 'BEGIN;' not in stripped and 'COMMIT;' not in stripped, filename",
+    "print('PASS: 5 wrappers explícitos reconhecidos para transação externa')"
+  ].join('\n');
+  const result = spawnSync(python, ['-c', script], { cwd: root, encoding: 'utf8', timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PASS: 5 wrappers explícitos/);
+});
+
+test('preflight executa somente consultas e imprime o plano sem iniciar instalação', (context) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'estoque-preflight-'));
+  context.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const logPath = path.join(temporaryDirectory, 'queries.jsonl');
+  const result = runReadOnlyPreflight(createFakePsqlScript(temporaryDirectory), logPath);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PRE-FLIGHT OK/);
+  const queries = fs.readFileSync(logPath, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(queries.length >= 5);
+  assert.ok(queries.every((sql) => /^\s*select\b/i.test(sql)));
+  assert.ok(queries.every((sql) => !/\b(insert|update|delete|create|alter|drop|truncate)\b/i.test(sql)));
 });
