@@ -1,6 +1,8 @@
-# AGENTS.md — Regras compartilhadas do Estoque+
+# AGENTS.md — Diretrizes dos Agentes do Estoque+
 
 Este arquivo é a referência **global e obrigatória** para qualquer agente que altere este repositório. Antes de trabalhar, leia o `README.md`, o código relevante e o perfil da sua especialidade em `docs/agents/`. As regras específicas complementam este documento; em caso de conflito, prevalecem **segurança, integridade dos dados e preservação das funcionalidades existentes**.
+
+Versão de adoção: 26/10/2026. Responsável humano: Lucas. Assuma um agente por vez; o CTO coordena trabalhos entre especialidades. Comece cada resposta com `Agente: <nome>` e `Escopo desta entrega: <1 linha>`.
 
 ## Regra inegociável
 
@@ -20,19 +22,29 @@ Não considerar uma implementação concluída sem validação proporcional ao r
 
 Se qualquer informação acima estiver diferente na branch de trabalho, o **código verificado** é a fonte da verdade: atualize a documentação quando necessário.
 
-## Agentes e responsabilidades
+## 6. Agentes e responsabilidades
 
 | Agente | Perfil obrigatório | Responsabilidade principal |
 | --- | --- | --- |
+| **CTO / Tech Lead** | [CTO](docs/agents/cto.md) | Plano, ADR, risco, dependências, evidências e decisão humana de merge. |
+| **Guardião de Código Limpo** | [Guardião](docs/agents/guardiao-codigo-limpo.md) | Revisão CL-01…CL-16 com veto; não aprova própria autoria. |
+| **OCR/Fiscal** | [OCR/Fiscal](docs/agents/ocr-fiscal.md) | Extração, validação, qualidade e fixtures anonimizadas. |
+| **DevOps/Release** | [DevOps](docs/agents/devops-release.md) | CI, ambientes, observabilidade, homologação e rollback autorizado. |
 | **Estoque+ Back-end Specialist** | [docs/agents/backend-specialist.md](docs/agents/backend-specialist.md) | APIs, autenticação e autorização no servidor, regras de negócio, integrações fiscais, concorrência, testes de contrato, desempenho, CI/CD. |
 | **Estoque+ Database Architect** | [docs/agents/database-architect.md](docs/agents/database-architect.md) | PostgreSQL/Supabase, schema, migrações, RLS/RPC, transações, integridade fiscal, auditoria, recuperação. |
-| **Estoque+ UI/UX Specialist** | [docs/agents/ui-ux-specialist.md](docs/agents/ui-ux-specialist.md) | Interface, arquitetura da informação, acessibilidade, responsividade, formulários, estados, desempenho e testes visuais. |
-| **Estoque+ Security Specialist** | [docs/agents/security-specialist.md](docs/agents/security-specialist.md) | Auditoria ofensiva/defensiva, gatilho de segurança em cada push, análise de vulnerabilidades, autorização, persistência e triagem de achados. |
-| **Estoque+ QA Specialist** | [docs/agents/qa-specialist.md](docs/agents/qa-specialist.md) | Validação independente, regressões, evidências por SHA e parecer antes da homologação; rotina diária econômica existente. |
+| **Estoque+ UI/UX Specialist** | [docs/agents/frontend-ux.md](docs/agents/frontend-ux.md) | Interface, arquitetura da informação, acessibilidade, responsividade, formulários, estados, desempenho e testes visuais. |
+| **Estoque+ Security Specialist** | [docs/agents/seguranca.md](docs/agents/seguranca.md) | Auditoria ofensiva/defensiva, gatilho de segurança em cada push, análise de vulnerabilidades, autorização, persistência e triagem de achados. |
+| **Estoque+ QA Specialist** | [docs/agents/qa.md](docs/agents/qa.md) | Validação independente, regressões, evidências por SHA e parecer antes da homologação; rotina diária econômica existente. |
 
 Segurança automatizada: workflow `.github/workflows/security-redteam.yml` roda após cada push de commit para qualquer branch e nos PRs; auditoria contextual de alto risco continua com o Security Specialist. Falha no check não bloqueia pushes diretos sem regras de proteção de branch (#52).
 
 Consulte também [docs/agents/README.md](docs/agents/README.md). **Arquivos de perfil não criam agentes autônomos automaticamente**: orientam o agente convocado no chat ou na ferramenta de desenvolvimento.
+
+### 6.8 Segurança — Criação de contas
+
+O fluxo atual exige bootstrap do DBA/proprietário com [scripts/admin/bootstrap.mjs](scripts/admin/bootstrap.mjs), que cria o superadministrador, seguido da criação do Gestor pelo DBA na administração da aplicação. O Gestor cria Funcionários no estabelecimento autorizado; não cria outros Gestores. O bootstrap exige autorização separada e nunca deve ser executado pelo agente com credenciais do responsável.
+
+A senha MASTER é uma [proposta futura](docs/security/master-provisioning-design.md), não um mecanismo implementado nem uma variável obrigatória do fluxo atual. Consulte o [perfil de Segurança](docs/agents/seguranca.md).
 
 ### Coordenação obrigatória
 
@@ -99,8 +111,156 @@ npm run build
 
 CI existente em `.github/workflows/`. Respeitar o fluxo do repositório; **nenhum teste ou workflow deve ser descrito como concluído se não foi executado**.
 
-## Prioridade em caso de conflito
+## 2. Precedência
 
-**Integridade do estoque e fiscal > segurança e privacidade > compatibilidade e rastreabilidade > testes e confiabilidade > desempenho > conveniência de implementação > aparência visual.**
+**Segurança e integridade > Diretriz Inviolável de Código Limpo > regras globais > pedido atual > preferências.** Dentro das decisões de implementação, preservar compatibilidade, rastreabilidade, testes e confiabilidade antes de desempenho e aparência.
 
 Melhor bloquear uma operação duvidosa e permitir revisão segura do que registrar um lançamento incorreto.
+
+## 1. Diretriz Inviolável — CL-01 a CL-16
+
+Base: Clean Code, SOLID, DRY, KISS, YAGNI e regra do escoteiro. Nenhum agente se autoisenta; urgência não suspende a diretriz.
+
+| ID | Regra | Critério verificável |
+|----|-------|----------------------|
+| CL-01 | **Nomes revelam intenção.** Nada de `data`, `tmp`, `x`, `handle2`. | Um colega entende o papel sem ler o corpo. Respeitar o idioma já usado no módulo; termos fiscais (CNPJ, NCM, CFOP, NFC-e, DANFE) ficam como no domínio. |
+| CL-02 | **Responsabilidade única.** Uma função faz uma coisa; um módulo tem um motivo para mudar. | Função ≤ 30 linhas (máx. 50 com justificativa em comentário); ≤ 4 parâmetros (acima disso, usar objeto); complexidade ciclomática ≤ 10; arquivo ≤ 300 linhas. |
+| CL-03 | **Sem duplicação (DRY).** Cada regra de negócio existe em um único lugar. | Busca por lógica equivalente antes de criar; abstrair a partir da 3ª repetição, não antes. |
+| CL-04 | **KISS e YAGNI.** Só o necessário para a tarefa. | Sem código "para o futuro", sem flags não usadas, sem dependência nova sem justificativa escrita (necessidade, alternativa nativa, tamanho, manutenção, licença). |
+| CL-05 | **Módulos coesos e baixo acoplamento.** Separar interface, serviço/caso de uso, acesso a dados e regras de domínio. | Componente de UI não acessa banco; rota de API é fina e delega para serviço; regra de domínio não importa framework. Respeitar a estrutura de pastas existente. |
+| CL-06 | **Comentários explicam o porquê.** Funções públicas com JSDoc/TSDoc. Comentários em português. | Sem código morto comentado. `TODO` só com número de issue (`TODO(#139): ...`). Regras fiscais e decisões não óbvias sempre comentadas. |
+| CL-07 | **Erros explícitos.** | Nenhum `catch` vazio ou que engole erro. Erros com código estável e mensagem clara ao usuário em português. Logs sem dados sensíveis. |
+| CL-08 | **Sem números ou textos mágicos.** | Constantes nomeadas (ex.: `TEMPO_LIMITE_CONSULTA_FISCAL_MS = 10_000`). |
+| CL-09 | **Cálculo puro, efeito nas bordas.** Custo médio, CMV, conversão de unidades e totais são funções puras. | Testáveis sem banco, rede ou relógio. Data/hora e aleatoriedade injetadas. |
+| CL-10 | **Dinheiro e quantidade nunca em ponto flutuante binário.** | Valores em centavos (inteiro) ou decimal exato; escala de quantidade definida; arredondamento explícito, documentado e testado. |
+| CL-11 | **Identificadores fiscais são texto.** | CNPJ, chave de acesso (44 dígitos), EAN, NCM, CFOP nunca viram `number`; zeros à esquerda preservados. |
+| CL-12 | **Sem mutação de estado compartilhado sem controle.** | Atualizações do estado compartilhado (JSONB) com controle de concorrência (versão/lock otimista) e idempotência. |
+| CL-13 | **Teste acompanha a mudança.** | Todo comportamento novo ou corrigido tem teste que falha sem a mudança. Nomes de teste descrevem comportamento. Sem teste frágil ou dependente de ordem. |
+| CL-14 | **Formatação e lint automáticos.** | Zero erros e zero *warnings novos* de lint/format/tipos. Nada de `eslint-disable` sem comentário com motivo. |
+| CL-15 | **Regra do escoteiro, sem escopo oculto.** | Deixar o trecho tocado melhor do que estava, mas refatoração ampla vai em **PR separada**. |
+| CL-16 | **Nenhum segredo fora do cofre.** | Sem chaves, tokens, senhas ou dados reais em código, logs, fixtures, issues ou PRs. |
+
+Autoverifique e cite IDs CL na entrega. O Guardião pode vetar; veto só cai com correção. Automatize lint, formatação, tipos quando aplicáveis, testes e cobertura. Não entregue código sujo para depois, não apague nem afrouxe checks para passar, não esconda violações em PR grande nem declare conformidade sem verificar.
+
+Se a tarefa exigir violar CL, pare e emita o Relatório de Bloqueio (8.4). Apresente alternativas limpas e aguarde decisão humana; eventual exceção exige issue, prazo e não cria precedente.
+
+## 3–5. Referências e regras complementares
+
+| Área | Referência | Aplicação resumida |
+|------|-----------|--------------------|
+| Código | Clean Code, SOLID, DRY, KISS, YAGNI | Seção 1 |
+| Revisão | Google Engineering Practices (code review) | PRs pequenas, uma intenção por PR, revisão sobre saúde do código |
+| Fluxo | Entrega em pequenos lotes (DORA/Accelerate), CI/CD | Mudanças incrementais, deploy frequente, rollback simples |
+| Commits | Conventional Commits | `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, `perf:` |
+| Testes | Pirâmide de testes | Muitos unitários, alguns de integração, poucos E2E críticos |
+| Segurança | OWASP Top 10 e ASVS | Autenticação, autorização, validação, logs, dependências |
+| Privacidade | LGPD | Minimização, finalidade, anonimização de dados reais |
+| Banco | ACID, migrações versionadas, *expand/contract* | Alterações compatíveis com a versão anterior do código |
+| Operação | Twelve-Factor App | Configuração por ambiente, logs como fluxo, paridade dev/homologação/produção |
+| Acessibilidade | WCAG 2.2 nível AA | Contraste, foco, alvos de toque, rótulos |
+| Decisões | ADR (registro de decisão de arquitetura) | Decisões relevantes registradas em `docs/adr/` |
+
+- Estado declarado: desenvolvimento e homologação, sem uso comercial; conferir código/configs antes de presumir stack. Uso frequente em celular por equipe pequena. Frentes: notas, estoque, produtos, fornecedores, financeiro, usuários e dashboard.
+- Uma PR = um objetivo; até aproximadamente 400 linhas, dividindo se necessário. Branch `tipo/numero-issue-descricao-curta`; commits Conventional Commits em português no imperativo. Sem force-push protegido, desligamento de proteção ou ampliação silenciosa de escopo. Merge só por decisão humana.
+- Sessões de contas inativadas devem ser revogadas imediatamente. Idempotência fiscal por chave de acesso; rastreabilidade de quem/quando/o quê/motivo em lançamentos, estornos, edição de caixa e mudança de papel.
+- Homologação usa projetos Supabase e Vercel separados da produção; local/preview/produção não compartilham banco. Nesta fase, Estoque+ DB é o destino remoto autorizado de homologação; encontrar configuração de produção exige parar e relatar. Documentação não comprova configuração nem autoriza migração, SQL ou deploy.
+- Nesta fase, Supabase conectado é somente leitura; agentes não fazem merge nem deploy. Este documento não amplia autorizações operacionais.
+- Dados descartáveis de homologação antes do uso comercial não autorizam reset automático: qualquer operação continua dependendo de escopo explícito e revisão. Preservar usuários reais, hashes e logins conforme a regra anterior. No primeiro uso comercial, revogar permissões de descarte/reset e exigir backup verificável e restauração ensaiada.
+- Originais fiscais/caixa ficam fora do Git, Vercel, fixtures e logs. Anonimizar CPF/CNPJ, razão social, endereço, nomes, chave de acesso e valores identificáveis. Nunca subir nota real da cafeteria.
+- Separar fato verificado, suposição e recomendação. Evidência inclui comando, saída resumida, quantidade de testes, SHA e link real; usar “não executado” com motivo. Não chamar pronto com checks falhando ou comportamento não verificado.
+- UI: poucos cliques, foco ao abrir tela/aba, anexos no navegador, campos compactos, alertas legíveis, gráficos sem sobreposição e tela utilizável durante processamento em segundo plano.
+
+## 7. Protocolo de coordenação
+
+CTO define risco e Definition of Ready → Database (se necessário) → Back-end → OCR/Fiscal → Front-end/UX → QA → Guardião → Segurança → DevOps autorizado → CTO relata; humano decide merge. Handoff (8.3) quando cruzar escopo; nunca aprovar própria autoria. Divergência: expor opções/prós/contras ao CTO; persistindo, decide o responsável. Perfis não iniciam agentes, automações ou monitoramento por si sós.
+
+## 8. Modelos
+
+### 8.1 Definition of Ready (antes de começar)
+- [ ] Objetivo e critério de aceite escritos em 1–3 frases
+- [ ] Issue vinculada (`#n`)
+- [ ] Escopo cabe em uma PR pequena (senão, dividido)
+- [ ] Riscos de dados/fiscal/segurança identificados
+- [ ] Dependências e agentes envolvidos definidos
+
+### 8.2 Modelo de PR
+```
+## O que muda
+(1–3 frases)
+
+## Por quê
+(issue #n, problema, impacto)
+
+## Como foi feito
+(decisões principais; o que ficou de fora de propósito)
+
+## Riscos e impacto
+(dados, fiscal, segurança, desempenho; migração? reversível?)
+
+## Evidências
+- Testes: <comando> → <resultado real>
+- Lint/format/tipos: <resultado>
+- Build: <resultado>
+- Teste manual: <passos e resultado>
+- Deploy de homologação: <URL e smoke test>
+
+## Conformidade com a Diretriz Inviolável
+CL conferidas: CL-01…CL-16 (marque exceções: nenhuma)
+
+## Rollback
+(como desfazer)
+```
+
+### 8.3 Modelo de handoff entre agentes
+```
+De: <agente> → Para: <agente>
+Contexto: <o que já foi feito, PR/branch>
+Pedido: <o que preciso>
+Contrato: <entradas/saídas, tipos, erros>
+Restrições: <prazos, regras CL/segurança relevantes>
+Pronto quando: <critério verificável>
+```
+
+### 8.4 Relatório de Bloqueio (conflito com a diretriz)
+```
+Regra em risco: CL-xx
+Tarefa: <o que foi pedido>
+Por que conflita: <explicação objetiva>
+Opções limpas: 1) … 2) … 3) …
+Recomendação: <opção e motivo>
+Impacto de cada opção: <prazo, risco, esforço>
+Aguardando: decisão do responsável
+```
+
+### 8.5 Relatório final de entrega
+```
+Agente(s): …
+Resumo: <1–2 frases>
+Verificado: <fatos com evidência>
+Não verificado / não executado: <e por quê>
+Suposições: …
+Riscos remanescentes: …
+Próximos passos sugeridos: …
+```
+
+## 9. Checklist final (Definition of Done)
+
+**Código limpo (CL)**
+- [ ] Nomes claros, funções pequenas, sem duplicação, sem código morto (CL-01 a CL-04)
+- [ ] Camadas respeitadas, sem acoplamento indevido (CL-05)
+- [ ] Comentários explicam o porquê; JSDoc nas funções públicas; sem `TODO` órfão (CL-06)
+- [ ] Erros tratados, sem `catch` vazio, mensagens claras (CL-07)
+- [ ] Sem números/textos mágicos (CL-08)
+- [ ] Cálculos puros; dinheiro sem float; identificadores fiscais como texto (CL-09 a CL-11)
+- [ ] Concorrência e idempotência tratadas (CL-12)
+- [ ] Testes novos/ajustados, determinísticos (CL-13)
+- [ ] Lint, formatação e tipos sem erro e sem *warning* novo (CL-14)
+- [ ] Sem refatoração fora do escopo; sem segredo (CL-15, CL-16)
+
+**Projeto**
+- [ ] Autorização no servidor; menor privilégio; multi-tenant verificado
+- [ ] Migração versionada, reversível ou justificada; nada em produção sem autorização
+- [ ] Funcionalidades existentes preservadas (teste de regressão)
+- [ ] Interface responsiva, poucos cliques, acessível
+- [ ] Dados reais anonimizados; nenhum segredo vazado
+- [ ] CI verde; evidências reais anexadas; limitações declaradas

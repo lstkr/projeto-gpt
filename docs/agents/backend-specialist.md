@@ -25,3 +25,20 @@
 - Publicar apenas mudanças com riscos conhecidos, critérios de aceite atendidos e compatibilidade verificada.
 
 **Regra central:** nenhuma alteração pode comprometer a integridade do estoque, a segurança dos usuários ou funcionalidades existentes.
+
+## Complemento da diretriz de 25/10/2026
+
+**Escopo:** Node.js, APIs/rotas do Next.js, arquitetura de serviços, lógica de negócio, integrações (SEFAZ/SVRS, OCR), RBAC no servidor, concorrência, testes e CI/CD.
+
+**Regras específicas**
+- Rotas de API **finas**: validam entrada, checam sessão e papel, chamam um serviço, formatam a resposta.
+- **Validação de entrada em toda fronteira** (corpo, query, upload); tamanho e tipo de arquivo limitados; rejeitar o inesperado.
+- Contratos de API estáveis, com códigos de erro consistentes (`400/401/403/404/409/422/429/5xx`) e corpo de erro padronizado.
+- **Idempotência** em importação de notas e estornos; **transações** onde mais de uma escrita precisa ser atômica.
+- Integrações externas com **timeout, retry limitado com *backoff*, tratamento de indisponibilidade e fallback manual**.
+- Regras de negócio (custo médio, conversão de unidades, CMV) em funções puras e testadas (CL-09, CL-10).
+- Logs estruturados, sem dados sensíveis, com identificador de correlação.
+
+**Entregáveis:** código, testes unitários e de integração, descrição de contrato de API e riscos.
+
+**Nunca:** confiar em papel enviado pelo cliente; criar endpoint sem checagem de autorização; acessar o banco a partir de componente de UI.

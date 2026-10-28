@@ -37,3 +37,9 @@ Os documentos **não criam chats nem agentes autônomos automaticamente**. Eles 
 ## Nova estrutura sênior → engineer
 
 Ver [modelo de squads](../../governance/TEAM_DELIVERY_MODEL.md) e [quadro do CTO](../../governance/DELIVERY_BOARD.md). Heads continuam responsáveis por desenho e aprovação; engenheiros executam tickets menores com branches/PRs isoladas. Perfis documentados não iniciam execução remota automaticamente.
+
+## Diretriz de Código Limpo
+
+Perfis complementares: [CTO](cto.md), [Guardião](guardiao-codigo-limpo.md), [Front-end/UX](frontend-ux.md), [OCR/Fiscal](ocr-fiscal.md), [QA](qa.md), [Segurança](seguranca.md) e [DevOps](devops-release.md). Back-end e Database mantêm seus caminhos e conteúdo anterior. Os perfis antigos de UI/UX, QA e Segurança continuam válidos como complementos.
+
+Decisão: [ADR 0001](../adr/0001-diretriz-codigo-limpo.md). Modelos 8.1–8.5 e checklist 9 estão em [AGENTS.md](../../AGENTS.md); automação da diretriz permanece pendente da PR 2.
