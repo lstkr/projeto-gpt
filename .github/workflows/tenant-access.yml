@@ -47,3 +47,9 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Isolation, roles, first password, concurrency and recovery
         run: python3 tests/sql/run-tenant-access.py
+      - name: Receipt upload identity and concurrent retries
+        env:
+          PGDATABASE: estoque_rpc_test_upload
+        run: |
+          createdb estoque_rpc_test_upload
+          python3 -B tests/sql/run-receipt-upload.py
