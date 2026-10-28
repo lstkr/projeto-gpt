@@ -15,17 +15,17 @@ PLAN = json.loads((ROOT / 'scripts/admin/clean-install-plan.json').read_text(enc
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--confirm-ref', required=True, help='Digite o ref autorizado do projeto Supabase.')
+    parser.add_argument('--preflight', action='store_true', help='Verifica destino e plano sem gravar no banco.')
     parser.add_argument('--local-disposable', action='store_true', help='Permite teste somente em loopback e banco estoque_rpc_test*.')
     return parser.parse_args()
 
 
-def run_psql(command, database, env, sql=None, file=None):
+def run_psql(command, database, env, sql=None, single_transaction=False):
     args = command + ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', database]
-    if file:
-        sql = (ROOT / file).read_text(encoding='utf8')
     if sql is not None:
-        args += ['-c', sql] if file is None else []
-    result = subprocess.run(args, input=sql if file else None, text=True, capture_output=True, env=env, timeout=300)
+        args += ['--single-transaction', '-f', '-'] if single_transaction else ['-c', sql]
+    result = subprocess.run(args, input=sql if single_transaction else None, text=True,
+                            capture_output=True, env=env, timeout=300)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or 'psql falhou sem diagnóstico.')
     return result.stdout.strip()
@@ -140,37 +140,63 @@ def verify_supabase_prerequisites(command, database, env):
         raise ValueError('Destino não possui roles, schemas ou pgcrypto necessários do Supabase.')
 
 
-def verify_database_ready(command, database, env):
+def verify_tls_connection(command, database, env, local_disposable):
+    if local_disposable:
+        return
+    encrypted = run_psql(command, database, env,
+                         'select ssl from pg_catalog.pg_stat_ssl where pid=pg_backend_pid();')
+    if encrypted != 't':
+        raise ValueError('A conexão direta ao PostgreSQL não está usando TLS.')
+
+
+def verify_database_ready(command, database, env, local_disposable):
+    verify_tls_connection(command, database, env, local_disposable)
     verify_postgres_major(command, database, env)
     verify_empty_application(command, database, env)
     verify_migration_history_empty(command, database, env)
     verify_supabase_prerequisites(command, database, env)
 
 
-def create_installation_history(command, database, env):
+def installation_history_sql():
     filenames = ','.join(repr(filename) for filename in PLAN['base'])
-    query = (
+    return (
         'create schema if not exists supabase_migrations; '
         'create table if not exists supabase_migrations.schema_migrations '
         '(version text primary key not null, statements text[], name text); '
         'create table supabase_migrations.estoque_installation_baselines '
         '(baseline_key text primary key, sha256 text not null, source_files text[] not null, installed_at timestamptz not null default now()); '
         'insert into supabase_migrations.estoque_installation_baselines(baseline_key,sha256,source_files) '
-        f"values ('v1','{PLAN['baseSha256']}',array[{filenames}]);")
-    run_psql(command, database, env, query)
+        f"values ('v1','{PLAN['baseSha256']}',array[{filenames}]); "
+        'revoke all on schema supabase_migrations from public, anon, authenticated, service_role; '
+        'revoke all on all tables in schema supabase_migrations from public, anon, authenticated, service_role;')
 
 
 def apply_base(command, database, env):
     for index, filename in enumerate(PLAN['base'], start=1):
-        run_psql(command, database, env, file=filename)
+        sql = (ROOT / filename).read_text(encoding='utf8')
+        if index == len(PLAN['base']):
+            sql += '\n' + installation_history_sql()
+        run_psql(command, database, env, sql, single_transaction=True)
         print(f'Aplicado SQL-base {index}/{len(PLAN["base"])}: {filename}')
-    create_installation_history(command, database, env)
 
 
-def record_migration(command, database, env, version, name):
-    query = ("insert into supabase_migrations.schema_migrations(version,name,statements) "
-             f"values ('{version}','{name}',null);")
-    run_psql(command, database, env, query)
+def migration_ledger_sql(version, name):
+    return ("insert into supabase_migrations.schema_migrations(version,name,statements) "
+            f"values ('{version}','{name}',null);")
+
+
+def strip_explicit_transaction(filename, source):
+    if filename not in PLAN['explicitTransactionFiles']:
+        return source
+    lines = source.splitlines(keepends=True)
+    controls = [(index, line.strip().upper()) for index, line in enumerate(lines)
+                if line.strip().upper() in ('BEGIN;', 'COMMIT;', 'ROLLBACK;')]
+    if len(controls) != 2 or [control for _, control in controls] != ['BEGIN;', 'COMMIT;']:
+        raise ValueError(f'Bloco transacional inesperado em {filename}.')
+    if any(line.strip() for line in lines[controls[-1][0] + 1:]):
+        raise ValueError(f'COMMIT não é o último comando de {filename}.')
+    return ''.join(line for index, line in enumerate(lines)
+                   if index not in (controls[0][0], controls[1][0]))
 
 
 def apply_migrations(command, database, env):
@@ -178,9 +204,19 @@ def apply_migrations(command, database, env):
         match = re.match(r'supabase/migrations/(\d{14})_(.+)\.sql$', filename)
         if not match:
             raise ValueError(f'Nome de migração inválido no plano: {filename}')
-        run_psql(command, database, env, file=filename)
-        record_migration(command, database, env, *match.groups())
+        source = (ROOT / filename).read_text(encoding='utf8')
+        source = strip_explicit_transaction(filename, source)
+        source += '\n' + migration_ledger_sql(*match.groups())
+        run_psql(command, database, env, source, single_transaction=True)
         print(f'Aplicada migração {index}/{len(PLAN["migrations"])}: {filename}')
+
+
+def print_preflight_plan(database, local_disposable):
+    destination = 'PostgreSQL descartável local' if local_disposable else f"Estoque+ DB ({PLAN['supabaseRef']})"
+    print(f'PRE-FLIGHT OK: destino validado: {destination}; database={database}; PostgreSQL 17.')
+    for filename in PLAN['base'] + PLAN['migrations']:
+        print(f'- {filename}')
+    print('Nenhum comando de escrita foi executado pelo preflight.')
 
 
 def main():
@@ -191,7 +227,10 @@ def main():
     verify_safety_scan()
     psql_env = prepare_psql_env(args.local_disposable)
     command = psql_prefix()
-    verify_database_ready(command, database, psql_env)
+    verify_database_ready(command, database, psql_env, args.local_disposable)
+    if args.preflight:
+        print_preflight_plan(database, args.local_disposable)
+        return
     apply_base(command, database, psql_env)
     apply_migrations(command, database, psql_env)
     print('Instalação limpa concluída. Execute o checklist documentado antes de usar a aplicação.')
