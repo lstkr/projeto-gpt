@@ -114,12 +114,21 @@ sql(f"set role anon; select public.pending_receipt_save(repeat('a',64),'{receipt
 retry = received()
 check('retentativa não desfaz conferência concorrente', retry['receipts'][0]['revision'] == 2 and sql(f"select draft->>'source' from private.pending_receipts where id='{receipt_id}'") == 'OCR revisado')
 other_unit = received(token='b')
-check('mesmo arquivo em outra unidade tem identidade independente', other_unit['uploadId'] != first['uploadId'])
+first_ids = {row['id'] for row in first['receipts']}
+other_ids = {row['id'] for row in other_unit['receipts']}
+check('duplicidade devolve IDs e remetente somente da própria unidade',
+      other_unit['uploadId'] != first['uploadId'] and first_ids.isdisjoint(other_ids)
+      and other_unit['submittedBy'] != first['submittedBy']
+      and received(token='b') == {**other_unit, 'reused': True})
 submissions = json.loads(sql("set role anon; select public.pending_receipt_submissions(repeat('a',64));"))
 check('lista de autoria filtra a unidade', len(submissions) == 2 and all(row['channel'] == 'celular' for row in submissions))
 for token, state in [('d', '28000'), ('e', '28000'), ('f', '42501'), ('0', '28000')]:
     sql('set role anon; ' + receive(token=token), state)
-check('sessão revogada/inativa/ausente e permissão negada são recusadas', True)
+sql("insert into private.user_permissions(user_id,permission_key,allowed) select id,'fiscal.pending.create',false from private.app_users where username='upload.peer';")
+peer_can_read = sql("select private.has_permission(id,'fiscal.pending.read') from private.app_users where username='upload.peer'") == 't'
+denied_response = sql('set role anon; ' + receive(token='c'), '42501')
+check('sessão inválida ou create negado não retorna dados da duplicata, mesmo com read permitido',
+      peer_can_read and denied_response == '')
 sql("set role anon; select public.pending_receipt_submissions(repeat('f',64));", '42501')
 sql('set role anon; select * from private.receipt_uploads;', '42501')
 sql("set role anon; select private.receipt_upload_result(null,false);", '42501')
