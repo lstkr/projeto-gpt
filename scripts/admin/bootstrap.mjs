@@ -58,7 +58,13 @@ try {
   await client.query('COMMIT');
   console.log('DBA created. First login requires a new password.');
 } catch (failure) {
-  if (client) await client.query('ROLLBACK').catch(() => {});
+  if (client) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackFailure) {
+      console.error(`A reversão da transação também falhou: ${bootstrapFailureMessage(rollbackFailure)}`);
+    }
+  }
   // Never print driver exceptions, parameters, URLs, hashes, or secret inputs.
   console.error(bootstrapFailureMessage(failure));
   process.exitCode = 1;
