@@ -1,6 +1,6 @@
 # Instalação limpa do Estoque+ DB
 
-Este roteiro é somente para um projeto Supabase novo, vazio e explicitamente confirmado. Nunca o use num banco com dados: instalações existentes recebem somente migrações incrementais revisadas. Não contém bootstrap de usuário, reset, `DROP TABLE`, `TRUNCATE` ou exclusão em massa.
+Este roteiro é somente para um projeto Supabase novo, vazio e explicitamente confirmado. **Não execute a instalação antes de esta PR ser mesclada e o CI ficar verde. Na execução real, rode o `--preflight` antes da instalação.** Nunca o use num banco com dados: instalações existentes recebem somente migrações incrementais revisadas. Não contém bootstrap de usuário, reset, `DROP TABLE`, `TRUNCATE` ou exclusão em massa.
 
 ## Pré-requisitos e destino
 
@@ -9,17 +9,17 @@ Instale localmente Python 3, Node.js 22 e `psql` 17. O executável fixa no plano
 | Nome | Uso |
 | --- | --- |
 | `ESTOQUE_SUPABASE_ALLOWED_REF` | Ref único que o responsável autorizou para instalação limpa. |
-| `PGHOST` | Deve ser exatamente `db.<ref>.supabase.co`; pooler não é aceito neste roteiro. |
-| `PGPORT` | Porta direta do PostgreSQL, normalmente 5432. |
+| `PGHOST` | Host direto do ref autorizado ou host copiado do Session pooler no Dashboard. |
+| `PGPORT` | `5432`; a porta `6543` do transaction pooler é recusada. |
 | `PGDATABASE` | `postgres`. |
-| `PGUSER` | `postgres`. |
-| `PGSSLMODE` | O executável força `verify-full` para validar TLS e hostname. |
+| `PGUSER` | `postgres` na conexão direta ou `postgres.<ref>` no Session pooler. |
+| `PGSSLROOTCERT` | Caminho local do certificado CA do Supabase. O executável força `verify-full`. |
 
-Use conexão PostgreSQL **direta** em `db.<ref>.supabase.co` pela porta `PGPORT`; o roteiro valida o certificado e o hostname com `verify-full`. Session pooler não é aceito porque o executável fixa o host direto. Transaction pooler também não serve para esta instalação.
+Prefira conexão PostgreSQL direta quando a rede tiver IPv6 ou o add-on IPv4. Para uma rede somente IPv4, o executável também aceita o **shared Session pooler**: use exatamente o host exibido em Dashboard → Connect, porta 5432 e usuário `postgres.<ref>`. Em ambos os modos, `PGSSLROOTCERT` aponta para o CA baixado em Database Settings e o cliente valida certificado e hostname com `verify-full`; o executável também confere que o usuário do pooler, `ESTOQUE_SUPABASE_ALLOWED_REF` e `--confirm-ref` identificam o mesmo projeto. Transaction pooler e porta 6543 são recusados.
 
 ## Guia de execução PowerShell para o Lucas
 
-Execute da raiz do repositório. O ref é informado no terminal e repetido como confirmação explícita. A senha será solicitada em entrada oculta tanto no preflight quanto na instalação; não defina variável de senha nem salve connection string:
+Execute da raiz do repositório somente depois da mesclagem desta PR e CI verde. O ref é informado no terminal e repetido como confirmação explícita. Copie o host do Session pooler do Dashboard se a rede for IPv4-only; para conexão direta, o host será derivado do ref. A senha será solicitada em entrada oculta tanto no preflight quanto na instalação; não defina variável de senha nem salve connection string:
 
 ```powershell
 $env:ESTOQUE_SUPABASE_ALLOWED_REF = Read-Host 'Ref do projeto Estoque+ DB'
@@ -27,14 +27,26 @@ $env:PGHOST = "db.$($env:ESTOQUE_SUPABASE_ALLOWED_REF).supabase.co"
 $env:PGPORT = '5432'
 $env:PGDATABASE = 'postgres'
 $env:PGUSER = 'postgres'
+$env:PGSSLROOTCERT = Read-Host 'Caminho local do certificado CA do Supabase'
+# Para rede IPv4-only, substitua PGHOST e PGUSER pelos valores abaixo:
+# $env:PGHOST = Read-Host 'Host do Session pooler copiado do Dashboard'
+# $env:PGUSER = "postgres.$($env:ESTOQUE_SUPABASE_ALLOWED_REF)"
 python scripts/admin/install-clean-database.py --confirm-ref $env:ESTOQUE_SUPABASE_ALLOWED_REF --preflight
 if ($LASTEXITCODE -ne 0) { throw 'Preflight falhou; instalação não iniciada.' }
 python scripts/admin/install-clean-database.py --confirm-ref $env:ESTOQUE_SUPABASE_ALLOWED_REF
 ```
 
-O `--preflight` valida conexão TLS, ref confirmado, PostgreSQL 17, roles/extensões, ausência do schema `private`, objetos da aplicação e ledger vazio. Ele só consulta o banco, imprime o plano e encerra sem aplicar SQL. Se falhar, não rode a instalação: confira o projeto/ref, conectividade direta, certificado local e mensagem de erro, sem copiar senha ou connection string para logs.
+O `--preflight` valida conexão TLS, ref confirmado, PostgreSQL 17, roles/extensões, ausência do schema `private`, objetos da aplicação e ledger vazio. Ele só consulta o banco, imprime o plano e encerra sem aplicar SQL. Se falhar, não rode a instalação: confira o projeto/ref, modo de conexão, certificado local e mensagem de erro, sem copiar senha ou connection string para logs.
 
-Durante a instalação, cada arquivo SQL é executado em uma transação PostgreSQL; o registro da migração (ou fingerprint da base) é gravado na mesma transação. Se um arquivo falhar, esse arquivo e seu registro são revertidos, enquanto arquivos anteriores já concluídos permanecem instalados. Pare, preserve o erro e acione o DBA; não repita o instalador nem tente reparar manualmente, pois a trava recusará o banco parcial.
+Durante a instalação, cada arquivo SQL é executado em uma transação PostgreSQL; o registro da migração (ou fingerprint da base) é gravado na mesma transação. Se um arquivo falhar, esse arquivo e seu registro são revertidos, enquanto arquivos anteriores já concluídos permanecem instalados. Corrija a causa externa e retome somente com `--resume`: o executável exige fingerprint exato e ledger que seja prefixo coerente do plano, depois aplica apenas migrações pendentes. Se fingerprint, ledger ou SQL-base estiverem ausentes/divergentes — por exemplo, falha antes do último arquivo-base criar o marcador — pare, preserve o banco e acione o DBA; não repita instalação limpa nem repare manualmente.
+
+Para retomar após corrigir a causa externa, use o mesmo ref, host, usuário, CA e senha, e rode:
+
+```powershell
+python scripts/admin/install-clean-database.py --confirm-ref $env:ESTOQUE_SUPABASE_ALLOWED_REF --resume
+```
+
+O modo `--resume` repete a validação de conexão, TLS, ref e PostgreSQL, confere o fingerprint e o ledger antes de qualquer escrita e aplica somente as migrações ainda pendentes.
 
 Depois de concluir, execute o checklist abaixo. No Dashboard → API Settings confirme que `private` e `supabase_migrations` não estão entre os schemas expostos; o instalador também revoga privilégios de `PUBLIC`, `anon`, `authenticated` e `service_role` no schema do ledger e suas tabelas. Execute Security Advisor e revise os alertas antes de habilitar usuários. Se qualquer verificação falhar, suspenda o uso e encaminhe o diagnóstico ao DBA.
 

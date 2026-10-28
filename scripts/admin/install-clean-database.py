@@ -9,22 +9,25 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from clean_install_validation import validate_migration_prefix, validate_remote_target
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAN = json.loads((ROOT / 'scripts/admin/clean-install-plan.json').read_text(encoding='utf8'))
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--confirm-ref', required=True, help='Digite o ref autorizado do projeto Supabase.')
-    parser.add_argument('--preflight', action='store_true', help='Verifica destino e plano sem gravar no banco.')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--preflight', action='store_true', help='Verifica destino e plano sem gravar no banco.')
+    modes.add_argument('--resume', action='store_true', help='Retoma instalação parcial com fingerprint e ledger coerentes.')
     parser.add_argument('--local-disposable', action='store_true', help='Permite teste somente em loopback e banco estoque_rpc_test*.')
     return parser.parse_args()
 
 
 def run_psql(command, database, env, sql=None, single_transaction=False):
-    args = command + ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', database]
+    args = command + ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', env.get('PGUSER', 'postgres'), '-d', database]
     if sql is not None:
         args += ['--single-transaction', '-f', '-'] if single_transaction else ['-c', sql]
-    result = subprocess.run(args, input=sql if single_transaction else None, text=True,
+    result = subprocess.run(args, input=sql if single_transaction else None, text=True, encoding='utf8',
                             capture_output=True, env=env, timeout=300)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or 'psql falhou sem diagnóstico.')
@@ -50,8 +53,8 @@ def validate_target(args, allowed_ref):
     database = os.environ.get('PGDATABASE', '')
     if args.local_disposable:
         validate_local_target(host, database)
-    elif host != f'db.{allowed_ref}.supabase.co' or database != 'postgres':
-        raise ValueError('Configure PGHOST=db.<ref confirmado>.supabase.co e PGDATABASE=postgres.')
+    else:
+        validate_remote_target(os.environ, allowed_ref)
     return database
 
 
@@ -73,11 +76,15 @@ def validate_base_fingerprint():
 
 def prepare_psql_env(local_disposable):
     env = os.environ.copy()
+    env['PGCLIENTENCODING'] = 'UTF8'
     if local_disposable:
         env.pop('PGHOST', None)
         env.pop('PGPASSWORD', None)
     else:
         env['PGSSLMODE'] = 'verify-full'
+        certificate = env.get('PGSSLROOTCERT', '')
+        if not certificate or not Path(certificate).is_file():
+            raise ValueError('Configure PGSSLROOTCERT com o certificado CA do Supabase para validar TLS.')
         env['PGPASSWORD'] = getpass.getpass('Senha do banco (entrada oculta): ')
         if not env['PGPASSWORD']:
             raise ValueError('A senha do banco não pode estar vazia.')
@@ -146,15 +153,33 @@ def verify_tls_connection(command, database, env, local_disposable):
     encrypted = run_psql(command, database, env,
                          'select ssl from pg_catalog.pg_stat_ssl where pid=pg_backend_pid();')
     if encrypted != 't':
-        raise ValueError('A conexão direta ao PostgreSQL não está usando TLS.')
+        raise ValueError('A conexão PostgreSQL não está usando TLS.')
 
 
-def verify_database_ready(command, database, env, local_disposable):
-    verify_tls_connection(command, database, env, local_disposable)
-    verify_postgres_major(command, database, env)
-    verify_empty_application(command, database, env)
-    verify_migration_history_empty(command, database, env)
-    verify_supabase_prerequisites(command, database, env)
+def verify_resume_state(command, database, env):
+    objects = run_psql(command, database, env,
+        "select to_regclass('supabase_migrations.schema_migrations') is not null,"
+        "to_regclass('supabase_migrations.estoque_installation_baselines') is not null,"
+        "to_regclass('private.app_users') is not null, to_regclass('public.shared_inventory') is not null;")
+    if objects != 't|t|t|t':
+        raise ValueError('Retomada recusada: SQL-base ou fingerprint incompleto; preserve o banco e acione o DBA.')
+    columns = run_psql(command, database, env, "select column_name from information_schema.columns "
+        "where table_schema='supabase_migrations' and table_name='schema_migrations';")
+    if not {'version', 'name', 'statements'}.issubset(set(columns.splitlines())):
+        raise ValueError('Ledger incompatível; retomada recusada e DBA deve revisar o destino.')
+    baseline = run_psql(command, database, env,
+        'select baseline_key || \'|\' || sha256 || \'|\' || array_to_string(source_files, \',\') '
+        'from supabase_migrations.estoque_installation_baselines order by baseline_key;')
+    expected_baseline = f"v1|{PLAN['baseSha256']}|{','.join(PLAN['base'])}"
+    if baseline.splitlines() != [expected_baseline]:
+        raise ValueError('Fingerprint do SQL-base ausente ou divergente; retomada recusada e DBA deve revisar o destino.')
+    ledger = run_psql(command, database, env,
+        "select coalesce(string_agg(version || '|' || name || '|' || (statements is null)::text, E'\\n' order by version), '') "
+        'from supabase_migrations.schema_migrations;')
+    rows = ledger.splitlines() if ledger else []
+    if any(not row.endswith('|true') for row in rows):
+        raise ValueError('Ledger contém registro incompatível; retomada recusada e DBA deve revisar o destino.')
+    return validate_migration_prefix([row[:-5] for row in rows], PLAN['migrations'])
 
 
 def installation_history_sql():
@@ -199,8 +224,9 @@ def strip_explicit_transaction(filename, source):
                    if index not in (controls[0][0], controls[1][0]))
 
 
-def apply_migrations(command, database, env):
-    for index, filename in enumerate(PLAN['migrations'], start=1):
+def apply_migrations(command, database, env, filenames=None):
+    pending = PLAN['migrations'] if filenames is None else filenames
+    for filename in pending:
         match = re.match(r'supabase/migrations/(\d{14})_(.+)\.sql$', filename)
         if not match:
             raise ValueError(f'Nome de migração inválido no plano: {filename}')
@@ -208,6 +234,7 @@ def apply_migrations(command, database, env):
         source = strip_explicit_transaction(filename, source)
         source += '\n' + migration_ledger_sql(*match.groups())
         run_psql(command, database, env, source, single_transaction=True)
+        index = PLAN['migrations'].index(filename) + 1
         print(f'Aplicada migração {index}/{len(PLAN["migrations"])}: {filename}')
 
 
@@ -227,10 +254,25 @@ def main():
     verify_safety_scan()
     psql_env = prepare_psql_env(args.local_disposable)
     command = psql_prefix()
-    verify_database_ready(command, database, psql_env, args.local_disposable)
+    verify_tls_connection(command, database, psql_env, args.local_disposable)
+    verify_postgres_major(command, database, psql_env)
+    verify_supabase_prerequisites(command, database, psql_env)
     if args.preflight:
+        verify_empty_application(command, database, psql_env)
+        verify_migration_history_empty(command, database, psql_env)
         print_preflight_plan(database, args.local_disposable)
         return
+    if args.resume:
+        pending = verify_resume_state(command, database, psql_env)
+        if pending:
+            print(f'Retomada validada: {len(pending)} migração(ões) pendente(s).')
+            apply_migrations(command, database, psql_env, pending)
+        else:
+            print('Retomada validada: ledger já está completo; nenhuma escrita necessária.')
+        print('Retomada concluída. Execute o checklist documentado antes de usar a aplicação.')
+        return
+    verify_empty_application(command, database, psql_env)
+    verify_migration_history_empty(command, database, psql_env)
     apply_base(command, database, psql_env)
     apply_migrations(command, database, psql_env)
     print('Instalação limpa concluída. Execute o checklist documentado antes de usar a aplicação.')

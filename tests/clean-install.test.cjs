@@ -134,6 +134,7 @@ test('migrações transacionais mantêm somente um wrapper externo por arquivo',
   const script = [
     'from pathlib import Path',
     'import runpy',
+    "import sys; sys.path.insert(0, 'scripts/admin')",
     "module = runpy.run_path('scripts/admin/install-clean-database.py', run_name='install_module')",
     "for filename in module['PLAN']['explicitTransactionFiles']:",
     " source = (Path('.') / filename).read_text(encoding='utf8')",
@@ -144,6 +145,58 @@ test('migrações transacionais mantêm somente um wrapper externo por arquivo',
   const result = spawnSync(python, ['-c', script], { cwd: root, encoding: 'utf8', timeout: 5000 });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /PASS: 5 wrappers explícitos/);
+});
+
+test('session pooler exige porta de sessão e usuário vinculado ao ref confirmado', () => {
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const script = [
+    'import os, runpy',
+    "module = runpy.run_path('scripts/admin/clean_install_validation.py')",
+    "validate = module['validate_remote_target']",
+    "ref = 'zybnekctgrjmygdkuwyr'",
+    "os.environ.update(PGPORT='5432', PGUSER='postgres')",
+    "os.environ.update(PGHOST='db.' + ref + '.supabase.co', PGDATABASE='postgres')",
+    "validate(os.environ, ref)",
+    "os.environ.update(PGPORT='5432', PGUSER='postgres.' + ref)",
+    "os.environ['PGHOST'] = 'aws-0-us-east-1.pooler.supabase.com'",
+    "validate(os.environ, ref)",
+    "os.environ['PGHOST'] = 'aws-0-us-east-1.attacker.example'",
+    "try: validate(os.environ, ref)",
+    "except ValueError: pass",
+    "else: raise AssertionError('host fora do pooler Supabase foi aceito')",
+    "os.environ['PGUSER'] = 'postgres.otherprojectref0000'",
+    "try: validate(os.environ, ref)",
+    "except ValueError: pass",
+    "else: raise AssertionError('usuario de outro ref foi aceito')",
+    "os.environ.update(PGPORT='6543', PGUSER='postgres.' + ref)",
+    "try: validate(os.environ, ref)",
+    "except ValueError: pass",
+    "else: raise AssertionError('transaction pooler foi aceito')",
+    "print('PASS: session pooler valida host, usuario/ref e porta 5432')"
+  ].join('\n');
+  const result = spawnSync(python, ['-c', script], { cwd: root, encoding: 'utf8', timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PASS: session pooler valida host/);
+});
+
+test('retomada aceita apenas prefixo coerente do ledger e retorna pendências', () => {
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  const script = [
+    'import runpy',
+    "module = runpy.run_path('scripts/admin/clean_install_validation.py')",
+    "validate = module['validate_migration_prefix']",
+    "plan = __import__('json').load(open('scripts/admin/clean-install-plan.json', encoding='utf8'))['migrations']",
+    "first = plan[0].split('/')[-1][:-4]",
+    "version, name = first.split('_', 1)",
+    "assert validate([version + '|' + name], plan) == plan[1:]",
+    "try: validate([version + '|wrong_name'], plan)",
+    "except ValueError: pass",
+    "else: raise AssertionError('ledger divergente foi aceito')",
+    "print('PASS: prefixo coerente retomável; ledger divergente recusado')"
+  ].join('\n');
+  const result = spawnSync(python, ['-c', script], { cwd: root, encoding: 'utf8', timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PASS: prefixo coerente retomável/);
 });
 
 test('preflight executa somente consultas e imprime o plano sem iniciar instalação', (context) => {
