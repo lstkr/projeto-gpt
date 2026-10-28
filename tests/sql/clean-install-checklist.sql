@@ -19,6 +19,11 @@ and coalesce(array_to_string(p.proconfig,','),'') not like '%search_path%';
 
 select 'migration_history_rows', count(*) from supabase_migrations.schema_migrations;
 select 'baseline_fingerprint_rows', count(*) from supabase_migrations.estoque_installation_baselines;
+select 'api_roles_with_ledger_access', coalesce(string_agg(role_name,',' order by role_name),'none')
+from (values ('anon'),('authenticated'),('service_role')) as api_roles(role_name)
+where has_schema_privilege(role_name,'supabase_migrations','USAGE')
+or has_table_privilege(role_name,'supabase_migrations.schema_migrations','SELECT')
+or has_table_privilege(role_name,'supabase_migrations.estoque_installation_baselines','SELECT');
 
--- private não exposto ao PostgREST e Security Advisor são verificações manuais
+-- private/supabase_migrations não expostos ao PostgREST e Security Advisor são verificações manuais
 -- no Supabase Dashboard do responsável; este SQL local não acessa o Supabase real.

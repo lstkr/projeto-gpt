@@ -19,6 +19,13 @@
     "supabase/migrations/20261022174354_expose_cancel_audit_columns_on_tenant_pending_view.sql",
     "supabase/migrations/20261023000500_user_directory_update.sql"
   ],
+  "explicitTransactionFiles": [
+    "supabase/migrations/20261019201520_inventory_validate_session.sql",
+    "supabase/migrations/20261020221500_fiscal_write_integrity.sql",
+    "supabase/migrations/20261021143000_external_fiscal_rate_limit.sql",
+    "supabase/migrations/20261021232050_tenant_access.sql",
+    "supabase/migrations/20261023000500_user_directory_update.sql"
+  ],
   "authorizedDrops": [
     { "file": "db/schema.sql", "line": 15, "kind": "POLICY" },
     { "file": "db/schema.sql", "line": 35, "kind": "POLICY" },
