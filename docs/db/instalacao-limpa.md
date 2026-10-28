@@ -72,14 +72,51 @@ O fingerprint SHA-256 do SQL-base fica em `supabase_migrations.estoque_installat
 
 ## Bootstrap do DBA (responsável executa localmente)
 
-O bootstrap é uma ação separada do roteiro e não é executado por agente. Instale as dependências já travadas do script e rode no terminal interativo do DBA:
+O bootstrap é uma ação separada da instalação do schema e deve ser executado pelo DBA/proprietário em um terminal PowerShell interativo. Não execute o bootstrap antes da instalação do schema estar concluída e confirmada.
+
+No PowerShell, `npm` pode resolver para `npm.ps1`, bloqueado pela política de execução configurada no Windows.
+Os comandos abaixo usam `npm.cmd` para chamar o executável do npm sem depender desse script PowerShell.
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` é uma alternativa de configuração do usuário, não o padrão deste guia.
+
+### Passo 1 — instalar as dependências
+
+Na raiz do repositório, execute este comando sozinho. `npm.cmd ci` instala exatamente as versões registradas no lockfile de `scripts/admin`:
 
 ```powershell
-npm ci --prefix scripts/admin
+npm.cmd ci --prefix scripts/admin
+```
+
+Espere o npm terminar com código de saída zero e sem erro de instalação. Depois, verifique a dependência exigida pelo bootstrap:
+
+```powershell
+Test-Path scripts\admin\node_modules\bcryptjs
+```
+
+O resultado esperado é `True`. Se for `False`, não execute o bootstrap: confira a mensagem do npm e repita somente a instalação das dependências.
+
+### Passo 2 — executar o bootstrap
+
+Só depois da instalação confirmada, execute este comando separadamente. Substitua o marcador pelo ref do projeto já verificado; não acrescente senha, URL ou chave ao comando:
+
+```powershell
 node scripts/admin/bootstrap.mjs <ref-confirmado-do-projeto>
 ```
 
-O script lê a URL de conexão, senha provisória do DBA e confirmação da senha em prompts ocultos. A URL deve pertencer ao ref passado no argumento; não use variáveis com senha, não compartilhe esses valores e não os envie ao agente. `ESTOQUE_SUPABASE_ALLOWED_REF` é usado pelo instalador limpo; o script de bootstrap existente recebe o ref como argumento. O DBA/proprietário cria o superadministrador; em seguida o DBA cria o Gestor pela administração da aplicação. MASTER continua apenas uma proposta em `docs/security/master-provisioning-design.md`.
+O script primeiro pede `Database URL (hidden)`: essa URL contém a senha do PostgreSQL, que autentica a conexão com o banco. Em seguida pede `Provisional DBA password (hidden)` e sua confirmação: é a senha provisória escolhida para a conta superadministradora Estoque+, não a senha do banco. As entradas são ocultas: nenhum caractere digitado aparece na tela. Após sucesso, espere `DBA created. First login requires a new password.`; no primeiro login, a senha do DBA deve ser trocada.
+
+O endereço da conexão deve pertencer ao ref informado no argumento. Não use variáveis com senha, não compartilhe a URL ou as senhas e não as envie ao agente. `ESTOQUE_SUPABASE_ALLOWED_REF` é usado pelo instalador limpo; o bootstrap recebe o ref como argumento. O DBA/proprietário cria o superadministrador; em seguida o DBA cria o Gestor pela administração da aplicação. MASTER continua apenas uma proposta em `docs/security/master-provisioning-design.md`.
+
+### Erros comuns
+
+| Mensagem ou sintoma | Causa provável | Ação segura |
+| --- | --- | --- |
+| `npm.ps1 cannot be loaded` ou execução bloqueada por política | O PowerShell selecionou o shim `npm.ps1` e a política local bloqueou scripts. | Use `npm.cmd ci --prefix scripts/admin` conforme o Passo 1. A alternativa `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` é opcional e altera a configuração do usuário. |
+| `ERR_MODULE_NOT_FOUND` para `bcryptjs` ou `pg` | As dependências ainda não foram instaladas ou a instalação não terminou. | Rode o Passo 1 separadamente e confirme `Test-Path scripts\admin\node_modules\bcryptjs` como `True` antes do Passo 2. |
+| `Supply only the verified test project reference.` | O argumento está ausente ou não tem o formato esperado. | Informe somente o ref confirmado do projeto no lugar do marcador; não use uma URL. |
+| `Project mismatch` | O host da URL não corresponde ao ref informado; no pooler, o usuário também precisa terminar com o ref. | Cancele e confirme no painel do projeto o destino e o formato da conexão antes de tentar de novo. |
+| `Invalid database URL` | A entrada não é uma URL PostgreSQL válida. | Cancele e copie a URL correta localmente do painel; nunca a cole em issues, logs ou mensagens. |
+| `Bootstrap not completed. Check the verified project, protected connection and migration.` | O script oculta erros do driver para não revelar dados. Causas comuns incluem senha do banco incorreta, conexão/TLS indisponível, migração ausente ou bootstrap já realizado. | Não repita às cegas. Confirme projeto, rede e conclusão das migrações sem compartilhar credenciais; se persistir, peça ao DBA para revisar o estado e o erro local com segurança. |
+| `Password confirmation or length invalid` | A senha provisória do DBA e a confirmação diferem ou excedem os limites aceitos pelo script. | Recomece o comando e informe a mesma senha provisória nas duas entradas ocultas, respeitando o limite de bytes indicado pelo responsável. |
 
 ## Validação local descartável
 
