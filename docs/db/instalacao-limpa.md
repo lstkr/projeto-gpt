@@ -90,6 +90,7 @@ A preparação em `tests/sql/disposable-supabase-setup.sql` cria somente roles, 
 - [ ] Confirmar 12 tabelas privadas e as três views públicas `shared_inventory`, `pending_receipts` e `cash_closings`.
 - [ ] Executar `tests/sql/clean-install-checklist.sql`: confirmar RLS habilitado em todas as tabelas privadas, `private_tables_without_rls = none` e nenhuma função de aplicação sem `search_path` explícito.
 - [ ] No Dashboard → API Settings, confirmar que o schema `private` não está na lista de schemas expostos ao PostgREST; expor somente schemas necessários.
+- [ ] Manter `public` exposto para as chamadas RPC do aplicativo; o código atual não consulta as tabelas/views por acesso direto. A partir de 30/10/2026, novas tabelas públicas não são expostas automaticamente pela Data API; habilite objetos individualmente apenas se uma integração passar a consultá-los diretamente ([changelog oficial](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically)).
 - [ ] Confirmar também que `supabase_migrations` não está exposto; o banco revoga privilégios dos papéis da API nesse schema e nas suas tabelas.
 - [ ] No Supabase Dashboard, executar Security Advisor e revisar cada alerta antes de habilitar usuários.
 - [ ] Rodar os testes de acesso entre estabelecimentos do `run-tenant-access.py`; usuário de um tenant não pode ler nem gravar dados do outro.
