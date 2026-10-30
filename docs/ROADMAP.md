@@ -23,3 +23,5 @@ Critérios de aceite: custos e unidades coerentes, fontes identificadas, reproce
 - Reset de testes depende de escopo verificado, backup recuperável e rollback ensaiado. Preservar usuários e hashes existentes; revogar sessões explicitamente. Autenticação própria não é Supabase Auth.
 
 Nenhuma interface administrativa ou seleção de unidade deve ser publicada com autorização apenas no navegador ou antes de concluir isolamento e homologação de todas as RPCs existentes.
+- **P0 — revogação de sessões (#132):** a inativação visível em [PR #115](https://github.com/lstkr/projeto-gpt/pull/115) depende da RPC de edição/revogação em #114 e do bloqueio concorrente em [PR #133](https://github.com/lstkr/projeto-gpt/pull/133). O #132 ainda exige monitor de sessão no navegador e retorno automático ao login. Gate para publicar inativação: PostgreSQL 15/17 + revisão de segurança + aceite autenticado/browser; manter #133 em draft enquanto Actions não fornecerem execução/logs reproduzíveis. Sem deploy antes dos gates.
+
