@@ -2,20 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
-const { parse } = require('next/dist/compiled/babel/parser');
 
 const root = join(__dirname, '..');
 const source = readFileSync(join(root, 'pages/index.js'), 'utf8');
 const css = readFileSync(join(root, 'styles/globals.css'), 'utf8');
-
-function visit(node, inspect) {
-  if (!node || typeof node !== 'object') return;
-  inspect(node);
-  Object.values(node).forEach(value => {
-    if (Array.isArray(value)) value.forEach(child => visit(child, inspect));
-    else if (value && typeof value === 'object') visit(value, inspect);
-  });
-}
 
 function luminance(hex) {
   const channels = hex.match(/../g).map(channel => {
@@ -39,32 +29,22 @@ test('secondary text tokens meet 4.5:1 on the shared light surfaces', () => {
 });
 
 test('buttons declare their behavior and cash saving remains a submit action', () => {
-  const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] });
-  let cashSubmit = false;
-  visit(ast, node => {
-    if (node.type !== 'JSXOpeningElement' || node.name.name !== 'button') return;
-    const type = node.attributes.find(attribute => attribute.name?.name === 'type');
-    assert.ok(['button', 'submit'].includes(type?.value?.value), `button at ${node.loc.start.line}`);
-    if (source.slice(node.start, node.end).includes('cashSaving||!accessCode')) {
-      cashSubmit = type.value.value === 'submit';
-    }
-  });
-  assert.ok(cashSubmit);
+  const buttons = [...source.matchAll(/<button\b[\s\S]*?<\/button>/g)].map(match => match[0]);
+  assert.ok(buttons.length > 0);
+  buttons.forEach(button => assert.match(button, /type="(?:button|submit)"/));
+  const cashButton = buttons.find(button => button.includes('cashSaving||!accessCode'));
+  assert.ok(cashButton);
+  assert.match(cashButton, /type="submit"/);
 });
 
 test('count and invoice name, unit and product controls have accessible names', () => {
-  const ast = parse(source, { sourceType: 'module', plugins: ['jsx'] });
+  const controls = [...source.matchAll(/<input\b[\s\S]*?\/>|<select\b[\s\S]*?<\/select>/g)].map(match => match[0]);
   const targets = ['countDraft[p.id]', "fieldStyle('produto')", "fieldStyle('unidade')", "value={it.productId || ''}"];
-  const found = new Set();
-  visit(ast, node => {
-    if (node.type !== 'JSXOpeningElement' || !['input', 'select'].includes(node.name.name)) return;
-    const opening = source.slice(node.start, node.end);
-    targets.filter(target => opening.includes(target)).forEach(target => {
-      assert.ok(node.attributes.some(attribute => attribute.name?.name === 'aria-label'), target);
-      found.add(target);
-    });
+  targets.forEach(target => {
+    const matching = controls.filter(control => control.includes(target));
+    assert.ok(matching.length > 0, target);
+    matching.forEach(control => assert.match(control, /aria-label=\{[^}]+\}/, target));
   });
-  assert.equal(found.size, targets.length);
 });
 
 test('mobile row actions and buttons keep a minimum 44px touch target', () => {
