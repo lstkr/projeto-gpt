@@ -4,10 +4,22 @@
 begin;
 do $$
 begin
+ if current_setting('estoque.confirm_full_reset', true) is distinct from
+    'APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO'
+ then raise exception 'Confirmação explícita de reset total ausente'; end if;
+ if current_user <> 'postgres'
+ then raise exception 'Reset total reservado ao proprietário postgres'; end if;
  if to_regclass('private.tenant_inventory') is null
  or to_regclass('private.app_users') is null
  or to_regclass('private.establishments') is null
  then raise exception 'Tenant migration must be applied before the test reset'; end if;
+end $$;
+
+-- Auditoria referencia caixas e autores: apagar primeiro, somente neste reset total.
+do $$ begin
+ if to_regclass('private.cash_closing_audit') is not null then
+   execute 'delete from private.cash_closing_audit';
+ end if;
 end $$;
 
 delete from private.pending_receipts;

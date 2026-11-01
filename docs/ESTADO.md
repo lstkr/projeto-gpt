@@ -15,7 +15,7 @@
    OCR usa original; limite do servidor preservado, sem alteração de SQL ou regras fiscais.
    Comparar OCR antes/depois com fotos reais privadas; qualidade ainda não testada.
 3. B1 preparado: PR #188 banco e PR #189 interface dependente, ambas rascunhos.
-   Plano, reversão e roteiro: docs/B1-correcao-financeira.md; depende de CI e OK explícito.
+   Lucas autorizou apenas homologação; instalador/reset ajustados, nova validação em andamento.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
 - Melhoria futura registrada: notificações dentro da página, issue #186.
 
@@ -34,6 +34,6 @@
 - Testes relevantes: 22/22 passaram (cinco novos); foto da #185 preservada.
 - Suíte única: 244/250; seis falhas locais de pacote ausente e quebra de linha Windows.
 - Build local passou com configuração pública fictícia; sem banco remoto.
-- Replay/reversão PGlite18.6 passaram; PG15/17 e concorrência real aguardam CI.
+- Instalador 10/10; replay/reset deliberado local passou; atualizações aguardam novo CI.
 - Revisão cruzada: SQL pelo CTO, UI pelo DBA; dois problemas de troca de formulário corrigidos.
-- CL-10/12/13/16 conferidas no escopo; sem migração, merge financeiro ou deploy.
+- Backup criado só na homologação; B1 ainda não aplicada; reset total remoto não executado.

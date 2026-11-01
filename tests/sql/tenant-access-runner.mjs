@@ -133,6 +133,7 @@ assert.equal(JSON.stringify((await db.query('select tenant_id,state from private
 assert.equal(JSON.stringify((await db.query('select id,password_hash from private.app_users order by id')).rows),credentialsBefore);
 assert.equal((await db.query('select count(*)::integer count from private.app_sessions where revoked_at is null')).rows[0].count,0);
 console.log('PASS private backup, operational reset and restore rehearsal; credentials preserved; sessions revoked');
+await db.exec("set estoque.confirm_full_reset='APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO';");
 await db.exec(await fs.readFile('db/operations/reset-test-environment.sql','utf8'));
 for (const table of ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts','tenant_inventory','cash_closings','pending_receipts','user_permissions','permission_audit','external_fiscal_rate_limits']) {
  assert.equal((await db.query(`select count(*)::integer count from private.${table}`)).rows[0].count,0,`${table} reset`);

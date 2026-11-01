@@ -31,6 +31,22 @@ def run(sql, command, root):
     assert json.loads(sql(call(dict(day=entry['day'], register='b1.after.rollback', operator='Fixture', cashCounted='0', movements=[]))))['ok']
     error(sql, call(dict(day=entry['day'], register=entry['register'], operator='Fixture', cashCounted='0', movements=[])), 'Já existe')
     print('PASS B1 concurrent replay, stale session, rollback preserves values/audit and creation')
+    verify_full_reset(sql, root)
+
+
+def verify_full_reset(sql, root):
+    reset = (root/'db/operations/reset-test-environment.sql').read_text(encoding='utf8')
+    before = sql('select count(*) from private.app_users')
+    error(sql, reset, 'Confirmação explícita')
+    assert sql('select count(*) from private.app_users') == before
+    assert sql('select count(*) from private.cash_closing_audit') == '2'
+    confirmation = "set estoque.confirm_full_reset='APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO';"
+    error(sql, 'set role anon; '+confirmation+reset, 'reservado ao proprietário')
+    assert sql('select count(*) from private.cash_closing_audit') == '2'
+    sql(confirmation+reset)
+    for table in ['cash_closing_audit', 'cash_closings', 'app_users', 'app_sessions', 'establishments']:
+        assert sql(f'select count(*) from private.{table}') == '0', table
+    print('PASS deliberate full reset refuses missing confirmation/app role; removes two audit rows and accounts')
 
 
 def call(entry):
