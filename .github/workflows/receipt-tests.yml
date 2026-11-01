@@ -21,4 +21,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # O parser fiscal usa Cheerio, já fixado no lockfile da aplicação.
+      - run: npm ci --ignore-scripts
       - run: npm test

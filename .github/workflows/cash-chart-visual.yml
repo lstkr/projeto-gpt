@@ -9,6 +9,7 @@ on:
       - 'tests/browser/alerts-readability.cjs'
       - 'tests/browser/discard-receipt-dialog.cjs'
       - 'tests/browser/receipt-desktop.cjs'
+      - 'tests/browser/cnpj-reading.cjs'
       - 'lib/receipt-keyboard.mjs'
       - 'tests/browser/prepare-discard-fixture.cjs'
       - 'components/DiscardReceiptDialog.js'
@@ -53,6 +54,8 @@ jobs:
         run: node tests/browser/discard-receipt-dialog.cjs
       - name: Verify receipt keyboard safety and desktop review
         run: node tests/browser/receipt-desktop.cjs
+      - name: Verify CNPJ source priority and pending status
+        run: node tests/browser/cnpj-reading.cjs
       - name: Verify layout across viewports and real tab focus
         run: |
           command -v xvfb-run
