@@ -13,6 +13,8 @@
   --cream: #f1eee4;
   --yellow: #f7efcf;
   --yellow-ink: #92751a;
+  --review-warning-background: #fffbeb;
+  --review-warning-border: #c58a24;
   --red-soft: #f8e9e5;
   --red: #ac4c3b;
   --blue-soft: #e6eef7;
@@ -863,3 +865,10 @@ td b small { color: var(--muted); font-size: 12px; font-weight: 550; }
   .row-actions button, .row-chevron { width: 44px; height: 44px; flex-shrink: 0; }
   .btn { min-height: 44px; }
 }
+
+/* Espaçamentos e ações repetidos nas telas de conferência e histórico. */
+.space-top-sm { margin-top: 10px; }
+.space-top-md { margin-top: 12px; }
+.text-danger, .btn.secondary.text-danger { color: var(--red); }
+.document-delete-button { padding: 7px 11px; font-size: 12px; }
+.review-warning-panel { margin-top: 12px; background: var(--review-warning-background); border-left: 4px solid var(--review-warning-border); }
