@@ -18,6 +18,7 @@
    Antes do OK: explicar como desfazer a migração, teste na cafeteria e motivo em 2 linhas.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
 - Melhoria futura registrada: notificações dentro da página, issue #186.
+- Sugestão futura, sem implementação: pedir confirmação ao descartar nota só quando houver edições não salvas.
 
 ## Decisões de trabalho
 - Agente único; especialistas/revisão independente apenas para mudanças arriscadas.
@@ -30,10 +31,7 @@
 - Testes humanos apenas na homologação, com roteiro de 3 a 5 itens.
 
 ## Evidências deste bloco
-- Redução de fotos: cinco testes novos passaram; foto real de iPhone ainda não disponível.
-- Validação: contagem de linhas, links locais e git diff --check.
-- Suíte local: 14 falhas; uma asserção foi atualizada para a cópia reduzida e revalidada.
-- Outras 13 falhas locais já existiam; CI da PR documental passou no Linux.
-- Testes relevantes: 10/10; build compilou, mas parou por configuração Supabase ausente.
-- Redução de fotos: PR #185; consultar nela o resultado de CI e a integração.
-- Rollback de fotos: reverter o commit; fotos grandes voltam a ser recusadas, sem apagar dados.
+- #187 limitada à troca da confirmação nativa pelo modal; regras e pergunta preservadas.
+- Testes locais relevantes: 16/16; teste Chromium da fila sintética será executado pelo CI.
+- CL-01/02/06/13/15: alteração focada, handlers pequenos; sem estilos ou permissões novos.
+- Sem migração ou alteração de dados; sugestão de edições não salvas apenas registrada.
