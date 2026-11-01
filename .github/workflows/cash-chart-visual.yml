@@ -6,6 +6,7 @@ on:
       - 'styles/globals.css'
       - 'tests/browser/cash-chart-visual.cjs'
       - 'tests/browser/count-print-visual.cjs'
+      - 'tests/browser/alerts-readability.cjs'
       - 'lib/count-print.mjs'
       - 'tests/count-print.test.cjs'
       - '.github/workflows/cash-chart-visual.yml'
@@ -33,6 +34,8 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
+      - name: Verify alert readability and notification semantics
+        run: node tests/browser/alerts-readability.cjs
       - name: Build Next.js fixture
         run: npm run build
       - name: Start isolated local server
