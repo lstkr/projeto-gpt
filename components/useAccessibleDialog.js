@@ -1,4 +1,15 @@
 import { useEffect, useRef } from 'react';
+import { focusNavigationDestination } from '../lib/navigation-focus.mjs';
+
+/** Move o foco apenas quando muda a tela ou o formulário, preservando a digitação. */
+export function useNavigationFocus(destinationKey) {
+  const previousKey = useRef(destinationKey);
+  useEffect(() => {
+    if (previousKey.current === destinationKey) return;
+    previousKey.current = destinationKey;
+    focusNavigationDestination(document);
+  }, [destinationKey]);
+}
 
 const FOCUSABLE_SELECTOR = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled])',
