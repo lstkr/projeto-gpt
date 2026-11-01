@@ -1,4 +1,4 @@
-name: Production read-only smoke
+name: Homologation read-only smoke
 on:
   pull_request:
     paths:
@@ -20,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check public production assets and reject unauthenticated operations
+      - name: Check homologation assets and reject unauthenticated operations
         run: node scripts/smoke-production.cjs
