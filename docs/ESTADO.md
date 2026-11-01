@@ -17,7 +17,7 @@
 3. B1: correção financeira com motivo e histórico; exige OK explícito.
    Antes do OK: explicar como desfazer a migração, teste na cafeteria e motivo em 2 linhas.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
-- Registrar futura melhoria em issue: notificações dentro da página (ainda não criada).
+- Melhoria futura registrada: notificações dentro da página, issue #186.
 
 ## Decisões de trabalho
 - Agente único; especialistas/revisão independente apenas para mudanças arriscadas.
@@ -35,5 +35,5 @@
 - Suíte local: 14 falhas; uma asserção foi atualizada para a cópia reduzida e revalidada.
 - Outras 13 falhas locais já existiam; CI da PR documental passou no Linux.
 - Testes relevantes: 10/10; build compilou, mas parou por configuração Supabase ausente.
-- CI da redução de fotos será conferido uma vez após abrir a PR.
+- Redução de fotos: PR #185; consultar nela o resultado de CI e a integração.
 - Rollback de fotos: reverter o commit; fotos grandes voltam a ser recusadas, sem apagar dados.
