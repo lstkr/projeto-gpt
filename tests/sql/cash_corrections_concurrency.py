@@ -88,7 +88,7 @@ def race(sql, command, attempts, replay):
         if replay:
             assert waiter.returncode == 0 and '"replayed": true' in output, failure
         else:
-            assert waiter.returncode != 0 and 'outra sessão' in failure, failure
+            assert waiter.returncode != 0 and 'Este fechamento foi alterado em outra aba. Recarregue para ver a versão atual' in failure, failure
     finally:
         for process in [holder, waiter]:
             if process is not None and process.poll() is None:

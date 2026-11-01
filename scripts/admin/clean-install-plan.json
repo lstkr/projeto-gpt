@@ -18,7 +18,8 @@
     "supabase/migrations/20261022145500_admin_password_recovery.sql",
     "supabase/migrations/20261022174354_expose_cancel_audit_columns_on_tenant_pending_view.sql",
     "supabase/migrations/20261023000500_user_directory_update.sql",
-    "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql"
+    "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql",
+    "supabase/migrations/20261101223012_cash_closing_conflict_response.sql"
   ],
   "explicitTransactionFiles": [
     "supabase/migrations/20261019201520_inventory_validate_session.sql",
@@ -26,7 +27,8 @@
     "supabase/migrations/20261021143000_external_fiscal_rate_limit.sql",
     "supabase/migrations/20261021232050_tenant_access.sql",
     "supabase/migrations/20261023000500_user_directory_update.sql",
-    "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql"
+    "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql",
+    "supabase/migrations/20261101223012_cash_closing_conflict_response.sql"
   ],
   "authorizedDrops": [
     { "file": "db/schema.sql", "line": 15, "kind": "POLICY" },
