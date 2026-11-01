@@ -709,6 +709,27 @@ td b small { color: var(--muted); font-size: 12px; font-weight: 550; }
 .review-table .receipt-history-match small{font-size: 12px}
 .review-table .review-check-cell{min-width:195px}
 .review-check-row{display:flex;align-items:center;gap:8px;justify-content:space-between}
+/* A navegação não confirma nem altera os dados da nota. */
+.receipt-review-guide{display:grid;gap:10px;margin:0 20px 16px;padding:14px;border:1px solid var(--line);border-radius:9px;background:#f6f8f4;color:var(--text-positive)}
+.receipt-review-guide>div:first-child{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px}
+.receipt-review-guide small{font-size:12px;line-height:1.5}
+.receipt-review-links{display:flex;flex-wrap:wrap;gap:10px 20px}
+.receipt-review-links a{color:var(--text-positive);font-size:13px;font-weight:700;text-decoration:underline;padding-block:4px}
+.receipt-line-pending{margin:8px 0 0;color:#794409;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.content:has(.review-panel) .notice{overflow-wrap:anywhere}
+.review-panel :is(input,select,button,a,[tabindex]):focus-visible{outline:3px solid #377b4f;outline-offset:3px}
+#receipt-review-items,#receipt-review-totals,#receipt-review-final{scroll-margin-top:86px}
+@media(min-width:1024px){
+  .content:has(.review-panel){max-width:none;padding-inline:20px}
+  .review-panel .meta-fields,.review-panel .invoice-document-details .meta-fields{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .receipt-items-table{max-height:70vh;overflow:auto}
+  .receipt-items-table table{min-width:1120px;width:100%}
+  .receipt-items-table thead th{position:sticky;top:0;z-index:1;background:#f6f8f4;box-shadow:0 1px 0 var(--line)}
+  .receipt-items-table td{vertical-align:top;padding-block:9px}
+  .receipt-items-table th:first-child{width:20%}
+  .receipt-items-table .name-field{width:100%;min-width:170px}
+  .receipt-items-table .review-check-cell{min-width:180px}
+}
 .review-check-label{display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;color:#485d4f;font-size:12.5px;font-weight:650;line-height:1.4}
 .review-check-label input{width:17px;height:17px;flex:0 0 auto;accent-color:#377b4f}
 .review-okay{font-size:12.5px;color: var(--text-positive);font-weight:650}
