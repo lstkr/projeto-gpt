@@ -11,12 +11,14 @@
 - Homologação: https://estoque-homologacao-ashy.vercel.app/
 
 ## Próximos passos
-1. Concluir publicação da interface #189 após CI verde, somente na homologação.
-2. Ordem autorizada: migração no Estoque+ DB, #188 integrada, depois #189.
-3. Confirmar publicação e teste básico; Lucas testa motivo, histórico, duas abas e funcionário.
+1. B1: itens 1/2/4 aprovados; corrigir espera infinita em duas abas antes de novo teste.
+2. Tela: limite de 15s por requisição; migração mínima PT409 exige NOVO OK.
+3. E1 segue após corrigir a causa do travamento; preparar contrato sem aplicar banco.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de outro fluxo mobile.
 
 ## Decisões
+- Direção: desktop é o uso principal (cadastro, conferência completa, estoque e financeiro); celular fica com envio de foto, consulta rápida e login.
+- Priorizar teclado, tabelas, campos visíveis e testes no computador; D1–D3 vira enviar foto → notas a conferir, preservando mobile atual sem polimento novo.
 - Agente único, com revisão independente para dinheiro/banco/login; máximo duas PRs ativas.
 - Testes relevantes durante trabalho; suíte completa uma vez antes da PR.
 - Banco/dinheiro/fiscal/login/exclusão/produção exigem OK explícito; nenhuma produção autorizada.
@@ -28,5 +30,5 @@
 - Instalador atualizado para B1: 10/10 testes passaram; plano inclui 4 bases e 10 migrações.
 - Replay/reversão/reset deliberado aprovados em PGlite18.6; backup também ensaiado localmente.
 - #188 CI verde; PG15/17, concorrência, reversão e reset deliberado aprovados.
-- Tela B1: 29 testes relevantes passaram após conciliar a main; CI final valida build.
-- CL-10/12/13/16 revisadas; sem reset remoto e sem alteração em produção.
+- Banco somente leitura: 2 correções válidas (revisões 1/2); recusas 40001 repetidas, sem terceira gravação.
+- Correção da tela cobre timeout, conflito, preservação de campos e nova tentativa; sem SQL remoto.

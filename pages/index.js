@@ -15,6 +15,7 @@ import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
 import { CASH_CHANNELS,cashTotals,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { prepareCashClosing, cashCorrectionAttempt } from '../lib/cash-correction.mjs';
+import { boundedRpc, RPC_TIMEOUT_CODE } from '../lib/browser-rpc-timeout.mjs';
 import CashCorrectionHistory from '../components/CashCorrectionHistory';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
@@ -1215,6 +1216,7 @@ export default function Home() {
   const [closings,setClosings]=useState([]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashConflict,setCashConflict]=useState(false);
+  const [cashSaveTimedOut,setCashSaveTimedOut]=useState(false);
   const [cashAudit,setCashAudit]=useState({closingId:'',entries:[],loading:false,error:''});
   const [cashSaving,setCashSaving]=useState(false);
   const cashSavingRef=useRef(false);
@@ -1376,7 +1378,7 @@ export default function Home() {
     const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
-    const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
+    const {data:cashList,error:cashLoadError}=await boundedRpc(supabase,'cash_closings_list',{p_token:token});
     if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
@@ -1929,7 +1931,7 @@ export default function Home() {
   function newCashClosing(mode='manual'){
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
-    setCashEditId('');setCashConflict(false);
+    setCashEditId('');setCashConflict(false);setCashSaveTimedOut(false);
     setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
       credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
@@ -1937,7 +1939,7 @@ export default function Home() {
   }
   function editCashClosing(entry){
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
-    setCashEntryMode('edit');setCashConflict(false);
+    setCashEntryMode('edit');setCashConflict(false);setCashSaveTimedOut(false);
     setCashEditId(entry.id);
     void loadCashAudit(entry.id);
     setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,correctionReason:'',
@@ -1947,7 +1949,7 @@ export default function Home() {
   async function loadCashAudit(closingId){
     setCashAudit({closingId,entries:[],loading:true,error:''});
     try{
-      const {data,error}=await supabase.rpc('cash_closing_audit_list',{p_token:accessCode,p_closing_id:closingId});
+      const {data,error}=await boundedRpc(supabase,'cash_closing_audit_list',{p_token:accessCode,p_closing_id:closingId});
       if(error || !Array.isArray(data))throw new Error('Não foi possível carregar o histórico de correções.');
       setCashAudit(current=>current.closingId===closingId?{...current,entries:data,loading:false}:current);
     }catch(error){
@@ -1958,7 +1960,7 @@ export default function Home() {
     if(cashSavingRef.current || !window.confirm('Recarregar substituirá seus campos pela versão salva. Deseja continuar?'))return;
     cashSavingRef.current=true;setCashSaving(true);
     try{
-      const {data,error}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      const {data,error}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
       const latest=Array.isArray(data)?data.find(entry=>entry.id===cashEditId):null;
       if(error || !latest)throw new Error('Não foi possível recarregar. Seus campos foram preservados.');
       setClosings(data);editCashClosing(latest);
@@ -1979,20 +1981,21 @@ export default function Home() {
     }
     catch(error){setCashError(error.message);return;}
     if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
-    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');setCashSaveTimedOut(false);
     try{
-      const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
+      const {data,error:saveError}=await boundedRpc(supabase,'cash_closing_save',{p_token:accessCode,p_entry:clean});
       if(saveError)throw saveError;
       if(!data?.ok)throw new Error('Não foi possível salvar o fechamento.');
-      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
+      const {data:updated,error:listError}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
       if(!listError&&Array.isArray(updated))setClosings(updated);
       else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
       setCashMonth(clean.day.slice(0,7));setCashSelectedDay('');
       setCashEditId('');setCashEntryMode('');setCashConflict(false);
       setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
     }catch(error){
-      if(error.code==='40001' || error.code==='23505')setCashConflict(true);
-      setCashError(error.code==='40001'?'Fechamento alterado por outra sessão. Seus campos foram preservados. Recarregue antes de corrigir.':
+      setCashSaveTimedOut(error.code===RPC_TIMEOUT_CODE);
+      if(['40001','PT409','23505'].includes(error.code))setCashConflict(true);
+      setCashError(['40001','PT409'].includes(error.code)?'Este fechamento foi alterado em outra aba. Recarregue para ver a versão atual. Seus campos foram mantidos.':
         error.code==='23505'?'Já existe fechamento nesta data e caixa. Seus campos foram preservados. Confira o registro no histórico antes de continuar.':
         error.message||'Falha ao salvar fechamento. Seus campos foram preservados.');
     }finally{cashSavingRef.current=false;setCashSaving(false);}
@@ -3435,7 +3438,7 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashConflict||cashSaving||!accessCode} type="submit">{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashConflict||cashSaving||!accessCode} type="submit">{cashSaving?'Salvando…':cashSaveTimedOut?'Tentar novamente':'Salvar fechamento'}</button></div>
               </fieldset>
             </form>
             {cashEditId&&<CashCorrectionHistory history={cashAudit} onReload={()=>void loadCashAudit(cashEditId)}/>}
