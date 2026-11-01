@@ -48,6 +48,8 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         assert sql("select to_regclass('public.shared_inventory') is not null") == 't'
         print('PASS failed cutover rolls back schema and preserves credentials')
     sql(migration.read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/cash-corrections.sql').read_text(encoding='utf8'))
+print('PASS B1 cash corrections, replay, revision, authorization and exact decimals')
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
@@ -157,3 +159,8 @@ for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_
 print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
 print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
 
+
+# Executar após resets existentes: a auditoria passa a impedir exclusão de dados financeiros.
+from cash_corrections_concurrency import run as run_cash_corrections
+run_cash_corrections(sql, json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) +
+                     ['-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']], ROOT)
