@@ -42,4 +42,4 @@ Ver [modelo de squads](../../governance/TEAM_DELIVERY_MODEL.md) e [quadro do CTO
 
 Perfis complementares: [CTO](cto.md), [Guardião](guardiao-codigo-limpo.md), [Front-end/UX](frontend-ux.md), [OCR/Fiscal](ocr-fiscal.md), [QA](qa.md), [Segurança](seguranca.md) e [DevOps](devops-release.md). Back-end e Database mantêm seus caminhos e conteúdo anterior. Os perfis antigos de UI/UX, QA e Segurança continuam válidos como complementos.
 
-Decisão: [ADR 0001](../adr/0001-diretriz-codigo-limpo.md). Modelos 8.1–8.5 e checklist 9 estão em [AGENTS.md](../../AGENTS.md); automação da diretriz permanece pendente da PR 2.
+Decisão: [ADR 0001](../adr/0001-diretriz-codigo-limpo.md). Modelos 8.1–8.5, CL-01–CL-16 e checklist 9 estão em [diretrizes completas](diretrizes-completas.md); automação da diretriz permanece pendente da PR 2.
