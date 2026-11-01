@@ -70,7 +70,7 @@ test('file signature detection rejects mislabeled files and accepts supported fo
 test('fiscal intake is not blocked by a pending review and reports real batch completion',()=>{
   const ui=readFileSync('pages/index.js','utf8');
   assert.doesNotMatch(ui,/Deseja descartar essa conferência e começar um novo lote/);
-  assert.match(ui,/parsed\.push\(await storePendingReceipt\(file,mapped\)\)/);
+  assert.match(ui,/parsed\.push\(await storePendingReceipt\(archiveFile,mapped\)\)/);
   assert.match(ui,/await refreshPending\(\)/);
   assert.match(ui,/onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
   assert.match(ui,/completed:i\+1/);
