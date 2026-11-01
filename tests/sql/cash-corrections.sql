@@ -38,7 +38,8 @@ begin
  begin perform public.cash_closing_save('b1.manager',correction||'{"cashCounted":"0.20"}'); raise exception 'Tentativa reutilizada com outro conteúdo';
  exception when invalid_parameter_value then null; end;
  begin perform public.cash_closing_save('b1.manager',correction||'{"requestId":"00000000-0000-4000-8000-0000000000b2"}'); raise exception 'Revisão antiga aceita';
- exception when serialization_failure then null; end;
+ exception when sqlstate 'PT409' then
+  assert sqlerrm='Este fechamento foi alterado em outra aba. Recarregue para ver a versão atual'; end;
  audit:=public.cash_closing_audit_list('b1.manager',(saved->>'id')::uuid);
  assert jsonb_array_length(audit)=1;
  assert audit->0->'before'->>'cashCounted'='0.30' and audit->0->'after'->>'cashCounted'='0.10';
