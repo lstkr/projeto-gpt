@@ -16,6 +16,7 @@ import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/s
 import { CASH_CHANNELS,cashTotals,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
 import { prepareCashClosing, cashCorrectionAttempt } from '../lib/cash-correction.mjs';
 import { boundedRpc, RPC_TIMEOUT_CODE } from '../lib/browser-rpc-timeout.mjs';
+import { inventorySaveMessage } from '../lib/inventory-save-message.mjs';
 import CashCorrectionHistory from '../components/CashCorrectionHistory';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
@@ -1176,11 +1177,11 @@ export default function Home() {
     if(!supabase||!accessCode||currentUser?.role!=='admin'||permissionBusy)return;
     setPermissionBusy(true);setPermissionError('');
     try {
-      const {data,error}=await supabase.rpc('inventory_permission_set',{
+      const {data,error}=await boundedRpc(supabase,'inventory_permission_set',{
         p_token:accessCode,p_user_id:user.id,p_key:key,p_allowed:allowed
       });
       if(error||!data?.ok)throw new Error(error?.message||'Permissão não foi salva.');
-      const result=await supabase.rpc('inventory_permissions_list',{p_token:accessCode});
+      const result=await boundedRpc(supabase,'inventory_permissions_list',{p_token:accessCode});
       if(result.error||!result.data)throw new Error('Salvo, mas não foi possível atualizar a lista.');
       setFiscalPermissions(result.data.self||{});
       setPermissionUsers(result.data.users||[]);
@@ -1337,7 +1338,7 @@ export default function Home() {
 
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
-    const membership = await supabase.rpc('inventory_tenants', { p_token: token });
+    const membership = await boundedRpc(supabase,'inventory_tenants', { p_token: token });
     if (membership.error || !membership.data?.user) {
       setAccessGranted(false); setDataReady(false); setAccessCode(''); setCurrentUser(null);
       setAccessMessage('Não foi possível validar os acessos da conta. Entre novamente.');
@@ -1356,7 +1357,7 @@ export default function Home() {
       try { sessionStorage.setItem('projeto-gpt-session', token); } catch (_) {}
       return true;
     }
-    const { data, error: loadError } = await supabase.rpc('inventory_get', { p_session_token: token });
+    const { data, error: loadError } = await boundedRpc(supabase,'inventory_get', { p_session_token: token });
     if (loadError || !data) {
       setAccessMessage('Sua sessão expirou ou não é válida. Entre novamente com seu login e senha.');
       setAccessGranted(false);
@@ -1375,7 +1376,7 @@ export default function Home() {
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
     setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
-    const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
+    const {data:pending,error:pendingError}=await boundedRpc(supabase,'pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
     const {data:cashList,error:cashLoadError}=await boundedRpc(supabase,'cash_closings_list',{p_token:token});
@@ -1384,7 +1385,7 @@ export default function Home() {
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
     setCurrentUser(state.user || null);
-    const permissionsResult=await supabase.rpc('inventory_permissions_list',{p_token:token});
+    const permissionsResult=await boundedRpc(supabase,'inventory_permissions_list',{p_token:token});
     if(!permissionsResult.error && permissionsResult.data?.self) {
       setFiscalPermissions(permissionsResult.data.self);
       setPermissionUsers(permissionsResult.data.users||[]);
@@ -1411,7 +1412,7 @@ export default function Home() {
     setLoginBusy(true);
     setAccessMessage('');
     try {
-      const { data, error: loginError } = await supabase.rpc('inventory_login', {
+      const { data, error: loginError } = await boundedRpc(supabase,'inventory_login', {
         p_username: loginUsername.trim().toLowerCase(),
         p_password: loginPassword
       });
@@ -1480,7 +1481,7 @@ export default function Home() {
       if (!live || pending || sessionRevokedRef.current || document.hidden) return;
       pending=true;
       try {
-        const {data,error}=await supabase.rpc('inventory_validate_session',{
+        const {data,error}=await boundedRpc(supabase,'inventory_validate_session',{
           p_session_token:accessCode
         });
         if (!live || sessionRevokedRef.current) return;
@@ -1539,15 +1540,13 @@ export default function Home() {
       // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
         if (sessionRevokedRef.current) return;
-        const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
+        const { data: saved, error: saveError } = await boundedRpc(supabase,'inventory_save', {
           p_session_token: accessCode,
           p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
         });
         if (saveError || !saved?.ok) {
           setSaveStatus('Falha ao salvar');
-          setToast(saveError?.message?.includes('outra sessão')
-            ? 'O estoque mudou em outra sessão. Atualize a página para evitar sobrescrever dados.'
-            : 'Não foi possível salvar no estoque compartilhado. Confira sua sessão e a conexão.');
+          setToast(inventorySaveMessage(saveError));
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
@@ -1555,7 +1554,7 @@ export default function Home() {
           for(const completed of documents.filter(d=>d.pendingReceiptId)){
             if(pendingMarking.current.has(completed.pendingReceiptId))continue;
             pendingMarking.current.add(completed.pendingReceiptId);
-            const {data:marked,error:markError}=await supabase.rpc('pending_receipt_mark_posted',{
+            const {data:marked,error:markError}=await boundedRpc(supabase,'pending_receipt_mark_posted',{
               p_token:accessCode,p_id:completed.pendingReceiptId
             });
             if(markError||!marked?.ok)setPendingSaveError(markError?.message||'Falha ao arquivar a conferência concluída.');
@@ -1584,8 +1583,8 @@ export default function Home() {
       catch { setDataReady(true); throw new Error('Falha ao concluir gravações pendentes.'); }
     }
     try {
-      const { data, error: rpcError } = await supabase.rpc(name, { ...args, p_token: accessCode });
-      if (rpcError || !data || data.ok === false) throw new Error('Operação recusada.');
+      const { data, error: rpcError } = await boundedRpc(supabase,name, { ...args, p_token: accessCode });
+      if (rpcError || !data || data.ok === false) throw new Error(rpcError?.code===RPC_TIMEOUT_CODE?rpcError.message:'Operação recusada.');
       if (name === 'inventory_select_tenant') {
         if (!data.session_token || data.session_token === accessCode) throw new Error('Rotação de sessão necessária.');
         // Never put a token for the new tenant into state containing old stock.
@@ -1612,7 +1611,7 @@ export default function Home() {
   }, []);
 
   const finishPasswordChange = useCallback(async () => {
-    if (supabase && accessCode) await supabase.rpc('inventory_logout', { p_session_token: accessCode });
+    if (supabase && accessCode) await boundedRpc(supabase,'inventory_logout', { p_session_token: accessCode });
     try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
     window.location.replace(window.location.pathname + window.location.search);
   }, [supabase, accessCode]);
@@ -1620,7 +1619,7 @@ export default function Home() {
   function handleLock() {
     const token = accessCode;
     if (supabase && token) {
-      void supabase.rpc('inventory_logout', { p_session_token: token });
+      void boundedRpc(supabase,'inventory_logout', { p_session_token: token });
     }
     try {
       sessionStorage.removeItem('projeto-gpt-session');
@@ -2114,7 +2113,7 @@ export default function Home() {
     try{
       await saveQueueRef.current;
       if(supabase){
-        const {data,error:rpcError}=await supabase.rpc('inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
+        const {data,error:rpcError}=await boundedRpc(supabase,'inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
         if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Erro ao salvar configuração.');
         if(!(await loadSharedInventory(accessCode)))throw new Error('Configuração salva, mas não foi possível recarregar.');
       }else setCountSettings({...settingsForm,configuredAt:countDay()});
@@ -2132,7 +2131,7 @@ export default function Home() {
     setCountBusy(true);setCountError('');
     try{
       await saveQueueRef.current;
-      const {data,error:rpcError}=await supabase.rpc('inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
+      const {data,error:rpcError}=await boundedRpc(supabase,'inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
       if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Falha ao registrar.');
       if(!(await loadSharedInventory(accessCode)))throw new Error('Registro concluído, mas falhou a atualização da tela.');
       setCountDraft(null);setCountBasis(null);
@@ -2320,7 +2319,7 @@ export default function Home() {
   };
   async function refreshPending(){
     if(!supabase||!accessCode)return;
-    const {data,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:accessCode});
+    const {data,error:pendingError}=await boundedRpc(supabase,'pending_receipts_list',{p_token:accessCode});
     if(pendingError)throw new Error(pendingError.message);
     setPendingReceipts(Array.isArray(data)?data:[]);
   }
@@ -2331,7 +2330,7 @@ export default function Home() {
     let encoded='';
     for(let i=0;i<bytes.length;i+=8192)encoded+=String.fromCharCode(...bytes.subarray(i,i+8192));
     const base64=btoa(encoded);
-    const {data,error:uploadError}=await supabase.rpc('pending_receipt_create',{
+    const {data,error:uploadError}=await boundedRpc(supabase,'pending_receipt_create',{
       p_token:accessCode,p_file_name:file.name,p_mime:file.type||'',
       p_base64:base64,p_draft:cleanPendingDraft(receipt)
     });
@@ -2348,7 +2347,7 @@ export default function Home() {
       (row.draft?.supplier || row.fileName) +
       '"? Ela sairá da lista de conferência sem movimentar o estoque.')) return;
     try {
-      const {data,error:cancelError}=await supabase.rpc('pending_receipt_cancel',{
+      const {data,error:cancelError}=await boundedRpc(supabase,'pending_receipt_cancel',{
         p_token:accessCode,p_id:row.id
       });
       if(cancelError||!data?.ok)throw new Error(cancelError?.message||'Falha ao cancelar.');
@@ -2371,7 +2370,7 @@ export default function Home() {
   async function viewPendingOriginal(row){
     if(!supabase||!accessCode)return;
     try{
-      const {data,error:fileError}=await supabase.rpc('pending_receipt_file',{p_token:accessCode,p_id:row.id});
+      const {data,error:fileError}=await boundedRpc(supabase,'pending_receipt_file',{p_token:accessCode,p_id:row.id});
       if(fileError||!data?.base64)throw new Error(fileError?.message||'Arquivo original não disponível.');
       const binary=atob(data.base64);
       const dataBytes=new Uint8Array(binary.length);
@@ -2470,7 +2469,7 @@ export default function Home() {
       pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
         setPendingBusy(true);setPendingSaveError('');
         setPendingSaveErrorById(previous=>({...previous,[id]:''}));
-        const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
+        const {data,error:pendingError}=await boundedRpc(supabase,'pending_receipt_save',{
           p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
         });
         if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
@@ -2898,7 +2897,7 @@ export default function Home() {
     try {
       await saveQueueRef.current;
       const removeId = mergePair.left.id === mergeKeepId ? mergePair.right.id : mergePair.left.id;
-      const { data, error: rpcError } = await supabase.rpc('inventory_merge_products', {
+      const { data, error: rpcError } = await boundedRpc(supabase,'inventory_merge_products', {
         p_token: accessCode, p_keep_id: mergeKeepId, p_remove_id: removeId, p_rev: revisionRef.current
       });
       if (rpcError || !data?.ok) throw new Error(rpcError?.message || 'Não foi possível consolidar os produtos.');
@@ -2936,7 +2935,7 @@ export default function Home() {
     setDeleteError('');
     try {
       await saveQueueRef.current;
-      const { data, error: removalError } = await supabase.rpc('inventory_delete_document', {
+      const { data, error: removalError } = await boundedRpc(supabase,'inventory_delete_document', {
         p_session_token: accessCode,
         p_document_id: document.id
       });

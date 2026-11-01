@@ -50,6 +50,8 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
     sql(migration.read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/cash-corrections.sql').read_text(encoding='utf8'))
 print('PASS B1 cash corrections, replay, revision, authorization and exact decimals')
+sql((ROOT/'tests/sql/fiscal-access-key-uniqueness.sql').read_text(encoding='utf8'))
+print('PASS E1 fiscal access key uniqueness, legacy, authorization and tenant isolation')
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
@@ -113,7 +115,7 @@ try:
     assert waiter.poll() is None, 'Same-tenant writer did not wait for the row lock'
     commit_writer(writer)
     _, stderr = waiter.communicate(timeout=10)
-    assert waiter.returncode != 0 and '40001' in stderr, 'Stale same-tenant revision was not rejected'
+    assert waiter.returncode != 0 and 'PT409' in stderr, 'Stale same-tenant revision was not rejected'
 finally:
     for process in (writer,waiter):
         if process.poll() is None:
@@ -159,6 +161,10 @@ for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_
 print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
 print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
 
+
+from fiscal_access_key_concurrency import run as run_fiscal_access_keys
+run_fiscal_access_keys(sql, json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) +
+                       ['-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']], ROOT)
 
 # Executar após resets existentes: a auditoria passa a impedir exclusão de dados financeiros.
 from cash_corrections_concurrency import run as run_cash_corrections
