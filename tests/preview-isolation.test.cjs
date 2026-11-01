@@ -4,7 +4,7 @@ const fs = require('node:fs');
 
 test('a Vercel Preview with production or missing Supabase variables is rejected before session validation', async () => {
   const { requireInventorySession } = await import('../lib/server/inventory-session.mjs');
-  const names = ['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY'];
+  const names = ['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_PREVIEW_URL','NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY'];
   const previous = Object.fromEntries(names.map(k=>[k,process.env[k]]));
   const reply = () => ({
     code: 0, status(code) {this.code = code; return this;},
@@ -12,9 +12,10 @@ test('a Vercel Preview with production or missing Supabase variables is rejected
   });
   try {
     process.env.VERCEL_ENV = 'preview';
+    process.env.NEXT_PUBLIC_SUPABASE_PREVIEW_URL = 'https://separate-test-project.supabase.co';
     for (const [url,key] of [
       [undefined,undefined],
-      ['https://dpauqdihvhbbaellwjav.supabase.co','sb_publishable_a'],
+      ['https://synthetic-production.supabase.co','synthetic-public-key'],
       ['https://separate-test-project.supabase.co',undefined]
     ]) {
       if (url===undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;

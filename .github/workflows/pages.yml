@@ -35,9 +35,11 @@ jobs:
       - name: Configure existing GitHub Pages site
         uses: actions/configure-pages@v5
       - name: Stage only the public static preview
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: |
-          mkdir -p _pages
-          cp docs/index.html _pages/index.html
+          node scripts/prepare-static-preview.mjs
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:

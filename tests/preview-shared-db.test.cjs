@@ -3,8 +3,7 @@ const assert = require('node:assert/strict');
 
 const POLICY = import('../lib/preview-database-policy.mjs');
 const GUARD = import('../lib/server/inventory-session.mjs');
-const BRANCH = 'feat/tenant-fiscal-purchases-20261021';
-const LIVE = 'https://dpauqdihvhbbaellwjav.supabase.co';
+const LIVE = 'https://synthetic-preview.supabase.co';
 const KEY = 'test_publishable_key_only';
 const TOKEN = 'a'.repeat(64);
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -15,32 +14,34 @@ const response = () => ({
   json(body) { this.body = body; return this; }
 });
 
-test('shared database Preview is opt-in, branch restricted, and never accepts missing config', async () => {
+test('preview exige destino explícito, válido e igual ao configurado', async () => {
   const { previewDatabaseIsBlocked } = await POLICY;
   const setup = {deploymentEnv:'preview',databaseUrl:LIVE,publicKey:KEY};
   assert.equal(previewDatabaseIsBlocked(setup),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:'other-feature'}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH}),false);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,publicKey:''}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:''}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:'http://dpauqdihvhbbaellwjav.supabase.co'}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:'https://username@dpauqdihvhbbaellwjav.supabase.co'}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:BRANCH,databaseUrl:'https://dpauqdihvhbbaellwjav.supabase.co:444'}),true);
-  assert.equal(previewDatabaseIsBlocked({...setup,databaseUrl:'https://separate-preview.supabase.co'}),false);
+  assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE}),false);
+  assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,publicKey:''}),true);
+  assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,databaseUrl:''}),true);
+  for (const databaseUrl of ['http://synthetic-preview.supabase.co',
+    'https://username@synthetic-preview.supabase.co', 'https://synthetic-preview.supabase.co:444',
+    'https://synthetic-preview.supabase.co/path', 'https://synthetic-preview.supabase.co/?query=1',
+    'https://synthetic-preview.supabase.co/#fragment']) {
+    assert.equal(previewDatabaseIsBlocked({...setup, previewUrl:databaseUrl, databaseUrl}), true);
+  }
+  assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,databaseUrl:'https://separate-preview.supabase.co'}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,deploymentEnv:'production'}),false);
 });
 
-test('authorized shared-db Preview still requires a valid native session', async () => {
+test('preview autorizado ainda exige sessão nativa válida', async () => {
   const { requireInventorySession } = await GUARD;
-  const keys=['VERCEL_ENV','VERCEL_GIT_COMMIT_REF','ESTOQUE_ALLOW_SHARED_DB_PREVIEW',
+  const keys=['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_PREVIEW_URL',
     'NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY'];
   const previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
   try {
     Object.assign(process.env, {
       VERCEL_ENV:'preview',
-      VERCEL_GIT_COMMIT_REF:BRANCH,
-      ESTOQUE_ALLOW_SHARED_DB_PREVIEW:'true',
+      NEXT_PUBLIC_SUPABASE_PREVIEW_URL:LIVE,
       NEXT_PUBLIC_SUPABASE_URL:LIVE,
       NEXT_PUBLIC_SUPABASE_ANON_KEY:KEY
     });
@@ -63,7 +64,7 @@ test('authorized shared-db Preview still requires a valid native session', async
     assert.equal(missing.code,401);
     assert.equal(callCount,1,'do not query database for a missing session');
 
-    process.env.VERCEL_GIT_COMMIT_REF='unreviewed-branch';
+    process.env.NEXT_PUBLIC_SUPABASE_PREVIEW_URL='https://other-preview.supabase.co';
     const denied=response();
     assert.equal(await requireInventorySession({headers:{'x-estoque-session':TOKEN}},denied,
       {clientFactory:()=>{throw Error('must not access database');}}),false);
@@ -82,8 +83,8 @@ test('build includes Preview policy without putting credentials in Next configur
   const nextConfig=fs.readFileSync('next.config.js','utf8');
   const ui=fs.readFileSync('pages/index.js','utf8');
   const server=fs.readFileSync('lib/server/inventory-session.mjs','utf8');
-  assert.match(nextConfig,/ESTOQUE_SHARED_DB_PREVIEW: process\.env\.ESTOQUE_ALLOW_SHARED_DB_PREVIEW/);
-  assert.match(nextConfig,/ESTOQUE_PREVIEW_BRANCH: process\.env\.VERCEL_GIT_COMMIT_REF/);
+  assert.doesNotMatch(nextConfig,/ESTOQUE_ALLOW_SHARED_DB_PREVIEW/);
+  assert.match(ui,/NEXT_PUBLIC_SUPABASE_PREVIEW_URL/);
   assert.doesNotMatch(nextConfig,/SUPABASE_ANON_KEY|session_token|password_hash/i);
   assert.match(ui,/previewDatabaseIsBlocked\(/);
   assert.match(server,/previewDatabaseIsBlocked\(/);

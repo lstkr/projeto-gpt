@@ -16,8 +16,8 @@
 <div id="root"><div class="gate"><section class="gate-card"><div class="brand"><div class="logo">▦</div><div><strong>estoque<span>+</span></strong><small>CAFETERIA</small></div></div><h1>Carregando estoque…</h1><p>Conectando ao banco compartilhado da equipe.</p></section></div></div>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-const SUPABASE_URL='https://dpauqdihvhbbaellwjav.supabase.co';
-const SUPABASE_KEY='sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
+import { supabaseConfig } from './supabase-runtime-config.mjs';
+const { url: SUPABASE_URL, publicKey: SUPABASE_KEY } = supabaseConfig;
 const db=createClient(SUPABASE_URL,SUPABASE_KEY);
 const root=document.getElementById('root');
 const money=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n||0));

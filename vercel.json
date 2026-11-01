@@ -1,0 +1,7 @@
+{
+  "git": {
+    "deploymentEnabled": {
+      "codex/isolar-config-supabase": false
+    }
+  }
+}

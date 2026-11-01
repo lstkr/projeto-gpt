@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Run P0 fiscal SQL and concurrent posting tests on a disposable LOCAL Postgres."""
 import os
+import json
 from pathlib import Path
-import selectors
 import subprocess
 import time
+from process_barrier import wait_for_marker
 
 ROOT = Path(__file__).resolve().parents[2]
 if os.environ.get('PGHOST') not in ('127.0.0.1', 'localhost', '::1'):
     raise SystemExit('Only loopback PGHOST allowed: never run fiscal tests against production.')
 if not os.environ.get('PGDATABASE', '').startswith('estoque_rpc_test'):
     raise SystemExit('PGDATABASE must begin estoque_rpc_test (disposable only).')
-PSQL = ['psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1']
+PSQL = json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) + [
+    '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', os.environ['PGDATABASE']]
 
 
 def sql(statement, error=None):
@@ -28,7 +30,9 @@ def file(name):
 
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database is not empty'
-sql('create role anon nologin; create role authenticated nologin; create schema extensions;')
+sql("do $$ begin create role anon nologin; exception when duplicate_object then null; end $$; "
+    "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$; "
+    "create schema if not exists extensions;")
 file('db/schema.sql')
 file('db/access-permissions.sql')
 file('db/pending-receipts.sql')
@@ -66,16 +70,8 @@ def begin_writer(statement):
                                stderr=subprocess.PIPE, text=True, bufsize=1)
     process.stdin.write("begin;\nset statement_timeout='8s';\n" + statement + "\n\\echo WRITER_READY\n")
     process.stdin.flush()
-    with selectors.DefaultSelector() as selector:
-        selector.register(process.stdout, selectors.EVENT_READ)
-        assert selector.select(timeout=8), 'Transaction barrier timed out'
-        lines = []
-        while True:
-            line = process.stdout.readline().strip()
-            lines.append(line)
-            if line == 'WRITER_READY':
-                break
-            assert len(lines) < 12, ('unexpected SQL error', lines)
+    lines = wait_for_marker(process, 'WRITER_READY', 8, 'Transaction barrier timed out')
+    assert len(lines) < 12, ('unexpected SQL error', lines)
     return process
 
 
