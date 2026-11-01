@@ -93,17 +93,17 @@ export function parseBootstrapConnection(connectionString, expectedProject) {
 }
 
 /**
- * Rejects an unconfirmed or malformed project reference before asking for credentials.
- * @param {string} expectedProject Ref supplied as the bootstrap command argument.
+ * Recusa um ref ausente ou malformado antes de solicitar credenciais.
+ * @param {string} expectedProject Ref informado como argumento do bootstrap.
  */
 export function validateProjectReference(expectedProject) {
   if (!/^[a-z]{20}$/.test(expectedProject || '')) throw new BootstrapError('invalidProject');
 }
 
 /**
- * Confirms the new DBA password without including either input in the error.
- * @param {string} password Provisional password entered through hidden input.
- * @param {string} confirmation Repeated provisional password.
+ * Confirma a nova senha DBA sem incluir qualquer entrada no erro.
+ * @param {string} password Senha provisória informada no prompt oculto.
+ * @param {string} confirmation Repetição da senha provisória.
  */
 export function validateDbaPassword(password, confirmation) {
   if (password !== confirmation || Buffer.byteLength(password) < MIN_DBA_PASSWORD_BYTES ||
@@ -113,8 +113,8 @@ export function validateDbaPassword(password, confirmation) {
 }
 
 /**
- * Requires the PostgreSQL settings that keep statement parameters out of logs.
- * @param {{normal?: string, failure?: string, audit?: string} | undefined} settings Server settings returned by PostgreSQL.
+ * Exige configurações PostgreSQL que impedem registrar parâmetros SQL nos logs.
+ * @param {{normal?: string, failure?: string, audit?: string} | undefined} settings Configurações retornadas pelo PostgreSQL.
  */
 export function validateProtectedLogging(settings) {
   if (settings?.normal !== '0' || settings?.failure !== '0' || settings?.audit !== 'off') {
@@ -123,7 +123,7 @@ export function validateProtectedLogging(settings) {
 }
 
 /**
- * Maps validation and driver failures to safe, actionable text without reading exception messages.
+ * Traduz falhas de validação e do driver em orientações seguras sem ler mensagens de exceção.
  * @param {unknown} failure Erro interno, que pode conter dados da conexão.
  * @returns {string} Mensagem segura para o terminal.
  */
