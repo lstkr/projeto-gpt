@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import pg from 'pg';
 import { emitKeypressEvents } from 'node:readline';
 import { runBootstrapTransaction } from './bootstrap-transaction.mjs';
+import { readProtectedInput } from './bootstrap-input.mjs';
 import {
   bootstrapFailureMessage,
   parseBootstrapConnection,
@@ -33,11 +34,14 @@ let client;
 try {
   const expectedProject = process.argv[2];
   validateProjectReference(expectedProject);
-  let connectionString = await hidden('Database URL (hidden): ');
+  const protectedInput = process.argv[3] === '--protected-stdin'
+    ? await readProtectedInput(process.stdin) : null;
+  let connectionString = protectedInput?.connectionString ?? await hidden('Database URL (hidden): ');
   const connection = parseBootstrapConnection(connectionString, expectedProject);
   connectionString = '';
-  let password = await hidden('Provisional DBA password (hidden): ');
-  let confirmation = await hidden('Repeat provisional password (hidden): ');
+  let password = protectedInput?.password ?? await hidden('Provisional DBA password (hidden): ');
+  let confirmation = protectedInput?.confirmation ?? await hidden('Repeat provisional password (hidden): ');
+  if (protectedInput) Object.keys(protectedInput).forEach((field) => { protectedInput[field] = ''; });
   validateDbaPassword(password, confirmation);
   const hash = await bcrypt.hash(password, 12);
   password = ''; confirmation = '';

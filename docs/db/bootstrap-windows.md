@@ -7,7 +7,7 @@ O agente não recebe credenciais nem executa o bootstrap.
 ## 1. Versão e pré-requisitos
 
 Use a branch da **PR #177**, `codex/docs-bootstrap-windows-hardening`, com a
-correção de transação (`scripts/admin/bootstrap-transaction.mjs`). Não precisa
+iniciador nativo (`scripts/admin/bootstrap-windows.ps1`). Não precisa
 esperar merge para executar esse script local: ele não depende de deploy da UI.
 Confirme que a revisão corrigida foi disponibilizada nessa branch antes de
 atualizar outro computador. Não use o SHA antigo `43712f3`, que pode travar em
@@ -25,12 +25,12 @@ git switch codex/docs-bootstrap-windows-hardening
 # Em outro computador, depois da publicação da revisão corrigida:
 # git pull --ff-only
 node --version
-Test-Path scripts\admin\bootstrap-transaction.mjs
+Test-Path scripts\admin\bootstrap-windows.ps1
 npm.cmd ci --prefix scripts/admin
 if ($LASTEXITCODE -ne 0) { throw 'Dependências não instaladas; pare aqui.' }
 Test-Path scripts\admin\node_modules\bcryptjs
 Test-Path scripts\admin\node_modules\pg
-node --test tests/bootstrap-connection.test.cjs tests/bootstrap-transaction.test.cjs
+node --test tests/bootstrap-input.test.cjs tests/bootstrap-connection.test.cjs tests/bootstrap-transaction.test.cjs
 if ($LASTEXITCODE -ne 0) { throw 'Testes falharam; pare antes do bootstrap.' }
 ```
 
@@ -96,22 +96,27 @@ instalação: o histórico deve corresponder ao plano de instalação limpo.
 Na mesma janela PowerShell, depois de conferir ref/CA/dependências:
 
 ```powershell
-node scripts/admin/bootstrap.mjs zybnekctgrjmygdkuwyr
-if ($LASTEXITCODE -ne 0) { throw 'Bootstrap não confirmado; veja o diagnóstico.' }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\admin\bootstrap-windows.ps1 -ProjectRef zybnekctgrjmygdkuwyr
 ```
+
+Cole somente esse comando, sem outra linha junto. O `Bypass` vale somente para
+esse processo que executa o arquivo local revisado; não altera a política do
+Windows. O iniciador usa `Read-Host -AsSecureString`, evitando o leitor raw do
+Node que falhou no console Windows. Os dados seguem ao Node por pipe UTF-8 em
+memória, nunca por argumentos, arquivo ou variável de ambiente.
 
 O terminal apresenta, nesta ordem:
 
 ```text
-Database URL (hidden):
-Provisional DBA password (hidden):
-Repeat provisional password (hidden):
+URL PostgreSQL (entrada protegida):
+Senha provisoria do DBA:
+Repita a senha provisoria:
 DBA created. First login requires a new password.
 ```
 
 No primeiro prompt cole a URI privada e pressione Enter. Nos outros dois,
 digite a mesma **senha provisória nova do DBA Estoque+**, diferente da senha do
-banco. Nada é exibido enquanto digita. Escolha de 12 a 72 bytes para evitar
+banco. O console protege a entrada, sem exibir o conteúdo. Escolha de 12 a 72 bytes para evitar
 incompatibilidade com a troca obrigatória; caracteres acentuados podem ocupar
 mais de um byte. O sucesso exige mensagem final e código de saída zero.
 
@@ -146,6 +151,7 @@ As consultas não substituem teste funcional de permissões.
 | Erro/sintoma | Solução |
 | --- | --- |
 | `npm.ps1` bloqueado | Use `npm.cmd`, conforme o roteiro. |
+| URI correta chega vazia/inválida no prompt `Database URL (hidden)` | Atualize a branch e use o iniciador `bootstrap-windows.ps1` acima; não repita o leitor raw do Node. |
 | `ERR_MODULE_NOT_FOUND` (`pg`/`bcryptjs`) | Execute `npm.cmd ci --prefix scripts/admin` e confira ambos os diretórios. |
 | CA não encontrado ou warning ao carregar certificados | Confira caminho absoluto, origem e formato PEM; abra outro Node após ajustar a variável. |
 | Marcador `[YOUR-PASSWORD]`, senha ausente ou URL inválida | Refaça a URI localmente, substitua o marcador e codifique só a senha. |

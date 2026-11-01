@@ -1,4 +1,5 @@
 const BOOTSTRAP_ERRORS = Object.freeze({
+  invalidProtectedInput: 'Entrada protegida inválida. Execute o iniciador PowerShell sem fornecer dados por argumentos ou arquivos.',
   invalidProject: 'Ref inválido. Informe o ref confirmado do projeto Estoque+ DB.',
   missingUrl: 'URL de conexão vazia. Cole a URL PostgreSQL copiada do projeto autorizado.',
   passwordPlaceholder: 'A URL ainda contém o marcador [YOUR-PASSWORD]. Substitua-o pela senha do banco.',
