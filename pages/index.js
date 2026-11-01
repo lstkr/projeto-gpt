@@ -16,6 +16,7 @@ import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggre
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
+import { prepareReceiptImageUpload } from '../lib/receipt-image-upload.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -2346,14 +2347,16 @@ export default function Home() {
         const file = files[i];
         setUploadBatchProgress(prev=>prev&&({...prev,current:i+1,fileName:file.name,
           files:prev.files.map((item,j)=>j===i?{...item,status:'Lendo'}:item)}));
+        let archiveFile = file;
         let fileStatus='Concluído';
         setProcessingType(/\.xml$/i.test(file.name) ? 'xml' : 'ocr');
         setOcrProgress(0);
         try {
+          archiveFile = await prepareReceiptImageUpload(file);
           const receipts = await parseUploadedFile(file);
           for(const receipt of receipts){
             const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
-            parsed.push(await storePendingReceipt(file,mapped));
+            parsed.push(await storePendingReceipt(archiveFile,mapped));
             try { await refreshPending(); } catch (refreshError) {
               issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
             }
@@ -2367,7 +2370,7 @@ export default function Home() {
             importWarning:e?.message||'Não foi possível interpretar automaticamente.',
             items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
           try{
-            parsed.push(await storePendingReceipt(file,fallback));
+            parsed.push(await storePendingReceipt(archiveFile,fallback));
             try { await refreshPending(); } catch(refreshError) {
               issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
             }
@@ -3103,7 +3106,7 @@ export default function Home() {
           </div>)}
         </section>}
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
             <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
           </div>
