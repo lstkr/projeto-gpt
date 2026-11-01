@@ -27,7 +27,7 @@
 ## Correção SVRS — em revisão
 - Leitura por rótulos, metadados do emitente e contingência, totais impressos e frete como despesa; sem consumidor.
 - Sete testes offline aprovados; build com configuração fictícia do CI aprovado; seis falhas locais já registradas abaixo.
-- CL-05/07/09/10/11/13/15/16 verificadas nesta alteração; revisão independente, CI e homologação pendentes.
+- CL-05/07/09/10/11/13/15/16 verificadas nesta alteração; revisão independente e homologação pendentes; CI em nova execução após instalar dependências nos jobs de teste.
 
 ## Evidências do bloco anterior
 - Testes relevantes da tela: 13/13; build aprovado; regras de lançamento intactas.
