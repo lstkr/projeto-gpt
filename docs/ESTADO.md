@@ -1,7 +1,7 @@
 # Estado do Estoque+ — 01/11/2026
 
 ## Estado atual
-- Base local deste bloco: origin/main c2622ea; estado remoto não consultado.
+- Base deste bloco: main da0f595; PR documental #183 mesclada com CI verde.
 - Segundo Lucas: mescladas #161, #177, #179 e #180.
 - Segundo Lucas: fechadas #140, #153, #163, #155, #162, #166 e #167; branches preservadas.
 - Segundo Lucas: bootstrap concluído, acesso como Gestor e foco/avisos aprovados no celular.
@@ -10,13 +10,14 @@
 - Homologação de testes: https://estoque-homologacao-ashy.vercel.app/
 
 ## Próximos passos, em ordem
-1. Diretrizes enxutas adotadas com quatro ajustes de Lucas; detalhes movidos para docs/agents/.
-2. Redimensionar/comprimir fotos no navegador, mantendo o limite no servidor.
+1. Diretrizes enxutas adotadas; publicação de homologação READY e teste básico 8/8 aprovado.
+2. Implementada redução da cópia de arquivamento de fotos acima de 4 MB no navegador.
+   OCR usa original; limite do servidor preservado, sem alteração de SQL ou regras fiscais.
    Comparar OCR antes/depois com fotos reais privadas; qualidade ainda não testada.
 3. B1: correção financeira com motivo e histórico; exige OK explícito.
    Antes do OK: explicar como desfazer a migração, teste na cafeteria e motivo em 2 linhas.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
-- Registrar futura melhoria em issue: notificações dentro da página (ainda não criada).
+- Melhoria futura registrada: notificações dentro da página, issue #186.
 
 ## Decisões de trabalho
 - Agente único; especialistas/revisão independente apenas para mudanças arriscadas.
@@ -29,8 +30,10 @@
 - Testes humanos apenas na homologação, com roteiro de 3 a 5 itens.
 
 ## Evidências deste bloco
-- Apenas documentação; AGENTS.md substituído, sem proposta duplicada nem alteração na aplicação.
+- Redução de fotos: cinco testes novos passaram; foto real de iPhone ainda não disponível.
 - Validação: contagem de linhas, links locais e git diff --check.
-- npm test: 227/240 passaram; 13 falhas locais persistem após npm ci (pacote ausente, sessão e quebra de linha Windows).
-- CI ainda não consultado; build/deploy/smoke não executados nesta alteração documental.
-- Rollback: reverter o commit documental; sem efeito em dados ou aplicação.
+- Suíte local: 14 falhas; uma asserção foi atualizada para a cópia reduzida e revalidada.
+- Outras 13 falhas locais já existiam; CI da PR documental passou no Linux.
+- Testes relevantes: 10/10; build compilou, mas parou por configuração Supabase ausente.
+- Redução de fotos: PR #185; consultar nela o resultado de CI e a integração.
+- Rollback de fotos: reverter o commit; fotos grandes voltam a ser recusadas, sem apagar dados.
