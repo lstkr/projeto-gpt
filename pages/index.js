@@ -3,7 +3,7 @@ import TenantAdministration from '../components/TenantAdministration';
 import CountPrintAction from '../components/CountPrintAction';
 import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
-import { useAccessibleDialog } from '../components/useAccessibleDialog';
+import { useAccessibleDialog, useNavigationFocus } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseConfig } from '../lib/supabase-config.mjs';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
@@ -1290,6 +1290,8 @@ export default function Home() {
   const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
     view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
+  useNavigationFocus([accessGranted, dataReady, view, manualMode, cashEntryMode, cashEditId,
+    Boolean(draft), draft?.pendingId || draft?.fileName || ''].join('|'));
   useAccessibleDialog(activeDialog, () => {
     if (mergePair) {
       if (!mergeBusy) setMergePair(null);
