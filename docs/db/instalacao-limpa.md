@@ -67,8 +67,9 @@ O plano canônico está em `scripts/admin/clean-install-plan.json`; o teste de C
 11. `20261022145500_admin_password_recovery.sql` — recuperação administrativa; requer sessões e memberships.
 12. `20261022174354_expose_cancel_audit_columns_on_tenant_pending_view.sql` — campos de auditoria na view; requer tenant pending view.
 13. `20261023000500_user_directory_update.sql` — edição auditada do diretório; requer usuários e permissionamento.
+14. `20261101211824_cash_closing_auditable_corrections.sql` — correções de caixa com revisão, motivo e histórico; requer integridade de caixa e diretório.
 
-O fingerprint SHA-256 do SQL-base fica em `supabase_migrations.estoque_installation_baselines`. Essa tabela e `schema_migrations` ficam no schema `supabase_migrations`, com privilégios revogados para os papéis da API; não ficam acessíveis pela Data API. As nove migrações são registradas com timestamp e nome em `supabase_migrations.schema_migrations`, o ledger consultado pelo Supabase CLI; `statements` fica nulo. Assim a baseline fica auditável sem inventar uma versão que a CLI confundiria com um arquivo de migração. Depois, não edite o SQL-base: mantenha uma migração versionada por mudança e confira `supabase migration list`; em banco novo, nunca marque uma migração como aplicada se ela não foi executada.
+O fingerprint SHA-256 do SQL-base fica em `supabase_migrations.estoque_installation_baselines`. Essa tabela e `schema_migrations` ficam no schema `supabase_migrations`, com privilégios revogados para os papéis da API; não ficam acessíveis pela Data API. As dez migrações são registradas com timestamp e nome em `supabase_migrations.schema_migrations`, o ledger consultado pelo Supabase CLI; `statements` fica nulo. Assim a baseline fica auditável sem inventar uma versão que a CLI confundiria com um arquivo de migração. Depois, não edite o SQL-base: mantenha uma migração versionada por mudança e confira `supabase migration list`; em banco novo, nunca marque uma migração como aplicada se ela não foi executada.
 
 ## Bootstrap do DBA (responsável executa localmente)
 

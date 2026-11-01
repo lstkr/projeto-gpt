@@ -42,7 +42,7 @@ function runReadOnlyPreflight(fakePsqlPath, logPath) {
 test('roteiro só contém as instruções destrutivas autorizadas', () => {
   const files = [...plan.base, ...plan.migrations];
   assert.equal(plan.base.length, 4);
-  assert.equal(plan.migrations.length, 9);
+  assert.equal(plan.migrations.length, 10);
   assert.deepEqual(files, [
     'db/schema.sql', 'db/access-permissions.sql', 'db/pending-receipts.sql', 'db/cash-closing.sql',
     'supabase/migrations/20261019201520_inventory_validate_session.sql',
@@ -53,7 +53,8 @@ test('roteiro só contém as instruções destrutivas autorizadas', () => {
     'supabase/migrations/20261022020602_cash_closing_integrity.sql',
     'supabase/migrations/20261022145500_admin_password_recovery.sql',
     'supabase/migrations/20261022174354_expose_cancel_audit_columns_on_tenant_pending_view.sql',
-    'supabase/migrations/20261023000500_user_directory_update.sql'
+    'supabase/migrations/20261023000500_user_directory_update.sql',
+    'supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql'
   ]);
   assert.equal(plan.supabaseRef, 'zybnekctgrjmygdkuwyr');
   assert.deepEqual(plan.explicitTransactionFiles, [
@@ -61,7 +62,8 @@ test('roteiro só contém as instruções destrutivas autorizadas', () => {
     'supabase/migrations/20261020221500_fiscal_write_integrity.sql',
     'supabase/migrations/20261021143000_external_fiscal_rate_limit.sql',
     'supabase/migrations/20261021232050_tenant_access.sql',
-    'supabase/migrations/20261023000500_user_directory_update.sql'
+    'supabase/migrations/20261023000500_user_directory_update.sql',
+    'supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql'
   ]);
   const baselineHash = crypto.createHash('sha256');
   for (const file of plan.base) {
@@ -140,11 +142,11 @@ test('migrações transacionais mantêm somente um wrapper externo por arquivo',
     " source = (Path('.') / filename).read_text(encoding='utf8')",
     " stripped = module['strip_explicit_transaction'](filename, source)",
     " assert 'BEGIN;' not in stripped and 'COMMIT;' not in stripped, filename",
-    "print('PASS: 5 wrappers explícitos reconhecidos para transação externa')"
+    "print('PASS: ' + str(len(module['PLAN']['explicitTransactionFiles'])) + ' wrappers explícitos reconhecidos para transação externa')"
   ].join('\n');
   const result = spawnSync(python, ['-c', script], { cwd: root, encoding: 'utf8', timeout: 5000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /PASS: 5 wrappers explícitos/);
+  assert.match(result.stdout, /PASS: 6 wrappers explícitos/);
 });
 
 test('session pooler exige porta de sessão e usuário vinculado ao ref confirmado', () => {

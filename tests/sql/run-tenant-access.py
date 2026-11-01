@@ -139,7 +139,7 @@ print('PASS concurrent different-tenant saves with equal revisions finish indepe
 
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
-sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
+sql("set estoque.confirm_full_reset='APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO';" + (ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
 for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
               'tenant_inventory','cash_closings','pending_receipts','user_permissions',
               'permission_audit','external_fiscal_rate_limits']:

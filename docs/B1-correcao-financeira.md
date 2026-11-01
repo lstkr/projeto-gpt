@@ -30,3 +30,17 @@ Replay e reversão passaram em PGlite/PostgreSQL 18.6; PG15/17 e concorrência r
 2. Abrir histórico → mostrar antes/depois, autor, horário e motivo.
 3. Salvar na primeira de duas abas → a segunda deve recusar alteração antiga e preservar campos.
 4. Entrar como funcionário → não permitir correção nem histórico administrativo.
+
+## Instalação limpa e reset deliberado
+O instalador de #173 inclui as 10 migrações, inclusive B1, sem remover sua transação.
+`db/operations/reset-test-data.sql` preserva contas e recusa exclusão de caixas com histórico.
+O reset total é separado: `db/operations/reset-test-environment.sql`, somente pelo proprietário
+`postgres`, exige nesta mesma conexão, antes do arquivo:
+```sql
+set estoque.confirm_full_reset='APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO';
+```
+Essa operação apaga também usuários, senhas, caixas e histórico da aplicação; exige
+NOVO OK específico, confirmação do projeto de homologação e cópia de recuperação.
+Depois, o proprietário deve refazer o bootstrap; o agente não o executa com suas credenciais.
+Não apaga schemas gerenciados `auth`/`storage`, estrutura/migrações, nem o snapshot B1 de recuperação.
+Não foi executado remotamente. Aplicar B1 não autoriza executar esse reset.
