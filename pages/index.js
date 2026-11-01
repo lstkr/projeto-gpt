@@ -2608,6 +2608,10 @@ export default function Home() {
         const totals = data.totals || {};
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
+              supplier: data.supplier, supplierCnpj: data.supplierCnpj,
+              address: data.address, invoiceNumber: data.invoiceNumber, series: data.series, date: data.date,
+              contingency: data.contingency, payments: data.payments, change: totals.change, taxes: totals.taxes,
+              totalsWarning: (data.warnings || []).join(' '),
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
               officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
@@ -3276,6 +3280,12 @@ export default function Home() {
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
+            {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
+              {draft.contingency && <strong>EMITIDA EM CONTINGÊNCIA · </strong>}
+              Série: {draft.series || '—'} · Endereço: {draft.address || '—'}
+              <br/>Pagamento: {(draft.payments || []).map((payment) => payment.method + ': ' + money(payment.amount)).join(' · ') || '—'}
+              {' · Troco: ' + money(draft.change || 0) + ' · Tributos: ' + money(draft.taxes || 0)}
+            </div>}
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
