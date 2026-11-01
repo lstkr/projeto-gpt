@@ -94,9 +94,9 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .alert-strip { display: flex; align-items: center; gap: 13px; margin-bottom: 17px; padding: 13px 16px; border: 1px solid #efe5ca; border-radius: 11px; background: #fffaf0; }
 .alert-icon { display: grid; flex: 0 0 auto; place-items: center; width: 35px; height: 35px; color: #a78231; border-radius: 10px; background: #f7edcf; }
 .alert-strip > div { flex: 1; min-width: 0; }
-.alert-strip b { color: #66542e; font-size: 11px; }
-.alert-strip p { margin: 4px 0 0; overflow: hidden; color: #9b8d6d; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.alert-strip > button { display: flex; align-items: center; gap: 4px; padding: 6px 0 6px 6px; color: #8c7029; border: 0; background: transparent; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.alert-strip b { color: #66542e; font-size: 13px; }
+.alert-strip p { margin: 4px 0 0; color: #66542e; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.alert-strip > button { display: flex; align-items: center; gap: 4px; padding: 6px 0 6px 6px; color: #66542e; border: 0; background: transparent; font-size: 13px; font-weight: 800; white-space: normal; min-height: 44px; flex-shrink: 0; }
 .panel { min-width: 0; overflow: hidden; border: 1px solid #e7ebe5; border-radius: 12px; background: var(--panel); box-shadow: var(--shadow); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 19px 20px 16px; }
 .panel-head h2 { margin: 0; color: #304337; font-size: 14px; font-weight: 740; letter-spacing: -.2px; }
@@ -233,9 +233,9 @@ td b small { color: #9ca79d; font-size: 9px; font-weight: 550; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .field select { appearance: auto; }
 .modal .modal-actions { padding: 20px 0 3px; margin-bottom: 19px; }
-.toast { position: fixed; right: 24px; bottom: 23px; z-index: 30; display: flex; align-items: center; gap: 10px; max-width: min(440px, calc(100vw - 32px)); padding: 12px 13px; color: #eaf4e9; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: #2e5440; box-shadow: 0 10px 35px rgba(26, 50, 34, .23); font-size: 11px; line-height: 1.45; }
+.toast { position: fixed; right: 24px; bottom: 23px; z-index: 30; display: flex; align-items: center; gap: 10px; max-width: min(440px, calc(100vw - 32px)); padding: 12px 13px; color: #eaf4e9; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; background: #2e5440; box-shadow: 0 10px 35px rgba(26, 50, 34, .23); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .toast > span { display: grid; place-items: center; width: 23px; height: 23px; flex: 0 0 auto; color: #e3f3df; border-radius: 50%; background: rgba(255,255,255,.13); }
-.toast button { display: grid; flex: 0 0 auto; place-items: center; width: 24px; height: 24px; margin-left: 4px; color: #d0e1d2; border: 0; border-radius: 5px; background: transparent; }
+.toast button { display: grid; flex: 0 0 auto; place-items: center; width: 44px; height: 44px; margin-left: 4px; color: #eaf4e9; border: 0; border-radius: 5px; background: transparent; }
 @media (max-width: 1250px) {
   .sidebar { width: 222px; }
   .main { margin-left: 222px; }
