@@ -40,7 +40,7 @@ test('admin configuration uses server-derived identity and audit trail',()=>{
  assert.match(acl,/insert into private.permission_audit/);
 });
 test('frontend permissions come from server and cannot substitute for authorization',()=>{
- assert.match(page,/supabase.rpc\('inventory_permissions_list'/);
- assert.match(page,/supabase.rpc\('inventory_permission_set'/);
+ assert.match(page,/boundedRpc\(supabase,'inventory_permissions_list'/);
+ assert.match(page,/boundedRpc\(supabase,'inventory_permission_set'/);
  assert.match(page,/canFiscal\('fiscal.pending.cancel'\)/);
 });
