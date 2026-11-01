@@ -72,29 +72,8 @@ O fingerprint SHA-256 do SQL-base fica em `supabase_migrations.estoque_installat
 
 ## Bootstrap do DBA (responsável executa localmente)
 
-O bootstrap é uma ação separada do roteiro e não é executado por agente. Instale as dependências já travadas do script e rode no terminal interativo do DBA:
-
-```powershell
-npm ci --prefix scripts/admin
-node scripts/admin/bootstrap.mjs <ref-confirmado-do-projeto>
-```
-
-O script lê a URL de conexão, senha provisória do DBA e confirmação da senha em prompts ocultos. A URL deve pertencer ao ref passado no argumento; não use variáveis com senha, não compartilhe esses valores e não os envie ao agente. `ESTOQUE_SUPABASE_ALLOWED_REF` é usado pelo instalador limpo; o script de bootstrap existente recebe o ref como argumento. O DBA/proprietário cria o superadministrador; em seguida o DBA cria o Gestor pela administração da aplicação. MASTER continua apenas uma proposta em `docs/security/master-provisioning-design.md`.
-
-## Validação local descartável
-
-A preparação em `tests/sql/disposable-supabase-setup.sql` cria somente roles, schemas e tabelas sintéticas ausentes no container local. Não a aplique num projeto Supabase remoto. Execute os três runners `tests/sql/run-session-tests.py`, `tests/sql/run-fiscal-integrity.py` e `tests/sql/run-tenant-access.py` em bancos locais vazios separados, com `PGHOST=127.0.0.1` e nomes `estoque_rpc_test_*`. A prova de instalação usa a própria trava e depois repete o comando para verificar recusa.
-
-## Checklist pós-instalação
-
-- [ ] Confirmar 12 tabelas privadas e as três views públicas `shared_inventory`, `pending_receipts` e `cash_closings`.
-- [ ] Executar `tests/sql/clean-install-checklist.sql`: confirmar RLS habilitado em todas as tabelas privadas, `private_tables_without_rls = none` e nenhuma função de aplicação sem `search_path` explícito.
-- [ ] No Dashboard → API Settings, confirmar que o schema `private` não está na lista de schemas expostos ao PostgREST; expor somente schemas necessários.
-- [ ] Manter `public` exposto para as chamadas RPC do aplicativo; o código atual não consulta as tabelas/views por acesso direto. A partir de 30/10/2026, novas tabelas públicas não são expostas automaticamente pela Data API; habilite objetos individualmente apenas se uma integração passar a consultá-los diretamente ([changelog oficial](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically)).
-- [ ] Confirmar também que `supabase_migrations` não está exposto; o banco revoga privilégios dos papéis da API nesse schema e nas suas tabelas.
-- [ ] No Supabase Dashboard, executar Security Advisor e revisar cada alerta antes de habilitar usuários.
-- [ ] Rodar os testes de acesso entre estabelecimentos do `run-tenant-access.py`; usuário de um tenant não pode ler nem gravar dados do outro.
-- [ ] Conferir ledger com `supabase migration list`; nove migrações aplicadas correspondem aos arquivos e timestamps versionados.
-- [ ] Só depois, em etapa aprovada separadamente, o responsável realiza o bootstrap e valida login/recuperação.
-
-O checklist local não consulta configuração PostgREST nem executa Security Advisor; ambos exigem uma revisão manual no projeto correto. Esta PR não escreve no Supabase remoto.
+Após confirmar a instalação, siga o [guia PowerShell de bootstrap e primeiro Gestor](bootstrap-windows.md).
+Ele cobre a branch da #177, dependências administrativas, conexão direta/Session pooler,
+CA via `NODE_EXTRA_CA_CERTS`, prompts ocultos, verificações agregadas e diagnóstico.
+Não repita a instalação limpa para criar usuários. O responsável executa o bootstrap;
+o agente não recebe credenciais nem cria contas. MASTER permanece proposta futura.
