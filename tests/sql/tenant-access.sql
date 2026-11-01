@@ -43,12 +43,13 @@ begin
  begin
   perform public.cash_closing_save(employee_token,'{"day":"2026-10-21","register":"01 ","operator":"Synthetic Employee","cashCounted":"0","movements":[]}'::jsonb);
   raise exception 'Employee overwrote a registered cash close' using errcode='XX000';
- exception when insufficient_privilege then null; end;
+ exception when unique_violation then null; end;
  result:=public.cash_closing_save(employee_token,'{"day":"2026-10-21","register":"02 ","operator":"Synthetic Employee","cashCounted":"0","movements":[]}'::jsonb);
  assert result->'createdBy'->>'displayName'='Synthetic Employee';
- result:=public.cash_closing_save(token,'{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb);
+ begin perform public.cash_closing_save(token,'{"day":"2026-10-21","register":"02","operator":"Corrected","cashCounted":"0","movements":[]}'::jsonb);
+  raise exception 'Correção antiga sobrescreveu sem motivo';
+ exception when unique_violation then null; end;
  assert result->'createdBy'->>'displayName'='Synthetic Employee';
- assert result->'updatedBy'->>'displayName'='Synthetic Manager';
  for i in 1..8 loop
   result:=public.inventory_password_change(employee_token,'incorrect-password','synthetic-other-new-password');
   assert not (result->>'ok')::boolean;
