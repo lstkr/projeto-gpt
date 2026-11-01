@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { performance } = require('node:perf_hooks');
 const fs = require('node:fs');
 const path = require('node:path');
+const verifyDiscardReceiptDialog = require('./discard-receipt-dialog.cjs');
 
 const origin = process.env.ESTOQUE_BROWSER_URL || 'http://127.0.0.1:3000';
 if (!['localhost', '127.0.0.1'].includes(new URL(origin).hostname)) throw new Error('Only a local server may be tested');
@@ -87,6 +88,7 @@ const closings = [
     await page.getByLabel('Login', {exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await verifyDiscardReceiptDialog(page);
     await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).click();
     await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
 
