@@ -1,3 +1,4 @@
+import { svrsDraftFields } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
 import CountPrintAction from '../components/CountPrintAction';
@@ -2608,10 +2609,7 @@ export default function Home() {
         const totals = data.totals || {};
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
-              supplier: data.supplier, supplierCnpj: data.supplierCnpj,
-              address: data.address, invoiceNumber: data.invoiceNumber, series: data.series, date: data.date,
-              contingency: data.contingency, payments: data.payments, change: totals.change, taxes: totals.taxes,
-              totalsWarning: (data.warnings || []).join(' '),
+              ...svrsDraftFields(data),
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
               officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
@@ -2677,7 +2675,7 @@ export default function Home() {
       discount: d.officialDiscount ?? d.discount,
       total: d.officialTotal ?? d.total,
       officialVerified: d.officialOrigin === 'sefaz',
-      totalsWarning: d.officialOrigin === 'sefaz' && d.officialTotal != null && d.officialSubtotal != null ? '' : d.totalsWarning,
+      totalsWarning: d.officialOrigin === 'sefaz' ? (d.officialWarnings || []).join(' ') : d.totalsWarning,
       source: String(d.source || '').includes('consulta pública') ? d.source : (String(d.source || '') + ' + consulta pública'),
       totalsSource: d.officialOrigin === 'sefaz' ? 'SEFAZ (consulta automática)' : 'Texto de consulta (não autenticado)'
     }));

@@ -24,7 +24,12 @@
 - Banco/dinheiro/estoque/fiscal/login/exclusão/produção exigem OK explícito; nenhuma produção autorizada.
 - Reset total exige NOVO OK; reversão E1 suspende notas novas sem apagar dados/histórico.
 
-## Evidências deste bloco
+## Correção SVRS — em revisão
+- Leitura por rótulos, metadados do emitente e contingência, totais impressos e frete como despesa; sem consumidor.
+- Sete testes offline aprovados; build com configuração fictícia do CI aprovado; seis falhas locais já registradas abaixo.
+- CL-05/07/09/10/11/13/15/16 verificadas nesta alteração; revisão independente, CI e homologação pendentes.
+
+## Evidências do bloco anterior
 - Testes relevantes da tela: 13/13; build aprovado; regras de lançamento intactas.
 - Suíte completa: 260/266; seis falhas locais antigas de Windows/bcryptjs e CRLF de documentação.
 - Chrome local: Tab/Shift+Tab, Enter seguro, etapas e pendências passaram; larguras 1440/1280/390px sem overflow externo.

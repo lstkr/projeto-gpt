@@ -55,3 +55,43 @@ test('SVRS: ignora consumidor, preserva zeros dos códigos e lê múltiplos paga
   const split = await parse(html.replace('<label class="tx">Troco', '<label class="tx">PIX</label><span class="totalNumb">1,00</span></div><div><label class="tx">Troco'));
   assert.equal(split.payments.length, 2);
 });
+
+test('SVRS: campos oficiais substituem metadados OCR sem duplicar frete ou apagar alertas', async () => {
+  const { svrsDraftFields } = await import('../lib/svrs-draft.mjs');
+  const parsed = await parse(html.replace('829,29', '830,29'));
+  const draft = { additionalCharges: 10, supplierCnpj: '', ...svrsDraftFields(parsed) };
+  for (const field of ['supplier', 'supplierCnpj', 'address', 'invoiceNumber', 'series', 'date', 'contingency', 'payments'])
+    assert.deepEqual(draft[field], parsed[field]);
+  assert.equal(draft.additionalCharges, 0);
+  assert.equal(draft.taxes, 115.70);
+  assert.equal(draft.change, 0);
+  assert.deepEqual(draft.officialWarnings, parsed.warnings);
+  assert.match(draft.totalsWarning, /Soma dos itens/);
+});
+
+test('SVRS: endpoint entrega todos os campos sem rede e rejeita outra chave na página', async () => {
+  const { pathToFileURL } = require('node:url');
+  const path = require('node:path');
+  let source = fs.readFileSync('pages/api/consulta-nfce.js', 'utf8')
+    .replace(/import \{ requireInventorySession \}[^;]+;/, 'const requireInventorySession = async () => true;')
+    .replace(/import \{ enforceFiscalRateLimit \}[^;]+;/, 'const enforceFiscalRateLimit = async () => true;')
+    .replace("'../../lib/svrs-parser.mjs'", JSON.stringify(pathToFileURL(path.resolve('lib/svrs-parser.mjs')).href));
+  const { default: handler } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const originalFetch = global.fetch;
+  let responseHtml = html;
+  global.fetch = async () => new Response(responseHtml, { headers: { 'content-type': 'text/html' } });
+  const response = { setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
+  const request = { method: 'POST', body: { url: 'https://dfe-portal.svrs.rs.gov.br/Dfe/QrCodeNFce?p=43261087397865000979652100002233569004539403|2' } };
+  try {
+    await handler(request, response);
+    assert.equal(response.code, 200);
+    assert.deepEqual(response.body.items, (await parse()).items);
+    assert.equal(response.body.supplierCnpj, '87397865000979');
+    assert.equal(response.body.totals.total, 741.85);
+    assert.equal(response.body.source, 'SVRS');
+    responseHtml = html.replace('4326 1087', '4326 1088');
+    await handler(request, response);
+    assert.equal(response.code, 502);
+    assert.match(response.body.error, /não corresponde/);
+  } finally { global.fetch = originalFetch; }
+});
