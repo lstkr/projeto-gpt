@@ -1,39 +1,32 @@
 # Estado do Estoque+ — 01/11/2026
 
 ## Estado atual
-- Base atual: main 133bcd7; #183 e #185 mescladas com verificações verdes.
-- Segundo Lucas: mescladas #161, #177, #179 e #180.
-- Segundo Lucas: fechadas #140, #153, #163, #155, #162, #166 e #167; branches preservadas.
-- Segundo Lucas: bootstrap concluído, acesso como Gestor e foco/avisos aprovados no celular.
-- Redução de foto publicada; Lucas confirmou que funcionou no teste da cafeteria.
-- QR externo deve permanecer desativado por padrão; pendências pré-comerciais: #178.
-- Homologação de testes: https://estoque-homologacao-ashy.vercel.app/
+- Base atualizada: main ae475e2; melhorias de tela #182/#184/#187 preservadas.
+- #183 diretrizes enxutas e #185 redução de foto integradas; foto aprovada por Lucas.
+- B1: PR #188 banco e #189 interface dependente; Lucas autorizou SOMENTE homologação.
+- Supabase Estoque+ DB confirmado; produção não autorizada e não alterada.
+- Backup B1 protegido e conferido: 3 fechamentos e 2 funções; sem exportar conteúdo.
+- QR externo desativado por padrão; pendências pré-comerciais na #178.
+- Notificações futuras registradas na #186.
+- Homologação: https://estoque-homologacao-ashy.vercel.app/
 
-## Próximos passos, em ordem
-1. Diretrizes enxutas adotadas; publicação de homologação READY e teste básico 8/8 aprovado.
-2. Implementada redução da cópia de arquivamento de fotos acima de 4 MB no navegador.
-   OCR usa original; limite do servidor preservado, sem alteração de SQL ou regras fiscais.
-   Comparar OCR antes/depois com fotos reais privadas; qualidade ainda não testada.
-3. B1 preparado: PR #188 banco e PR #189 interface dependente, ambas rascunhos.
-   Lucas autorizou apenas homologação; instalador/reset ajustados, nova validação em andamento.
-4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
-- Melhoria futura registrada: notificações dentro da página, issue #186.
+## Próximos passos
+1. Concluir integração da main atual nas duas PRs e conferir CI uma vez por atualização.
+2. Aplicar migração B1 somente na homologação; integrar #188 e depois #189.
+3. Confirmar publicação e teste básico; Lucas testa motivo, histórico, duas abas e funcionário.
+4. E1: impedir nota duplicada pela mesma chave fiscal antes de outro fluxo mobile.
 
-## Decisões de trabalho
-- Agente único; especialistas/revisão independente apenas para mudanças arriscadas.
-- Uma PR ativa, no máximo duas; conferir CI uma vez após uma espera, sem loop.
-- Comunicação curta, linguagem simples e no máximo uma decisão por mensagem.
-- Testes relevantes durante o trabalho; suíte completa uma vez antes da PR.
-- Atualizar este arquivo ao fim de cada bloco; máximo de 40 linhas.
-- Merge automático autorizado por Lucas apenas com CI verde, sem conflitos e baixo risco.
-- Banco/migrações, dinheiro/estoque/fiscal, login/permissões, exclusão e produção exigem OK.
-- Testes humanos apenas na homologação, com roteiro de 3 a 5 itens.
+## Decisões
+- Agente único, com revisão independente para dinheiro/banco/login; máximo duas PRs ativas.
+- Testes relevantes durante trabalho; suíte completa uma vez antes da PR.
+- Banco/dinheiro/fiscal/login/exclusão/produção exigem OK explícito; nenhuma produção autorizada.
+- Reset total existe, mas exige NOVO OK e confirmação textual do proprietário; não executar agora.
+- Reset total limpa dados ativos/contas/histórico; preserva estrutura, auth/storage e backup B1.
+- Reversão B1 suspende novas correções e preserva valores/histórico; detalhes em docs/B1-correcao-financeira.md.
 
 ## Evidências deste bloco
-- B1: PRs #188/#189 abertas; sem merge, migração remota ou deploy manual.
-- Testes relevantes: 22/22 passaram (cinco novos); foto da #185 preservada.
-- Suíte única: 244/250; seis falhas locais de pacote ausente e quebra de linha Windows.
-- Build local passou com configuração pública fictícia; sem banco remoto.
-- Instalador 10/10; replay/reset deliberado local passou; atualizações aguardam novo CI.
-- Revisão cruzada: SQL pelo CTO, UI pelo DBA; dois problemas de troca de formulário corrigidos.
-- Backup criado só na homologação; B1 ainda não aplicada; reset total remoto não executado.
+- Instalador atualizado para B1: 10/10 testes passaram; plano inclui 4 bases e 10 migrações.
+- Replay/reversão/reset deliberado aprovados em PGlite18.6; backup também ensaiado localmente.
+- CI anterior B1 passou PG15/17, concorrência e reversão; novo CI depende da conciliação da main.
+- Tela B1: 22 testes relevantes passaram; build local passou antes das novas melhorias de tela.
+- CL-10/12/13/16 revisadas; sem reset remoto, sem aplicação B1 até concluir verificações.

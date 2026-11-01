@@ -7,6 +7,9 @@ on:
       - 'tests/browser/cash-chart-visual.cjs'
       - 'tests/browser/count-print-visual.cjs'
       - 'tests/browser/alerts-readability.cjs'
+      - 'tests/browser/discard-receipt-dialog.cjs'
+      - 'tests/browser/prepare-discard-fixture.cjs'
+      - 'components/DiscardReceiptDialog.js'
       - 'lib/count-print.mjs'
       - 'tests/count-print.test.cjs'
       - '.github/workflows/cash-chart-visual.yml'
@@ -36,12 +39,16 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Verify alert readability and notification semantics
         run: node tests/browser/alerts-readability.cjs
+      - name: Prepare isolated discard dialog fixture
+        run: node tests/browser/prepare-discard-fixture.cjs
       - name: Build Next.js fixture
         run: npm run build
       - name: Start isolated local server
         run: |
           npm run start > /tmp/estoque-visual-server.log 2>&1 &
           node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
+      - name: Verify discard rules and real focus return
+        run: node tests/browser/discard-receipt-dialog.cjs
       - name: Verify layout across viewports and real tab focus
         run: |
           command -v xvfb-run
