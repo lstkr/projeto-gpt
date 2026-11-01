@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
 import CountPrintAction from '../components/CountPrintAction';
+import DiscardReceiptDialog from '../components/DiscardReceiptDialog';
 import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
 import { useAccessibleDialog, useNavigationFocus } from '../components/useAccessibleDialog';
@@ -1263,6 +1264,7 @@ export default function Home() {
     name:'', sku:'', category:'Mercearia', unit:'un', min:'0',
     quantity:'1', cost:'0', supplier:'', preferredSupplier:'', reason:'Entrada manual'
   });
+  const [discardReceiptOpen, setDiscardReceiptOpen] = useState(false);
   const [draftQueue, setDraftQueue] = useState([]);
   const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
@@ -1288,13 +1290,15 @@ export default function Home() {
 
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
-  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
+  const activeDialog = discardReceiptOpen ? 'discard-receipt' : mergePair ? 'merge' : detailDoc ? 'details' :
     view === 'cash' && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useNavigationFocus([accessGranted, dataReady, view, manualMode, cashEntryMode, cashEditId,
     Boolean(draft), draft?.pendingId || draft?.fileName || ''].join('|'));
   useAccessibleDialog(activeDialog, () => {
-    if (mergePair) {
+    if (discardReceiptOpen) {
+      setDiscardReceiptOpen(false);
+    } else if (mergePair) {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
@@ -1304,6 +1308,25 @@ export default function Home() {
       setModal('');
     }
   });
+
+  /** Preserva o descarte local do X, incluindo a limpeza do seletor de arquivos. */
+  function discardReceiptReview() {
+    setDiscardReceiptOpen(false);
+    setDraft(null);
+    setDraftQueue([]);
+    setDraftBatch(null);
+    setError('');
+    if (uploadRef.current) uploadRef.current.value = '';
+  }
+
+  /** O X confirma apenas quando há outras notas na fila, como na janela nativa. */
+  function requestDiscardReceiptReview() {
+    if (draftQueue.length) {
+      setDiscardReceiptOpen(true);
+      return;
+    }
+    discardReceiptReview();
+  }
 
   async function loadSharedInventory(token) {
     if (!supabase || !token) return false;
@@ -3176,7 +3199,7 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
@@ -3456,6 +3479,8 @@ export default function Home() {
     </div>}
     {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')} type="button"><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
     {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}} type="button"><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button type="button" className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {discardReceiptOpen && <DiscardReceiptDialog queuedCount={draftQueue.length}
+      onCancel={() => setDiscardReceiptOpen(false)} onConfirm={discardReceiptReview}/>}
     {toast && <div className="toast" role="status" aria-live="polite" aria-atomic="true"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }
