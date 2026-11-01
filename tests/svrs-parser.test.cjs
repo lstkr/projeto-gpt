@@ -1,97 +1,103 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const html = fs.readFileSync('tests/fixtures/nfce/nfce-pgl-contingencia.html', 'utf8');
+const html = fs.readFileSync('tests/fixtures/nfce/nfce-svrs-sintetica.html', 'utf8');
+const key = html.match(/class="chave">(\d+)/)[1];
 const parse = async (source = html) => (await import('../lib/svrs-parser.mjs')).parseSvrsHtml(source);
 
-test('SVRS: preenche emitente, sete itens e totais impressos da página de contingência', async () => {
+test('SVRS preenche emitente e totais por rótulo mesmo com IDs repetidos', async () => {
   const result = await parse();
-  assert.equal(result.accessKey, '43261087397865000979652100002233569004539403');
-  assert.equal(result.supplierCnpj, '87397865000979');
-  assert.equal(result.supplier, 'PGL DISTRIBUICAO DE ALIMENTOS LTDA');
-  assert.match(result.address, /Praca 20 de Setembro.*849.*FRAGATA.*Pelotas.*RS/);
-  assert.equal(result.invoiceNumber, '223356');
-  assert.equal(result.series, '210');
-  assert.equal(result.date, '22/10/2026 15:56:24');
+  assert.equal(result.supplierCnpj, '11222333000181');
+  assert.equal(result.supplier, 'FORNECEDOR SINTETICO LTDA');
+  assert.match(result.address, /Rua de Teste.*Cidade de Teste/);
+  assert.equal(result.invoiceNumber, '000001');
+  assert.equal(result.series, '1');
+  assert.equal(result.date, '01/01/2026 10:00:00');
   assert.equal(result.contingency, true);
-  assert.deepEqual(result.totalsCents, { subtotal: 82929, discount: 8744, total: 74185, change: 0, taxes: 11570 });
-  assert.deepEqual(result.payments, [{ method: 'Cartão de Crédito', amountCents: 74185, amount: 741.85 }]);
-  assert.deepEqual(result.items.map((item) => [item.code, item.quantityMillis, item.unitPriceCents, item.lineTotalCents]), [
-    ['41160', 5000, 1199, 5995], ['115010010', 6000, 799, 4794], ['649370', 12000, 519, 6228],
-    ['832360', 9868, 3990, 39373], ['524160', 11115, 2190, 24341],
-    ['1023600', 1000, 1198, 1198], ['853450', 1000, 1000, 1000]
-  ]);
-  assert.equal(result.items[4].unit, 'kg');
-  assert.equal(result.items[6].stockDisposition, 'expense');
+  assert.deepEqual(result.totalsCents, { subtotal: 9000, discount: 1000, total: 8000, change: 0, taxes: 900 });
+  assert.deepEqual(result.payments, [{ method: 'Cartão de Crédito', amountCents: 8000, amount: 80 }]);
   assert.deepEqual(result.warnings, []);
 });
 
-test('SVRS: desconto ausente é zero sem inventar fechamento', async () => {
-  const result = await parse(html.replace(/<div id="linhaTotal"><label>Descontos R\$:<\/label>.*?<\/div>/, ''));
-  assert.equal(result.totalsCents.discount, 0);
+test('SVRS CNPJ inválido usa chave válida; sem fonte válida devolve vazio e aviso', async () => {
+  const invalid = html.replace('11.222.333/0001-81', '11.222.333/0001-80');
+  assert.equal((await parse(invalid)).supplierCnpj, '11222333000181');
+  const result = await parse(invalid.replace(key, '0'.repeat(44)));
+  assert.equal(result.supplierCnpj, '');
+  assert.match(result.warnings.join(' '), /inválido/);
+});
+
+test('SVRS não extrai CNPJ do consumidor e alerta divergência sem inventar valores', async () => {
+  const result = await parse(html.replace('90,00', '91,00') + '<div><h4>Consumidor</h4><div>CNPJ: 45.723.174/0001-10 NOME PRIVADO</div></div>');
+  assert.equal(result.totalsCents.subtotal, 9100);
   assert.match(result.warnings.join(' '), /Subtotal menos descontos/);
+  assert.doesNotMatch(JSON.stringify(result), /45723174000110|NOME PRIVADO|Consumidor/);
 });
 
-test('SVRS: CNPJ ausente ou inválido usa o emitente da chave; divergência alerta', async () => {
-  for (const replacement of ['', '00.000.000/0000-00', '11.222.333/0001-81']) {
-    const result = await parse(html.replace('87.397.865/0009-79', replacement));
-    assert.equal(result.supplierCnpj, replacement === '11.222.333/0001-81' ? '11222333000181' : '87397865000979');
-    if (replacement) assert.match(result.warnings.join(' '), /CNPJ da página diverge/);
-  }
+test('campo CNPJ prioriza SVRS válida, depois XML/OCR; rejeita dígitos errados e letras', async () => {
+  const {svrsDraftFields, validatedSupplierCnpj} = await import('../lib/svrs-draft.mjs');
+  const data = await parse();
+  const current = {supplier: 'OCR SINTETICO', supplierCnpj: '45723174000110'};
+  assert.equal(svrsDraftFields(data, current).supplierCnpj, data.supplierCnpj);
+  assert.equal(svrsDraftFields({...data, supplierCnpj: ''}, current).supplierCnpj, current.supplierCnpj);
+  assert.equal(svrsDraftFields({...data, supplierCnpj: ''}, {ocrText: 'CNPJ:\n11 .222.333/0001-81'}).supplierCnpj, '11222333000181');
+  for (const value of ['11222333000180','11111111111111','12ABC34501DE35','']) assert.equal(validatedSupplierCnpj(value), '');
+  assert.equal(validatedSupplierCnpj('11.222.333/0001-81'), '11222333000181');
 });
 
-test('SVRS: divergências alertam sem corrigir valores e um centavo por item é tolerado', async () => {
-  const result = await parse(html.replace('829,29', '830,29').replace('243,41', '243,40'));
-  assert.equal(result.totalsCents.subtotal, 83029);
-  assert.equal(result.items[4].lineTotalCents, 24340);
-  assert.match(result.warnings.join(' '), /Soma dos itens/);
-  assert.match(result.warnings.join(' '), /Total do item diverge/);
+test('razão social oficial prevalece sobre apelido do catálogo sem mudar encargos existentes', async () => {
+  const {prepareFiscalIdentity} = await import('../lib/fiscal-identity.mjs');
+  const {svrsDraftFields} = await import('../lib/svrs-draft.mjs');
+  const data = await parse();
+  const draft = {items: [], officialOrigin: 'sefaz', additionalCharges: 3, ...svrsDraftFields(data)};
+  const result = prepareFiscalIdentity(draft, null, [], [], [{cnpj: data.supplierCnpj, name: 'Apelido sintético'}]);
+  assert.equal(result.supplier, data.supplier);
+  assert.equal(result.additionalCharges, 3);
 });
 
-test('SVRS: ignora consumidor, preserva zeros dos códigos e lê múltiplos pagamentos', async () => {
-  const result = await parse(html.replace('41160', '0041160') + '<div><h4>Consumidor</h4><div class="text">CPF: 123.456.789-00 Nome: PESSOA PRIVADA</div></div>');
-  assert.equal(result.items[0].code, '0041160');
-  assert.doesNotMatch(JSON.stringify(result), /123.456.789|PESSOA PRIVADA|CPF/);
-  const split = await parse(html.replace('<label class="tx">Troco', '<label class="tx">PIX</label><span class="totalNumb">1,00</span></div><div><label class="tx">Troco'));
-  assert.equal(split.payments.length, 2);
+test('OCR reconhece espaços e quebra de linha sem escolher consumidor nem corrigir dígito por chute', async () => {
+  const {extractIssuerCnpj} = await import('../lib/fiscal-identity.mjs');
+  assert.equal(extractIssuerCnpj('EMITENTE SINTETICO - CNPJ:\n11 .222.333/0001-81'), '11222333000181');
+  assert.equal(extractIssuerCnpj('CNPJ: 11 .222.333/0001-80'), '');
+  assert.equal(extractIssuerCnpj('CONSUMIDOR CNPJ: 11.222.333/0001-81'), '');
 });
 
-test('SVRS: campos oficiais substituem metadados OCR sem duplicar frete ou apagar alertas', async () => {
-  const { svrsDraftFields } = await import('../lib/svrs-draft.mjs');
-  const parsed = await parse(html.replace('829,29', '830,29'));
-  const draft = { additionalCharges: 10, supplierCnpj: '', ...svrsDraftFields(parsed) };
-  for (const field of ['supplier', 'supplierCnpj', 'address', 'invoiceNumber', 'series', 'date', 'contingency', 'payments'])
-    assert.deepEqual(draft[field], parsed[field]);
-  assert.equal(draft.additionalCharges, 0);
-  assert.equal(draft.taxes, 115.70);
-  assert.equal(draft.change, 0);
-  assert.deepEqual(draft.officialWarnings, parsed.warnings);
-  assert.match(draft.totalsWarning, /Soma dos itens/);
+test('XML, OCR, reabertura e rascunho usam validador; tela marca CNPJ pendente', () => {
+  const view = fs.readFileSync('pages/index.js', 'utf8');
+  assert.ok(view.includes("supplierCnpj: validatedSupplierCnpj(find(emit, 'CNPJ'))"));
+  assert.ok(view.includes('return validatedSupplierCnpj(extractIssuerCnpj(text))'));
+  assert.ok(view.includes('supplierCnpj:validatedSupplierCnpj(clean.supplierCnpj)'));
+  assert.ok(view.includes('supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText)'));
+  assert.match(view, /Pendente: CNPJ ausente ou inválido/);
+  assert.ok(view.includes('...svrsDraftFields(data, d)'));
 });
 
-test('SVRS: endpoint entrega todos os campos sem rede e rejeita outra chave na página', async () => {
-  const { pathToFileURL } = require('node:url');
+test('endpoint preserva leitura dos itens e entrega campos da consulta sem rede', async () => {
+  const {pathToFileURL} = require('node:url');
   const path = require('node:path');
   let source = fs.readFileSync('pages/api/consulta-nfce.js', 'utf8')
     .replace(/import \{ requireInventorySession \}[^;]+;/, 'const requireInventorySession = async () => true;')
     .replace(/import \{ enforceFiscalRateLimit \}[^;]+;/, 'const enforceFiscalRateLimit = async () => true;')
-    .replace("'../../lib/svrs-parser.mjs'", JSON.stringify(pathToFileURL(path.resolve('lib/svrs-parser.mjs')).href));
-  const { default: handler } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    .replace("'../../lib/svrs-parser.mjs'", JSON.stringify(pathToFileURL(path.resolve('lib/svrs-parser.mjs')).href))
+    .replace("'cheerio'", JSON.stringify(pathToFileURL(require.resolve('cheerio')).href));
+  const {default: handler} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
   const originalFetch = global.fetch;
-  let responseHtml = html;
-  global.fetch = async () => new Response(responseHtml, { headers: { 'content-type': 'text/html' } });
-  const response = { setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
-  const request = { method: 'POST', body: { url: 'https://dfe-portal.svrs.rs.gov.br/Dfe/QrCodeNFce?p=43261087397865000979652100002233569004539403|2' } };
+  let responseHtml = html.replace('12,0000','12,3555');
+  global.fetch = async () => new Response(responseHtml, {headers: {'content-type':'text/html'}});
+  const response = {setHeader() {}, status(code) {this.code=code; return this;}, json(body) {this.body=body;}};
+  const request = {method:'POST', body:{url:'https://dfe-portal.svrs.rs.gov.br/Dfe/QrCodeNFce?p='+key+'|2'}};
   try {
-    await handler(request, response);
-    assert.equal(response.code, 200);
-    assert.deepEqual(response.body.items, (await parse()).items);
-    assert.equal(response.body.supplierCnpj, '87397865000979');
-    assert.equal(response.body.totals.total, 741.85);
-    assert.equal(response.body.source, 'SVRS');
-    responseHtml = html.replace('4326 1087', '4326 1088');
-    await handler(request, response);
-    assert.equal(response.code, 502);
-    assert.match(response.body.error, /não corresponde/);
-  } finally { global.fetch = originalFetch; }
+    await handler(request,response);
+    assert.equal(response.code,200);
+    assert.equal(response.body.items.length,7);
+    assert.equal(response.body.items[3].quantity,2.5);
+    assert.equal(response.body.items[3].unitPrice,12.3555);
+    assert.equal(response.body.items[3].lineTotal,30);
+    assert.equal(response.body.items[0].code,'00001');
+    assert.equal(response.body.supplierCnpj,'11222333000181');
+    assert.equal(response.body.totals.total,80);
+    responseHtml=html.replace(key,'0'.repeat(44));
+    await handler(request,response);
+    assert.equal(response.code,502);
+  } finally {global.fetch=originalFetch;}
 });

@@ -1,36 +1,31 @@
 # Estado do Estoque+ — 01/11/2026
 
 ## Estado atual
-- Main 8b70853: B1 #188/#189/#190/#191 e E1 #192 integradas somente na homologação.
-- Lucas aprovou todos os testes B1/E1, incluindo duas abas, duplicidade, estorno e relançamento.
-- E1 aplicada no Estoque+ DB com OK; estoque, caixa, histórico e usuários preservados.
-- Deploy E1 READY; smoke 8/8; produção não autorizada e não alterada.
-- Foto reduzida #185 aprovada; OCR lê original; QR externo desativado por padrão.
-- Item 1 em desenvolvimento: conferência desktop mais larga, navegação por etapas e pendências por escrito.
-- Enter nos campos não lança a nota; botão explícito e conferência final existentes preservados.
-- Sem mudança em cálculo, associação, estoque, banco ou login neste item.
+- Main e58c8f9: B1/E1 aprovadas por Lucas; conferência desktop #193 integrada.
+- #193: navegação melhorou; pedido atual corrige identificação e leitura da nota.
+- #194 existente foi reaproveitada: SVRS preenche razão social/CNPJ e lê subtotal, desconto e total por rótulo.
+- Alternativa XML/OCR: CNPJ só preenchido com dígitos verificadores válidos; espaços do OCR tolerados.
+- CNPJ ausente/inválido aparece Pendente; rascunho não envia CNPJ inválido nesse campo.
+- Leitura de quantidade/preço/unidade/classificação dos itens foi preservada exatamente da main.
+- Sem banco, migração, lançamento, alteração de cálculo ou login neste bloco.
+- Teste da #194 substituído por fixture sintética; dados identificáveis dos commits anteriores ainda existem no histórico da branch.
 
-## Próximos passos — ordem aprovada
-1. Publicar item 1 com CI verde; Lucas testa nota real, campos, teclado e pendências no computador.
-2. Associação dos produtos da nota aos insumos e conversão de unidades/embalagens: pedir OK com risco e reversão.
-3. Cadastro e consulta de estoque no computador.
-4. OCR do CNPJ/DANFE onde couber.
+## Próximos passos — pedido atual
+1. Publicar #194 com CI verde; Lucas testa CNPJ e campos oficiais no computador.
+2. Limpeza apenas do texto de exibição dos itens, sem fundir produtos; usar nota enviada e aguardar mais 2 prints.
+3. Conferido por definido no servidor pela sessão; preparar risco/reversão e pedir OK se mudar banco/login/permissões.
+4. Retomar associação aos insumos/conversões e cadastro/consulta de estoque após correções atuais.
 
 ## Decisões
 - Direção: desktop é o uso principal (cadastro, conferência completa, estoque e financeiro); celular fica com envio de foto, consulta rápida e login.
 - Priorizar teclado, tabelas, campos visíveis e testes no computador; D1–D3 vira enviar foto → notas a conferir, preservando mobile atual sem polimento novo.
-- Pendências pré-comerciais #178 adiadas até o projeto virar comercial; notificações futuras #186.
-- Uma PR por vez; tela de baixo risco pode integrar sem novo OK com CI verde e sem conflito.
-- Banco/dinheiro/estoque/fiscal/login/exclusão/produção exigem OK explícito; nenhuma produção autorizada.
-- Reset total exige NOVO OK; reversão E1 suspende notas novas sem apagar dados/histórico.
+- Uma PR por vez; tela/leitura pode mesclar com CI verde; banco/estoque/custo/login exigem OK explícito.
+- Pré-comercial #178 adiado até uso comercial; QR externo desativado por padrão; notificações futuras #186.
+- Notas reais só em testes locais; guardar no Git apenas exemplos anonimizados.
+- Produção não autorizada; homologação usa Estoque+ DB e projeto Vercel estoque-homologacao.
 
-## Correção SVRS — em revisão
-- Leitura por rótulos, metadados do emitente e contingência, totais impressos e frete como despesa; sem consumidor.
-- Sete testes offline aprovados; build com configuração fictícia do CI aprovado; seis falhas locais já registradas abaixo.
-- CL-05/07/09/10/11/13/15/16 verificadas nesta alteração; revisão independente e homologação pendentes; CI em nova execução após instalar dependências nos jobs de teste.
-
-## Evidências do bloco anterior
-- Testes relevantes da tela: 13/13; build aprovado; regras de lançamento intactas.
-- Suíte completa: 260/266; seis falhas locais antigas de Windows/bcryptjs e CRLF de documentação.
-- Chrome local: Tab/Shift+Tab, Enter seguro, etapas e pendências passaram; larguras 1440/1280/390px sem overflow externo.
-- CL-05/07/13/15/16 conferidas; sem dependência nova no projeto.
+## Evidências deste bloco
+- Testes relevantes: 19/19; build aprovado; navegador isolado passou SVRS/OCR/inválido sem lançar estoque.
+- Suíte completa: 267/274; seis falhas locais antigas (Windows/CRLF) e uma por renomeação ainda não registrada no índice.
+- Renomeação registrada: teste de configuração 3/3; restam somente as seis falhas locais antigas.
+- CL-05/07/11/13/15/16 conferidas; sem dependência nova, nota real nova no Git ou SQL remoto.

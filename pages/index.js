@@ -1,4 +1,4 @@
-import { svrsDraftFields } from '../lib/svrs-draft.mjs';
+import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
 import CountPrintAction from '../components/CountPrintAction';
@@ -203,7 +203,7 @@ function parseNfeXml(text) {
   const total = xmlNumber('vNF');
   return {
     supplier: find(emit, 'xNome') || '',
-    supplierCnpj: find(emit, 'CNPJ') || '',
+    supplierCnpj: validatedSupplierCnpj(find(emit, 'CNPJ')),
     invoiceNumber: find(ide, 'nNF') || '',
     date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '',
     source: 'XML de NF-e',
@@ -850,7 +850,7 @@ function detectReceiptSupplier(text) {
 }
 
 function detectSupplierCnpj(text) {
-  return extractIssuerCnpj(text);
+  return validatedSupplierCnpj(extractIssuerCnpj(text));
 }
 
 function detectReceiptMetadata(text) {
@@ -2316,7 +2316,7 @@ export default function Home() {
   const cleanPendingDraft=(value)=>{
     if(!value) return {};
     const {pendingId,pendingRevision, ...clean}=value;
-    return {...clean,ocrText:String(clean.ocrText||'').slice(0,100000),
+    return {...clean,supplierCnpj:validatedSupplierCnpj(clean.supplierCnpj),ocrText:String(clean.ocrText||'').slice(0,100000),
       officialText:String(clean.officialText||'').slice(0,30000)};
   };
   async function refreshPending(){
@@ -2366,7 +2366,7 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
-    setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
+    setDraft({...row.draft,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
   async function viewPendingOriginal(row){
@@ -2609,7 +2609,7 @@ export default function Home() {
         const totals = data.totals || {};
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
-              ...svrsDraftFields(data),
+              ...svrsDraftFields(data, d),
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
               officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
@@ -3284,7 +3284,7 @@ export default function Home() {
               <br/>Pagamento: {(draft.payments || []).map((payment) => payment.method + ': ' + money(payment.amount)).join(' · ') || '—'}
               {' · Troco: ' + money(draft.change || 0) + ' · Tributos: ' + money(draft.taxes || 0)}
             </div>}
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos" aria-invalid={Boolean(draft.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj))} aria-describedby="supplier-cnpj-status"/><small id="supplier-cnpj-status" role="status">{validSupplierCnpj(draft.supplierCnpj) ? 'Dígitos verificadores válidos. Confira o emitente com a nota.' : 'Pendente: CNPJ ausente ou inválido. Confira na nota; o sistema não grava um CNPJ inválido neste campo.'}</small></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>

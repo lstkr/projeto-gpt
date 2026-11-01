@@ -1,6 +1,7 @@
 import { requireInventorySession } from '../../lib/server/inventory-session.mjs';
 import { enforceFiscalRateLimit } from '../../lib/server/fiscal-rate-limit.mjs';
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
+import { load } from 'cheerio';
 import { parseSvrsHtml } from '../../lib/svrs-parser.mjs';
 
 const OFFICIAL_HOST = 'dfe-portal.svrs.rs.gov.br';
@@ -47,6 +48,39 @@ function htmlToText(html) {
     .filter(Boolean)
     .join('\n')
     .slice(0, 180000);
+}
+
+function parseMoney(raw) {
+  const tokens = String(raw || '').match(/(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,4}|\.\d{1,4})?/g) || [];
+  if (!tokens.length) return null;
+  const candidate = tokens[tokens.length - 1];
+  const number = Number(candidate.includes(',') ? candidate.replace(/\./g, '').replace(',', '.') : candidate);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseOfficialItems(html) {
+  const $ = load(html);
+  const items = [];
+  const rows = $('#tabResult tbody tr, tr[id^="Item"], tr[id^="item"]');
+  rows.each((_, tr) => {
+    const row = $(tr);
+    const title = row.find('.txtTit').first();
+    const name = title.text().replace(/\s+/g, ' ').trim();
+    const quantity = parseMoney(row.find('.Rqtd').first().text());
+    const unitPrice = parseMoney(row.find('.RvlUnit').first().text());
+    const printedTotal = parseMoney(row.find('.valor').last().text());
+    if (!name || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 ||
+        !Number.isFinite(printedTotal) || printedTotal < 0) return;
+    const codeText = row.find('.RCod').first().text();
+    const match = codeText.match(/(?:C[oó]digo\s*:\s*)?(\d{2,14})/i);
+    const unitText = row.find('.RUN').first().text().replace(/^\s*UN\s*:\s*/i, '').trim();
+    const unit = unitText && /^[a-zA-Z]{1,8}$/.test(unitText) ? unitText.toLowerCase() : 'un';
+    items.push({
+      name: name.slice(0, 160), code: match ? match[1] : '',
+      quantity, unit, unitPrice, lineTotal: printedTotal
+    });
+  });
+  return items;
 }
 
 async function fetchOfficial(url, signal) {
@@ -151,13 +185,13 @@ export default async function handler(req, res) {
       throw new Error('O portal recusou a consulta. Confira a chave e o QR Code original.');
     }
     const parsed = parseSvrsHtml(html);
-    const { items } = parsed;
+    const items = parseOfficialItems(html);
     if (parsed.accessKey !== key) throw new Error('A página fiscal não corresponde à chave consultada.');
     if (controller.signal.aborted) throw new Error('Tempo limite de consulta atingido.');
     if (!items.length) {
       return res.status(502).json({ error: 'A SEFAZ abriu a página, mas a lista de produtos não veio em um formato estruturado reconhecido. Confira manualmente.' });
     }
-    return res.status(200).json({ ...parsed, source: 'SVRS', url: sourceUrl });
+    return res.status(200).json({ ...parsed, items, source: 'SVRS', url: sourceUrl });
   } catch (e) {
     if (controller.signal.aborted || e.name === 'AbortError' || e.name === 'TimeoutError') {
       return res.status(504).json({ error: 'A consulta à SEFAZ demorou mais de 10 segundos. Confira a nota manualmente.' });
