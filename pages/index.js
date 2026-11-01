@@ -3435,7 +3435,7 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||cashConflict||!accessCode} type="submit">{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashConflict||cashSaving||!accessCode} type="submit">{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
               </fieldset>
             </form>
             {cashEditId&&<CashCorrectionHistory history={cashAudit} onReload={()=>void loadCashAudit(cashEditId)}/>}
