@@ -4,11 +4,11 @@ import pg from 'pg';
 import { emitKeypressEvents } from 'node:readline';
 import { runBootstrapTransaction } from './bootstrap-transaction.mjs';
 import { readProtectedInput } from './bootstrap-input.mjs';
+import { verifyBootstrapLogging } from './bootstrap-logging.mjs';
 import {
   bootstrapFailureMessage,
   parseBootstrapConnection,
   validateDbaPassword,
-  validateProtectedLogging,
   validateProjectReference
 } from './bootstrap-connection.mjs';
 
@@ -51,11 +51,7 @@ try {
     connectionTimeoutMillis: 10000
   });
   await runBootstrapTransaction({ client, operation: async () => {
-    await client.query("SET LOCAL log_parameter_max_length = 0");
-    await client.query("SET LOCAL log_parameter_max_length_on_error = 0");
-    await client.query("SET LOCAL pgaudit.log_parameter = off");
-    const settings = await client.query("SELECT current_setting('log_parameter_max_length') AS normal, current_setting('log_parameter_max_length_on_error') AS failure, current_setting('pgaudit.log_parameter', true) AS audit");
-    validateProtectedLogging(settings.rows[0]);
+    await verifyBootstrapLogging(client);
     // Parâmetros não entram no texto SQL; a função privada aceita somente hashes
     // bcrypt e só pode ser chamada pelo proprietário do banco.
     await client.query('SELECT private.bootstrap_superadmin($1, $2)', ['admin.master', hash]);

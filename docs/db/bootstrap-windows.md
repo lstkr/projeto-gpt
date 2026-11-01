@@ -93,6 +93,33 @@ instalação: o histórico deve corresponder ao plano de instalação limpo.
 
 ## 4. Execute uma vez
 
+### Proteção dos logs no Supabase
+
+O iniciador verifica os valores efetivos `log_parameter_max_length=0`,
+`log_parameter_max_length_on_error=0` e `pgaudit.log_parameter=off`, sem executar
+`SET LOCAL` de parâmetros restritos. Nunca remova essa verificação para prosseguir.
+No Estoque+ DB, a consulta de 01/11 encontrou `-1`, `0`, `off`, respectivamente.
+
+O responsável deve revisar/autorizar este ajuste de configuração antes de
+executá-lo no SQL Editor **somente do Estoque+ DB** (não é criação de conta):
+
+```sql
+alter role postgres set log_parameter_max_length = '0';
+select rolconfig from pg_roles where rolname = 'postgres';
+```
+
+O Supabase permite esse parâmetro no nível do papel via `supautils`. A alteração
+oculta parâmetros nos logs de novas conexões desse papel; não concede privilégios,
+não altera tabelas, senhas, saldos ou usuários da aplicação. A configuração anterior
+consultada não tinha esse override. Se uma reversão for posteriormente autorizada,
+`alter role postgres reset log_parameter_max_length` remove apenas esse override.
+O bootstrap exige uma **nova conexão** e verifica os valores realmente recebidos,
+inclusive através do Session pooler; alterar `rolconfig` sozinho não prova que
+uma sessão já aberta ou reutilizada incorporou a configuração.
+Se o ALTER for negado ou a verificação continuar falhando, pare e revise com o DBA;
+não amplie permissões nem desative a proteção. Este ajuste não foi executado pelo
+agente e não autoriza mudanças em produção.
+
 Na mesma janela PowerShell, depois de conferir ref/CA/dependências:
 
 ```powershell
