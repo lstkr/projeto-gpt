@@ -2,6 +2,25 @@
 
 Aplicação web para o estoque da cafeteria, com contas individuais, leitura assistida de cupons e notas e controle de reposição.
 
+## Homologação
+
+Acesse [Estoque+ em homologação](https://estoque-homologacao-ashy.vercel.app/).
+O ambiente usa o projeto Vercel `estoque-homologacao`, Node.js 22 e o Supabase
+`Estoque+ DB`. A configuração efetiva do banco deve ser conferida por ambiente;
+o endereço da aplicação, isoladamente, não comprova o destino do banco.
+
+O workflow `production-smoke.yml` mantém o nome do arquivo por compatibilidade,
+mas executa **Homologation read-only smoke**. `ESTOQUE_SMOKE_URL` é obrigatória,
+definida uma única vez no workflow, sem fallback. Para executá-lo localmente:
+
+```powershell
+$env:ESTOQUE_SMOKE_URL = 'https://estoque-homologacao-ashy.vercel.app'
+node scripts/smoke-production.cjs
+```
+
+O smoke confere homepage, worker PDF e rejeição de chamadas sem sessão.
+Não valida login, OCR, provedor fiscal ou lançamentos de estoque.
+
 ## Funcionalidades
 
 - Consulta e alteração das quantidades em estoque.
@@ -62,7 +81,7 @@ O Supabase Security Advisor foi consultado após as mudanças de permissão e n�
 
 ## Aplicação Next.js
 
-Requisitos: Node.js 20.9 ou superior.
+Requisitos: Node.js 22, conforme `package.json` e CI.
 
 ```bash
 npm install
@@ -91,7 +110,7 @@ No ambiente github-pages, o responsável deve selecionar o banco isolado nas var
 NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY; o gate adicional de
 NEXT_PUBLIC_SUPABASE_PREVIEW_URL se aplica ao Preview Next.js/Vercel.
 
-Ao mesclar, qualquer ambiente sem variável passará a falhar. O projeto antigo da Vercel deve ter o Git desconectado ANTES do merge.
+Ambientes sem as variáveis obrigatórias falham de forma explícita.
 
 ## Cuidados operacionais
 

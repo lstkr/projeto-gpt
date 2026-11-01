@@ -7,12 +7,18 @@
 const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 
-const BASE = (process.env.ESTOQUE_SMOKE_URL || 'https://projetogpt-estoque.vercel.app').replace(/\/$/, '');
+const smokeUrl = process.env.ESTOQUE_SMOKE_URL?.trim();
+if (!smokeUrl) {
+  console.error('Smoke failed: ESTOQUE_SMOKE_URL is required and must not be empty.');
+  process.exit(1);
+}
+const BASE = smokeUrl.replace(/\/$/, '');
 const origin = new URL(BASE);
-assert.equal(origin.protocol, 'https:', 'Only HTTPS production URLs are allowed.');
+assert.equal(origin.protocol, 'https:', 'Only HTTPS smoke URLs are allowed.');
 assert.equal(origin.username, '');
 assert.equal(origin.password, '');
 assert.equal(origin.search, '');
+assert.equal(origin.hash, '');
 assert.equal(origin.pathname, '/');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).dependencies['pdfjs-dist'];
 assert.match(version, /^\d+\.\d+\.\d+$/, 'Worker version must be pinned in package.json.');
