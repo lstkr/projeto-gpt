@@ -14,8 +14,8 @@
 2. Implementada redução da cópia de arquivamento de fotos acima de 4 MB no navegador.
    OCR usa original; limite do servidor preservado, sem alteração de SQL ou regras fiscais.
    Comparar OCR antes/depois com fotos reais privadas; qualidade ainda não testada.
-3. B1: revisão independente encontrou banco vazio e contrato incompatível no rascunho.
-   Plano, reversão proposta e roteiro: docs/B1-correcao-financeira.md; não aplicar ainda.
+3. B1 preparado: PR #188 banco e PR #189 interface dependente, ambas rascunhos.
+   Plano, reversão e roteiro: docs/B1-correcao-financeira.md; depende de CI e OK explícito.
 4. E1: impedir nota duplicada pela mesma chave fiscal antes de qualquer fluxo mobile.
 - Melhoria futura registrada: notificações dentro da página, issue #186.
 
@@ -30,7 +30,7 @@
 - Testes humanos apenas na homologação, com roteiro de 3 a 5 itens.
 
 ## Evidências deste bloco
-- B1: contrato de banco, reversão e interface preparados localmente; nada aplicado remoto.
+- B1: PRs #188/#189 abertas; sem merge, migração remota ou deploy manual.
 - Testes relevantes: 22/22 passaram (cinco novos); foto da #185 preservada.
 - Suíte única: 244/250; seis falhas locais de pacote ausente e quebra de linha Windows.
 - Build local passou com configuração pública fictícia; sem banco remoto.
