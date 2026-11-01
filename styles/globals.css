@@ -857,3 +857,9 @@ td b small { color: var(--muted); font-size: 12px; font-weight: 550; }
   .invoice-document-details .meta-fields input,
   .cash-form input, .cash-form select { font-size: 16px; }
 }
+
+/* Mantém as ações de linha confortáveis para o toque no celular. */
+@media (max-width: 850px) {
+  .row-actions button, .row-chevron { width: 44px; height: 44px; flex-shrink: 0; }
+  .btn { min-height: 44px; }
+}
