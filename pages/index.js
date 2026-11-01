@@ -17,6 +17,7 @@ import { CASH_CHANNELS,cashTotals,aggregateCashMonthly,aggregateCashYearly } fro
 import { prepareCashClosing, cashCorrectionAttempt } from '../lib/cash-correction.mjs';
 import { boundedRpc, RPC_TIMEOUT_CODE } from '../lib/browser-rpc-timeout.mjs';
 import { inventorySaveMessage } from '../lib/inventory-save-message.mjs';
+import { preventReceiptImplicitSubmit } from '../lib/receipt-keyboard.mjs';
 import CashCorrectionHistory from '../components/CashCorrectionHistory';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
@@ -3232,7 +3233,13 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+            <nav className="receipt-review-guide" aria-label="Etapas da conferência">
+              <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
+                <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
+              <div className="receipt-review-links"><a href="#receipt-review-items">Ir aos itens</a><a href="#receipt-review-totals">Ir aos totais</a><a href="#receipt-review-final">Ir à confirmação</a></div>
+              <small>Use Tab para avançar e Shift + Tab para voltar. Enter nos campos não lança a nota. Para lançar, vá até o botão “Confirmar entrada no estoque”, após a conferência final.</small>
+            </nav>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
@@ -3276,7 +3283,7 @@ export default function Home() {
               <b>Conferência do encarregado</b> — campos em amarelo precisam ser confrontados com a nota antes do lançamento.
               {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Revise-os: o lançamento exigirá confirmação adicional.</span>}
             </div>
-            <div className="table-wrap review-table">
+            <div className="table-wrap review-table receipt-items-table" id="receipt-review-items" tabIndex={0} role="region" aria-label="Itens da nota para conferência">
               <table>
                 <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>PRODUTO NO ESTOQUE</th><th>CONFERÊNCIA</th><th></th></tr></thead>
                 <tbody>{draft.items.map((it, i) => {
@@ -3348,6 +3355,7 @@ export default function Home() {
                         </label>
                         <ReviewIssuePopover issues={review.issues} productName={it.name} index={i} reviewed={review.done}/>
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
+                      {attention && <p className="receipt-line-pending"><b>Pendente:</b> {review.issues.join(' · ')}</p>}
                     </td>
                     <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
@@ -3357,7 +3365,7 @@ export default function Home() {
                 })}</tbody>
               </table>
             </div>
-            <div className="meta-fields" style={{marginTop:16}}>
+            <div className="meta-fields" id="receipt-review-totals" tabIndex={-1} style={{marginTop:16}}>
               <label><span>Subtotal fiscal (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftSubtotal} onChange={(e) => changeInvoiceAmount('subtotal', e.target.value)}/></label>
               <label><span>Desconto total (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftDiscount} onChange={(e) => changeInvoiceAmount('discount', e.target.value)}/></label>
               <label><span>Acréscimos / frete (R$)</span><input type="number" min="0" step="0.01" value={draftExtras} onChange={(e) => changeInvoiceAmount('additionalCharges', e.target.value)}/></label>
@@ -3380,7 +3388,7 @@ export default function Home() {
               <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))} type="button"><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
-            <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
+            <section id="receipt-review-final" tabIndex={-1} className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
               <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
                 <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>

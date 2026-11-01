@@ -8,9 +8,19 @@ const view = readFileSync(join(__dirname, '../pages/index.js'), 'utf8');
 const start = view.indexOf("{view === 'documents' &&");
 assert.ok(start >= 0, 'documents module must be rendered');
 const documents = view.slice(start);
-const reviewStart = documents.indexOf('{draft && <section className="panel review-panel">');
+const reviewStart = documents.indexOf('{draft && <section className="panel review-panel"');
 assert.ok(reviewStart >= 0, 'fiscal review panel must be present');
 const review = documents.slice(reviewStart);
+
+test('conferência oferece navegação, pendências textuais e proteção contra Enter implícito', () => {
+  assert.match(review, /onKeyDown=\{preventReceiptImplicitSubmit\}/);
+  for (const id of ['receipt-review-items','receipt-review-totals','receipt-review-final']) {
+    assert.ok(review.includes('href="#'+id+'"'));
+    assert.ok(review.includes('id="'+id+'"'));
+  }
+  assert.match(review, /className="receipt-line-pending"><b>Pendente:/);
+  assert.match(review, /onClick=\{confirmDocument\} type="button"/);
+});
 
 test('importação de notas aparece antes da fila de conferência', () => {
   const importArea = documents.indexOf('Da nota fiscal para o estoque');

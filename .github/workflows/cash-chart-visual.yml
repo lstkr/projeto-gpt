@@ -8,6 +8,8 @@ on:
       - 'tests/browser/count-print-visual.cjs'
       - 'tests/browser/alerts-readability.cjs'
       - 'tests/browser/discard-receipt-dialog.cjs'
+      - 'tests/browser/receipt-desktop.cjs'
+      - 'lib/receipt-keyboard.mjs'
       - 'tests/browser/prepare-discard-fixture.cjs'
       - 'components/DiscardReceiptDialog.js'
       - 'lib/count-print.mjs'
@@ -49,6 +51,8 @@ jobs:
           node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
       - name: Verify discard rules and real focus return
         run: node tests/browser/discard-receipt-dialog.cjs
+      - name: Verify receipt keyboard safety and desktop review
+        run: node tests/browser/receipt-desktop.cjs
       - name: Verify layout across viewports and real tab focus
         run: |
           command -v xvfb-run
