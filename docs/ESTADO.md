@@ -1,31 +1,34 @@
 # Estado do Estoque+ — 01/11/2026
 
 ## Estado atual
-- Main e58c8f9: B1/E1 aprovadas por Lucas; conferência desktop #193 integrada.
-- #193: navegação melhorou; pedido atual corrige identificação e leitura da nota.
-- #194 existente foi reaproveitada: SVRS preenche razão social/CNPJ e lê subtotal, desconto e total por rótulo.
-- Alternativa XML/OCR: CNPJ só preenchido com dígitos verificadores válidos; espaços do OCR tolerados.
-- CNPJ ausente/inválido aparece Pendente; rascunho não envia CNPJ inválido nesse campo.
-- Leitura de quantidade/preço/unidade/classificação dos itens foi preservada exatamente da main.
-- Sem banco, migração, lançamento, alteração de cálculo ou login neste bloco.
-- Teste da #194 substituído por fixture sintética; dados identificáveis dos commits anteriores ainda existem no histórico da branch.
+- Main e407b32: B1/E1 aprovadas; desktop #193 e CNPJ/SVRS #194 publicados na homologação.
+- Item 1 atual: chave numérica NF-e55/NFC-e65 validada localmente (DV, UF/mês/modelo e CNPJ).
+- Chave mostra UF, mês/ano, série e número como texto; fornecedor é emitente, nunca destinatário.
+- CNPJ/chaves divergentes ou chave preenchida inválida ficam Pendentes e bloqueiam confirmação na tela.
+- Escolhas humanas explícitas ligadas às leituras permitem resolver divergência sem ocultar evidências.
+- QR/CODE128/OCR locais; retirada a chamada da tela ao leitor externo de imagens.
+- Consulta oficial NFC-e e arquivamento no sistema preservados; DANFE não usa consulta NFC-e.
+- Sem banco, migração, conversão de estoque/custo ou alteração de login neste bloco.
 
-## Próximos passos — pedido atual
-1. Publicar #194 com CI verde; Lucas testa CNPJ e campos oficiais no computador.
-2. Limpeza apenas do texto de exibição dos itens, sem fundir produtos; usar nota enviada e aguardar mais 2 prints.
-3. Conferido por definido no servidor pela sessão; preparar risco/reversão e pedir OK se mudar banco/login/permissões.
-4. Retomar associação aos insumos/conversões e cadastro/consulta de estoque após correções atuais.
+## Próximos passos — ordem atual de Lucas
+1. Publicar/testar identificação local pela chave no computador.
+2. Limpar OCR: desconto/líquido não são itens; juntar linhas; CNPJ quebrado, CPF do destinatário e ruído.
+3. Dicionário único de unidades; ML só sugere maço com contexto claro; ambiguidade fica Pendente.
+4. Avisar divergência da soma dos itens menos desconto frente ao total, sem mudar lançamentos.
+5. Dica uma nota por foto; detecção/separação local de duas notas com escolha humana se incerta.
+6. Detectar pacote - N unid e sugerir composição; não converter estoque/custo.
+7. Conferido por automático definido no servidor pela sessão continua na fila; pedir OK se banco/login.
+8. Associação/conversão exige OK com risco/reversão e perguntar controle em unidades ou pacotes.
 
 ## Decisões
-- Direção: desktop é o uso principal (cadastro, conferência completa, estoque e financeiro); celular fica com envio de foto, consulta rápida e login.
-- Priorizar teclado, tabelas, campos visíveis e testes no computador; D1–D3 vira enviar foto → notas a conferir, preservando mobile atual sem polimento novo.
-- Uma PR por vez; tela/leitura pode mesclar com CI verde; banco/estoque/custo/login exigem OK explícito.
-- Pré-comercial #178 adiado até uso comercial; QR externo desativado por padrão; notificações futuras #186.
-- Notas reais só em testes locais; guardar no Git apenas exemplos anonimizados.
-- Produção não autorizada; homologação usa Estoque+ DB e projeto Vercel estoque-homologacao.
+- Desktop: cadastro, conferência completa, estoque e financeiro; celular: foto, consulta rápida e login.
+- Uma PR por vez; tela/texto/leitura integra com CI verde; banco/estoque/custo/login requerem OK.
+- Pré-comercial #178 adiado até uso comercial; produção não autorizada; QR externo sem uso pela tela.
+- Fotos reais apenas em testes locais; repositório só recebe dados sintéticos/anonimizados.
+- DANFE anexado abriu; arquivo da foto com duas NFC-e não encontrado e precisa ser reenviado.
 
 ## Evidências deste bloco
-- Testes relevantes: 19/19; build aprovado; navegador isolado passou SVRS/OCR/inválido sem lançar estoque.
-- Suíte completa: 267/274; seis falhas locais antigas (Windows/CRLF) e uma por renomeação ainda não registrada no índice.
-- Renomeação registrada: teste de configuração 3/3; restam somente as seis falhas locais antigas.
-- CL-05/07/11/13/15/16 conferidas; sem dependência nova, nota real nova no Git ou SQL remoto.
+- 27 testes relevantes passaram; build aprovado; navegador isolado passou quatro cenários incluindo DANFE.
+- Suíte uma vez: 276/282; seis falhas locais antigas Windows/bcryptjs/CRLF; CI fará validação Linux.
+- DANFE real: OCR local extraiu uma chave válida55; barcode dessa foto não leu; CODE128 sintético passou.
+- Revisão fiscal independente: achados corrigidos e sem novo impeditivo; CL-07/11/13/15/16 conferidas.
