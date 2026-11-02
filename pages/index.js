@@ -1,3 +1,4 @@
+import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
@@ -202,6 +203,8 @@ function parseNfeXml(text) {
   const discount = xmlNumber('vDesc');
   const total = xmlNumber('vNF');
   return {
+    accessKey: (all.find(n => n.localName === 'infNFe')?.getAttribute('Id') || '').replace(/^NFe/, ''),
+    issuerCnpjRead: find(emit, 'CNPJ'),
     supplier: find(emit, 'xNome') || '',
     supplierCnpj: validatedSupplierCnpj(find(emit, 'CNPJ')),
     invoiceNumber: find(ide, 'nNF') || '',
@@ -584,19 +587,8 @@ function validateNfceAccessKey(raw) {
 }
 
 function extractAccessKeyFromText(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  for (const line of lines) {
-    const digits = line.replace(/\D/g, '');
-    // A normal NFC-e key is printed in eleven groups of four. OCR may add one
-    // spurious digit; look for validated 44-digit windows instead of trusting
-    // the first 44 characters of a damaged line.
-    if (digits.length < 44 || digits.length > 65) continue;
-    for (let i = 0; i <= digits.length - 44; i++) {
-      const candidate = digits.slice(i, i + 44);
-      if (validateNfceAccessKey(candidate)) return candidate;
-    }
-  }
-  return '';
+  const keys = fiscalKeyCandidates(text).filter(readFiscalAccessKey);
+  return keys.length === 1 ? keys[0] : '';
 }
 
 function hasUncertainReceiptKey(text) {
@@ -621,18 +613,19 @@ function parseNfceQrPayload(raw) {
   if (parsed) {
     for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
       const digits = String(parsed.searchParams.get(key) || '').replace(/\D/g, '');
-      if (validateNfceAccessKey(digits)) { accessKey = digits; break; }
+      if (readFiscalAccessKey(digits)) { accessKey = digits; break; }
     }
     if (!accessKey) {
       const p = parsed.searchParams.get('p') || '';
       const first = p.split('|')[0].replace(/\D/g, '');
-      if (validateNfceAccessKey(first)) accessKey = first;
+      if (readFiscalAccessKey(first)) accessKey = first;
     }
   }
   if (!accessKey && !parsed) {
     accessKey = extractAccessKeyFromText(value);
   }
 
+  if (accessKey && !validateNfceAccessKey(accessKey)) return {accessKey, consultaUrl:'', qrRaw:value.slice(0,700), qrUrlPreserved:false};
   const host = parsed?.hostname?.toLowerCase() || '';
   const officialHost = host === 'dfe-portal.svrs.rs.gov.br' ||
     /(^|\.)sefaz\.rs\.gov\.br$/i.test(host) ||
@@ -674,7 +667,7 @@ async function decodeNfceQrWithZXing(canvas) {
   }
 
   const hints = new Map();
-  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE]);
+  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE, z.BarcodeFormat.CODE_128]);
   hints.set(z.DecodeHintType.TRY_HARDER, true);
   for (const invert of [false, true]) {
     const luminance = invert ? Uint8ClampedArray.from(gray, (v) => 255 - v) : gray;
@@ -684,7 +677,7 @@ async function decodeNfceQrWithZXing(canvas) {
         const bitmap = new z.BinaryBitmap(new Binarizer(source));
         const reader = new z.MultiFormatReader();
         reader.setHints(hints);
-        const result = reader.decode(bitmap);
+        const result = reader.decodeWithState(bitmap);
         reader.reset();
         if (result?.getText) return result.getText();
       } catch (_) {}
@@ -693,8 +686,7 @@ async function decodeNfceQrWithZXing(canvas) {
   return '';
 }
 
-// Inspired by pcelias-ctrl/nfc-e: isolate the code from the footer and retry
-// with rotated, resized variants before requesting any external decoding service.
+// Recortes locais limitam o custo da leitura sem transmitir a imagem.
 function createQrFooterCrop(canvas, rotation = 0) {
   const fromY = Math.floor(canvas.height * 0.44);
   const cropWidth = canvas.width;
@@ -714,31 +706,17 @@ function createQrFooterCrop(canvas, rotation = 0) {
   return out;
 }
 
-async function decodeQrViaExternalApi(canvas, sessionToken) {
-  const crop = createQrFooterCrop(canvas);
-  const image = crop.toDataURL('image/jpeg', 0.82);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7500);
-  try {
-    const response = await fetch('/api/qr-externo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-estoque-session': sessionToken },
-      body: JSON.stringify({ image_base64: image }),
-      signal: controller.signal
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
-    const parsed = parseNfceQrPayload(data.url);
-    if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
-      throw new Error('O leitor externo não encontrou um QR Code fiscal válido do RS.');
-    }
-    return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
-  } finally {
-    clearTimeout(timer);
-  }
+/** Recorta o cabeçalho do DANFE para leitura local de CODE-128. */
+function createFiscalHeaderCrop(canvas) {
+  const crop = document.createElement('canvas');
+  const scale = Math.min(1, 1600 / canvas.width);
+  crop.width = Math.max(1, Math.round(canvas.width * scale));
+  crop.height = Math.max(1, Math.round(canvas.height * 0.42 * scale));
+  crop.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height * 0.42, 0, 0, crop.width, crop.height);
+  return crop;
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -750,7 +728,8 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
   try {
     if ('BarcodeDetector' in window) {
       const formats = await window.BarcodeDetector.getSupportedFormats();
-      if (formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      const localFormats = ['qr_code','code_128'].filter(format => formats.includes(format));
+      if (localFormats.length) detector = new window.BarcodeDetector({ formats: localFormats });
     }
   } catch (_) {}
   const results = [];
@@ -760,12 +739,12 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
     // Small, capped footer crops are much faster than repeatedly scanning full photos.
     const footer = createQrFooterCrop(reference);
     const rotated = createQrFooterCrop(reference, 180);
-    for (const target of [footer, rotated]) {
+    for (const target of [createFiscalHeaderCrop(reference), footer, rotated]) {
       if (detector) {
         try {
           for (const hit of await detector.detect(target) || []) {
             const candidate = parseNfceQrPayload(hit.rawValue);
-            if (candidate.qrUrlPreserved) { found = candidate; break; }
+            if (candidate.accessKey) { found = candidate; break; }
           }
         } catch (_) {}
       }
@@ -783,25 +762,13 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
       }
       if (found.qrUrlPreserved) break;
     }
-    // No opt-in button: request the generic external QR decoder automatically as
-    // a fallback. Only the footer crop is transmitted, not the full note.
-    if (!found.qrUrlPreserved) {
-      try {
-        found = await decodeQrViaExternalApi(reference, sessionToken);
-      } catch (error) {
-        const warning = error?.message || 'Leitor QR complementar indisponível.';
-        // Keep an offline recovery path when the external API times out.
-        for (const target of [footer, rotated]) {
-          try {
-            const result = await decodeNfceQrWithZXing(target);
-            if (result) {
-              const candidate = parseNfceQrPayload(result);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-              if (candidate.accessKey && !found.accessKey) found = candidate;
-            }
-          } catch (_) {}
-        }
-        if (!found.qrUrlPreserved) found = { ...found, qrReaderWarning: warning };
+    // A imagem nunca sai do navegador para decodificar QR ou código de barras.
+    if (!found.accessKey) {
+      for (const target of [createFiscalHeaderCrop(reference), footer, rotated]) {
+        const raw = await decodeNfceQrWithZXing(target);
+        if (!raw) continue;
+        const candidate = parseNfceQrPayload(raw);
+        if (candidate.accessKey) { found = candidate; break; }
       }
     }
     results.push(found);
@@ -1260,7 +1227,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(typeof updater === 'function' ? updater(previous) : updater, previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(typeof updater === 'function' ? updater(previous) : updater), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -2165,7 +2132,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
           if (!receiptOcrWorkerRef.current) {
@@ -2219,10 +2186,10 @@ export default function Home() {
             const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
             const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
-            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
-            const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
+            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(readFiscalAccessKey) || '';
+            const consultaUrl = validateNfceAccessKey(accessKey) ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
             const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) || hasUncertainReceiptKey(alternateText))
-              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
+              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 55/65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
               : '';
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
@@ -2519,16 +2486,16 @@ export default function Home() {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
     setDraft((previous) => {
       if (!previous) return previous;
-      const valid = validateNfceAccessKey(key);
+      const valid = Boolean(readFiscalAccessKey(key));
       return {
         ...previous,
         accessKey: valid ? key : '',
         accessKeyInput: key,
-        consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
+        consultaUrl: valid && validateNfceAccessKey(key) ? PUBLIC_NFCE_CONSULTA_URL : '',
         qrUrlPreserved: false,
         officialCompared: false, officialItems: [], officialVerified: false,
         officialOrigin: '', officialStatus: '', officialApplied: false,
-        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 65 e dígito verificador correto.'
+        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 55/65 e dígito verificador correto.'
       };
     });
   }
@@ -2682,7 +2649,9 @@ export default function Home() {
     setError('');
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
+  const localKeyReview = reviewLocalFiscalKey(draft);
   function confirmDocument() {
+    if (localKeyReview.pending) { setError(localKeyReview.message); return; }
     if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
       setError(/[A-Za-z]/.test(draft.supplierCnpj)
         ? 'CNPJ alfanumérico preservado. Esta versão ainda não valida esse formato; solicite a atualização antes de lançar esta nota.'
@@ -3167,7 +3136,7 @@ export default function Home() {
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
+            <b>Leitura local:</b> OCR, QR e código de barras são lidos no navegador, sem enviar a imagem a leitores de terceiros. O original continua arquivado no sistema. A consulta oficial da NFC-e permanece disponível; confira os dados antes do lançamento.
           </div>
           {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
@@ -3276,6 +3245,13 @@ export default function Home() {
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
+            <section className="invoice-document-details" aria-label="Identificação local pela chave">
+              <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
+              <p id="local-key-status" role="status">{localKeyReview.message}</p>
+              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              {localKeyReview.canConfirmKey && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, keyReadAcknowledged:localKeyReview.evidence, finalReviewed:false}))}>Conferi a chave digitada com a nota e confirmo esta leitura</button>}
+              {localKeyReview.canConfirmIssuer && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, supplierCnpj:localKeyReview.fields.cnpj, issuerKeyAcknowledged:localKeyReview.issuerEvidence, finalReviewed:false}))}>Conferi o emitente na nota e confirmo o CNPJ da chave</button>}
+            </section>
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
             {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
