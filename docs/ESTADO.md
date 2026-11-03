@@ -31,4 +31,4 @@
 - 27 testes relevantes passaram; build aprovado; navegador isolado passou quatro cenários incluindo DANFE.
 - Suíte uma vez: 276/282; seis falhas locais antigas Windows/bcryptjs/CRLF; CI fará validação Linux.
 - DANFE real: OCR local extraiu uma chave válida55; barcode dessa foto não leu; CODE128 sintético passou.
-- Revisão fiscal independente: achados corrigidos e sem novo impeditivo; CL-07/11/13/15/16 conferidas.
+- Modo econômico proposto em PR docs rascunho: cabeçalho só no final, leitura/testes/revisão focados; sem merge.

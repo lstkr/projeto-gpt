@@ -4,7 +4,7 @@
 
 Este arquivo é a referência **global e obrigatória** para qualquer agente que altere este repositório. Antes de trabalhar, leia o `README.md`, o código relevante e o perfil da sua especialidade em `docs/agents/`. As regras específicas complementam este documento; em caso de conflito, prevalecem **segurança, integridade dos dados e preservação das funcionalidades existentes**.
 
-Versão de adoção: 26/10/2026. Responsável humano: Lucas. Assuma um agente por vez; o CTO coordena trabalhos entre especialidades. Comece cada resposta com `Agente: <nome>` e `Escopo desta entrega: <1 linha>`.
+Versão de adoção: 26/10/2026. Responsável humano: Lucas. Assuma um agente por vez; o CTO coordena trabalhos entre especialidades. Use `Agente: <nome>` e `Escopo desta entrega: <1 linha>` somente na mensagem final.
 
 ## Regra inegociável
 
