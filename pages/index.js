@@ -1,4 +1,4 @@
-import { receiptItemsFromOcr } from '../lib/receipt-ocr-cleanup.mjs';
+import { receiptItemsFromOcr, rebuildSavedDanfe } from '../lib/receipt-ocr-cleanup.mjs';
 import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -2329,6 +2329,19 @@ export default function Home() {
       setToast('Nota cancelada pelo Gestor.');
     }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
   }
+  function reinterpretSavedDanfe() {
+    const next = rebuildSavedDanfe(draft, {
+      mergeItems: mergeReceiptCandidates, reconcileTotals: reconcileReceiptTotals
+    });
+    if (!next) {
+      setError('A tabela DANFE está incompleta no texto salvo. Confira a imagem e preencha os itens manualmente.');
+      return;
+    }
+    if (!window.confirm('Substituir os itens e totais desta conferência pela tabela do texto salvo? As edições atuais serão substituídas e todos os itens exigirão nova conferência.')) return;
+    setDraft(next);
+    setError('');
+    setToast('Tabela reinterpretada sem novo OCR. Confira todos os itens e totais antes de lançar.');
+  }
   async function openPendingReceipt(row){
     if(draft && draft.pendingId!==row.id &&
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
@@ -3245,7 +3258,7 @@ export default function Home() {
               </div>
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
-            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
+            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre>{/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText) && <button className="btn secondary" type="button" onClick={reinterpretSavedDanfe}>Reinterpretar tabela DANFE (sem novo OCR)</button>}</details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
               <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
               <p id="local-key-status" role="status">{localKeyReview.message}</p>
