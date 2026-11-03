@@ -86,3 +86,30 @@ aplicativo atual e parar os servidores da prévia; nenhuma transformação de da
 - Tela 390x844: tabela contida e contagem utilizável; Funcionário sem Relatórios, custos e revisão gerencial.
 - Preview somente com dados fictícios; nenhuma gravação, migração, CI remoto, merge ou deploy foi validado/executado.
 - Capturas locais em tests/browser/artifacts/giro-caixa-v2.jpg e giro-contagem-v2.jpg (fora do Git).
+
+## Incremento de UI — PR #197
+
+Base anterior registrada primeiro em 6cf62cd, antes de abrir o rascunho, a pedido de Lucas.
+A PR contém a base acumulada e um commit separado para este incremento; o total não é uma PR pequena.
+- Conferência: original/dados no topo; itens em largura total, sem overflow:hidden; linhas se reorganizam no tablet.
+- Original limitado a 40vh até 1100px; Expandir/Recolher libera a altura sem mudar o arquivo.
+- Contagem até 620px: cartões com Sistema/Contado/Diferença; resumo e ações quebram linha.
+- Caixa: filtro mês/ano separado do período do relatório; documento mostra um dia por vez pela emissão.
+- Legado sem data mantém acesso explícito; ausência de registros possui estado vazio próprio.
+- Relatórios: Período, seletor com espaço fixo, Faltas/Sobras separados e seções expansíveis legíveis.
+- Gráfico: eixo em reais iniciado em zero, linhas de referência, extremos entre registros, ano com 12 meses.
+- Mês mantém todos os dias e distingue ausência de zero registrado; clique no mês abre os dias, no dia abre caixas.
+- Rolagem móvel tem dica e último registro visível; índices/alturas não alteram valores persistidos.
+Referências: [eixos e linhas ONS](https://service-manual.ons.gov.uk/data-visualisation/guidance/axes-and-gridlines)
+e [colunas temporais ONS](https://service-manual.ons.gov.uk/data-visualisation/chart-types/column-chart).
+Validação: 15 testes afetados passaram; suíte completa final uma vez: 306 passaram, 0 falharam; build passou.
+Playwright: seis larguras; seletor imóvel, ano com 12 meses, clique abre revisão, filtro e último registro verificados.
+Capturas de produção: 15 antes + 15 depois, JPEG80, em 1440x900, 768x1024 e 390x844, só fixtures.
+Medições incluem documento, .table-wrap e .giro-review-fields: nota/contagem sem overflow após o ajuste.
+Histórico do Caixa mantém rolagem interna deliberada em 768/390; não é corte do documento.
+Diagnóstico solicitado, sem correção: (a) sim; (b) sim; (c) sim. Effect do revisor, editor B1 e PDF não alterados.
+Sem SQL, regras fiscais, endpoints, login/permissões, dependências ou gravações remotas neste incremento.
+CL-01/02/04/05/09/10/13/15/16 verificadas; sem autoaprovação da revisão independente.
+Revisão independente única: apontou fallback da emissão para importação; corrigido no mesmo ciclo.
+O filtro usa somente emissão; notas sem data permanecem no grupo próprio; 7 testes afetados passaram após a correção.
+A suíte de 306 foi executada uma vez antes dessa correção localizada; CI final verifica o commit publicado.

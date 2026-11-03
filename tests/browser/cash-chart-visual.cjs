@@ -47,7 +47,7 @@ const closings = [
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin === origin) return route.continue();
-      if (!url.hostname.endsWith('.supabase.co') || !url.pathname.startsWith('/rest/v1/rpc/')) return route.abort();
+      if ((!url.hostname.endsWith('.supabase.co') && !['127.0.0.1','localhost'].includes(url.hostname)) || !url.pathname.startsWith('/rest/v1/rpc/')) return route.abort();
       const name = url.pathname.split('/').at(-1);
       let data;
       if (name === 'inventory_validate_session') {
@@ -78,6 +78,7 @@ const closings = [
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
       else if (name === 'supplier_identity_links') data = []; // Synthetic fixture, no supplier mappings.
       else if (name === 'cash_closings_list') data = closings;
+      else if (name === 'cash_closing_audit_list') data = [];
       else if (name === 'pending_receipts_list') data = [];
       else if (name === 'inventory_logout') data = {ok:true};
       else throw new Error('Unmocked RPC: ' + name);
@@ -87,13 +88,13 @@ const closings = [
     await page.getByLabel('Login', {exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
-    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).click();
+    await page.getByRole('button',{name:'Relatórios',exact:true}).click();
     await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
 
-    const columns = page.locator('.cash-chart-month .cash-bar-column');
+    const columns = page.locator('.giro-revenue-bars .cash-bar-column');
     await columns.first().waitFor();
     assert.equal(await columns.count(),31,'outubro precisa exibir 31 dias');
-    assert.equal(await page.locator('.cash-chart-month .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
+    assert.equal(await page.locator('.giro-revenue-bars .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
     const amountLabels = await columns.evaluateAll(items=>items.filter(item=>/R\$\s*[0-9]/.test(item.innerText)));
     assert.equal(amountLabels.length,0,'rótulos de moeda não podem ocupar o espaço estreito das colunas');
 
@@ -101,7 +102,7 @@ const closings = [
       await page.setViewportSize({width,height});
       const result = await page.evaluate(() => {
         const panel=document.querySelector('.cash-chart-inspector');
-        const chart=document.querySelector('.cash-chart');
+        const chart=document.querySelector('.giro-chart-scroll');
         const titles=Array.from(chart.querySelectorAll('.cash-bar-column small'));
         const rects=titles.map(el=>el.getBoundingClientRect());
         const overlaps=[];
@@ -113,11 +114,18 @@ const closings = [
       });
       assert.equal(result.panelBeforeChart,true,'painel de valor não deve sobrepor as barras');
       assert.deepEqual(result.overlaps,[],'rótulos dos dias não podem colidir em '+width+'px');
+      if(width<=620){
+        const visible=await page.locator('[data-last-recorded="true"]').evaluate(element=>{
+          const bar=element.getBoundingClientRect(),viewport=element.closest('.giro-chart-scroll').getBoundingClientRect();
+          return bar.left>=viewport.left-1&&bar.right<=viewport.right+1;
+        });
+        assert.equal(visible,true,'último registro deve começar visível no celular');
+      }
       assert.equal(result.pageOverflow,false,'a página não deve transbordar em '+width+'px; o próprio gráfico pode rolar');
       await page.screenshot({path:path.join(output,'cash-chart-'+width+'.png')});
     }
 
-    const bar20=page.locator('.cash-chart-month .cash-bar-column[aria-label*="20 de outubro"]');
+    const bar20=page.locator('.giro-revenue-bars .cash-bar-column[aria-label*="20 de outubro"]');
     await bar20.scrollIntoViewIfNeeded();
     await bar20.hover();
     assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/R\$\s*2\.175,50/,'o hover deve exibir a receita consolidada do dia');
@@ -125,14 +133,30 @@ const closings = [
     assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/2\.175,50/,'o foco por teclado deve informar o valor');
     await bar20.click();
     await page.getByRole('dialog').waitFor();
-    await page.getByRole('button',{name:'Fechar detalhamento do dia'}).click();
+    await page.getByRole('button',{name:'Revisar caixa 001',exact:true}).click();
+    await page.getByRole('heading',{name:'Corrigir fechamento',exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Motivo da correção *',{exact:true}).inputValue(),'');
+    await page.getByRole('button',{name:'Fechar formulário',exact:true}).click();
+    await page.locator('.giro-history-filters input[type=month]').fill('2026-10');
+    assert.equal(await page.locator('.cash-history tbody tr').count(),6);
+    await page.getByRole('button',{name:'Relatórios',exact:true}).click();
+    const controls=page.getByRole('group',{name:'Período do gráfico',exact:true});
+    const before=await controls.boundingBox();
+    await page.getByRole('button',{name:'Ano',exact:true}).click();
+    const after=await controls.boundingBox();
+    assert.ok(Math.abs(before.x-after.x)<1&&Math.abs(before.y-after.y)<1,'alternar mês/ano não move o controle');
+    assert.equal(await columns.count(),12,'ano deve conter doze meses');
+    await page.getByRole('heading',{name:'Faturamento mensal — 2026',exact:true}).waitFor();
+    await page.locator('.giro-revenue-bars button[aria-label^="outubro"]').click();
+    assert.equal(await columns.count(),31,'selecionar mês volta ao detalhe diário');
 
     await page.locator('.cash-chart-controls input[type=month]').fill('2028-02');
     assert.equal(await columns.count(),29,'fevereiro bissexto precisa mostrar 29 dias');
-    assert.equal(await columns.filter({has:page.locator('.cash-bar-fill')}).count(),29);
+    assert.equal(await columns.filter({has:page.locator('.giro-chart-track i')}).count(),29);
 
     // Stock count printing: previews must remain readable, modal and isolated.
     await page.getByRole('button',{name:'Contagem de estoque',exact:true}).click();
+    await page.getByText('Imprimir folha de contagem',{exact:true}).click();
     await page.getByRole('button',{name:'Abrir prévia de impressão'}).click();
     const printDialog=page.getByRole('dialog',{name:/Prévia de impressão/});
     await printDialog.waitFor();

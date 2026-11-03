@@ -22,7 +22,7 @@ export default function GiroManagerInsights({entries,products,documents,month,sc
     <div className="giro-insight-grid">
       <article><h3>Vendas registradas{sales.invalid || sales.invalidDates ? ' · parcial' : ''}</h3><strong>{sales.count ? insightMoney(sales.revenue) : 'Sem registros'}</strong><small>{variationLabel(sales.variation)}</small></article>
       <article><h3>Média por dia com fechamento</h3><strong>{insightMoney(sales.average)}</strong><small>Usa apenas dias com registro. Não é ticket médio.</small></article>
-      <article><h3>Diferenças no dinheiro contado</h3><strong>{sales.count > sales.withoutCount ? insightMoney(sales.shortage) : 'Sem contagens'}</strong><small>Faltas · sobras: {sales.count > sales.withoutCount ? insightMoney(sales.surplus) : 'sem dados'}<br/>{sales.count-sales.withoutCount} de {sales.count} fechamentos conciliáveis</small></article>
+      <article><h3>Diferenças no dinheiro contado</h3><div className="giro-cash-differences"><b>Faltas {sales.count > sales.withoutCount ? insightMoney(sales.shortage) : 'sem contagens'}</b><b>Sobras {sales.count > sales.withoutCount ? insightMoney(sales.surplus) : 'sem contagens'}</b></div><small>{sales.count-sales.withoutCount} de {sales.count} fechamentos conciliáveis</small></article>
     </div>
     <div className="giro-operations">
       <article><h3>Compras por notas registradas{operation.unknownInvoices ? ' · parcial' : ''}</h3><strong>{operation.purchaseCount ? insightMoney(operation.purchases) : 'Sem notas no período'}</strong><p>{operation.purchaseCount} nota(s), pela data de emissão. {operation.unknownInvoices > 0 && `${operation.unknownInvoices} nota(s) sem data/total confiável fora do cálculo. `}Não representa pagamentos ou CMV.</p></article>

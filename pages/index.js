@@ -5,6 +5,9 @@ import TenantAdministration from '../components/TenantAdministration';
 import GiroBrand from '../components/GiroBrand';
 import { receiptReviewerName, resetReceiptReviewer, receiptReviewerMatches } from '../lib/receipt-reviewer.mjs';
 import { listenForMenuDismiss } from '../lib/dismiss-menu.mjs';
+import PeriodControls from '../components/PeriodControls';
+import CashRevenueChart from '../components/CashRevenueChart';
+import {historyPeriod,documentHistory,historyDay} from '../lib/history-view.mjs';
 import GiroManagerInsights from '../components/GiroManagerInsights';
 import ReceiptOriginalPreview from '../components/ReceiptOriginalPreview';
 import CountPrintAction from '../components/CountPrintAction';
@@ -20,7 +23,7 @@ import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
 import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, supplierAliasConversion, receiptUnitFactor, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
-import { CASH_CHANNELS,cashTotals,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
+import { CASH_CHANNELS,cashTotals } from '../lib/cash-closing.mjs';
 import { prepareCashClosing, cashCorrectionAttempt } from '../lib/cash-correction.mjs';
 import { boundedRpc, RPC_TIMEOUT_CODE } from '../lib/browser-rpc-timeout.mjs';
 import { inventorySaveMessage } from '../lib/inventory-save-message.mjs';
@@ -1217,9 +1220,11 @@ export default function Home() {
   const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
+  const [cashHistoryPeriod,setCashHistoryPeriod]=useState({month:new Date().toISOString().slice(0,7),scope:'month'});
+  const [documentMonth,setDocumentMonth]=useState(new Date().toISOString().slice(0,7));
+  const [documentDay,setDocumentDay]=useState('');
   const [cashChartScope,setCashChartScope]=useState('month');
   const [cashSelectedDay,setCashSelectedDay]=useState('');
-  const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
     day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
@@ -1751,24 +1756,9 @@ export default function Home() {
   const readyForFinalReview = Boolean(draft?.items?.length &&
     receiptReviewRows.every((row) => row.done) &&
     (!totalsRequireReview || draft.totalsReviewed));
-  const cashMonthly=useMemo(()=>{
-    const [year,month]=cashMonth.split('-').map(Number);
-    return aggregateCashMonthly(closings,year,month);
-  },[closings,cashMonth]);
-  const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
-  const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
-  const cashChartDays=useMemo(()=>{
-    if(cashChartScope==='year') return cashYearly.daily;
-    const [year,month]=cashMonth.split('-').map(Number);
-    const daysInMonth=new Date(year,month,0).getDate();
-    const revenueByDay=new Map(cashMonthly.daily.map(item=>[item.day,item.revenue]));
-    return Array.from({length:daysInMonth},(_,index)=>{
-      const day=`${cashMonth}-${String(index+1).padStart(2,'0')}`;
-      return {day,revenue:revenueByDay.get(day)??0,recorded:revenueByDay.has(day)};
-    });
-  },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
-  const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
-  const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
+  const cashHistoryEntries=useMemo(()=>historyPeriod(closings,cashHistoryPeriod.month,cashHistoryPeriod.scope),[closings,cashHistoryPeriod]);
+  const documentView=useMemo(()=>documentHistory(documents,documentMonth,documentDay),[documents,documentMonth,documentDay]);
+  const cashYears=[...new Set([new Date().getFullYear(),...closings.map(entry=>historyDay(entry.day).slice(0,4)).filter(Boolean)])];
   const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
@@ -3063,8 +3053,8 @@ export default function Home() {
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()} type="button">Salvar periodicidade</button>
           </details>}<details className="giro-count-print"><summary>Imprimir folha de contagem</summary><CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/></details>
-          {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" aria-label={'Quantidade contada de '+p.name+' em '+p.unit} value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
-          {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}} type="button">Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()} type="button">{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 className="giro-count-history-title">Histórico de contagens</h3>
+          {countDraft && <div className="table-wrap giro-count-editor"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td data-label="Produto">{p.name}</td><td data-label="Sistema">{qty(p.stock)} {p.unit}</td><td data-label="Contado"><input type="number" min="0" step="0.001" aria-label={'Quantidade contada de '+p.name+' em '+p.unit} value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td data-label="Diferença">{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
+          {countDraft && <div className="modal-actions giro-count-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}} type="button">Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()} type="button">{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 className="giro-count-history-title">Histórico de contagens</h3>
           {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<div className="giro-count-empty"><Icon type="check" size={24}/><div><b>Nenhuma contagem concluída</b><p>As conferências salvas aparecerão aqui com as diferenças e o responsável.</p></div></div>}
           {/* COUNT HISTORY */}
         </section>}
@@ -3231,7 +3221,7 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
             <nav className="receipt-review-guide" aria-label="Etapas da conferência">
               <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
                 <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
@@ -3290,6 +3280,7 @@ export default function Home() {
             <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos" aria-invalid={Boolean(draft.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj))} aria-describedby="supplier-cnpj-status"/><small id="supplier-cnpj-status" role="status">{validSupplierCnpj(draft.supplierCnpj) ? 'Dígitos verificadores válidos. Confira o emitente com a nota.' : 'Pendente: CNPJ ausente ou inválido. Confira na nota; o sistema não grava um CNPJ inválido neste campo.'}</small></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
+          </div></div><div className="giro-review-items">
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <b>Conferência do encarregado</b> — campos em amarelo precisam ser confrontados com a nota antes do lançamento.
               {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Revise-os: o lançamento exigirá confirmação adicional.</span>}
@@ -3305,7 +3296,7 @@ export default function Home() {
                     background: attention ? '#fffbeb' : undefined
                   });
                   return <tr key={it.lineId || i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
-                    <td>{draft.manualInvoice ? <div className="manual-invoice-product">
+                    <td data-label="Produto">{draft.manualInvoice ? <div className="manual-invoice-product">
                       <input className="inline-input name-field" aria-label={'Buscar produto da linha '+(i+1)} value={it.search ?? ''} placeholder="Buscar produto por nome ou código"
                         onChange={(e)=>changeItem(i,'search',e.target.value)}/>
                       <select className="inline-input" aria-label={'Selecionar produto da linha '+(i+1)} value={it.productId||''}
@@ -3316,11 +3307,11 @@ export default function Home() {
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
                     </div> : <><input className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
-                    <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
-                    <td><input className="inline-input unit-field" aria-label={'Unidade da linha '+(i+1)} style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
-                    <td style={{minWidth:225}}>
+                    <td data-label="Quantidade"><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
+                    <td data-label="Unidade"><input className="inline-input unit-field" aria-label={'Unidade da linha '+(i+1)} style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
+                    <td data-label="Custo unitário"><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
+                    <td data-label="Total da linha"><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td data-label="Classificação e vínculo">
                       <label style={{display:'block',fontSize:11,marginBottom:6}}>
                         Classificação fiscal
                         <select className="inline-input" style={{width:'100%',marginTop:3}}
@@ -3357,7 +3348,7 @@ export default function Home() {
                         </div>;
                       })()}
                     </td>
-                    <td className="review-check-cell">
+                    <td className="review-check-cell" data-label="Conferência">
                       {review.requiresReview ? <div className="review-check-row">
                         <label className="review-check-label">
                           <input type="checkbox" checked={Boolean(draft.reviewedItems?.[it.lineId])}
@@ -3409,7 +3400,9 @@ export default function Home() {
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </div></section>}
-          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
+          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
+          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}>{!documentView.days.length&&<option value="">Sem documentos no mês</option>}{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
+          {documentView.documents.length ? documentView.documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento neste período</b><p>Escolha outro mês ou dia para consultar os documentos registrados.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}
 
@@ -3462,37 +3455,23 @@ export default function Home() {
             </form>
             {cashEditId&&<CashCorrectionHistory history={cashAudit} onReload={()=>void loadCashAudit(cashEditId)}/>}
           </section>}
-          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
+          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{cashHistoryEntries.length} de {closings.length} registros</span></div>
+            <div className="giro-history-filters"><PeriodControls month={cashHistoryPeriod.month} scope={cashHistoryPeriod.scope} years={cashYears} onChange={setCashHistoryPeriod} label="Período do histórico"/></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td><button className="text-btn" type="button" onClick={()=>setCashSelectedDay(entry.day)}>Detalhes</button>{currentUser?.role==='admin'&&<button className="text-btn" disabled={cashSaving} onClick={()=>editCashClosing(entry)} type="button">Revisar</button>}</td></tr>})}
-            {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
+            {cashHistoryEntries.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td><button className="text-btn" type="button" onClick={()=>setCashSelectedDay(entry.day)}>Detalhes</button>{currentUser?.role==='admin'&&<button className="text-btn" disabled={cashSaving} onClick={()=>editCashClosing(entry)} type="button">Revisar</button>}</td></tr>})}
+            {!cashHistoryEntries.length&&<tr><td colSpan={7}>Nenhum fechamento neste período.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
 
         {view === 'reports' && currentUser?.role === 'admin' && <>
           <section className="panel cash-summary">
-            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
-              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
-              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+            <div className="panel-head"><div><h2>Período</h2><p>Vendas registradas, sem sangrias ou suprimentos.</p></div>
+              <PeriodControls month={cashMonth} scope={cashChartScope} years={cashYears} label="Período do gráfico" onChange={period=>{setCashMonth(period.month);setCashChartScope(period.scope);setCashSelectedDay('');}}/>
             </div>
           </section>
           <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
-          <section className="panel cash-summary">
-            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
-            <div className="cash-chart-inspector" role="status" aria-live="polite" aria-atomic="true" data-testid="cash-chart-inspector">
-              {cashHighlightedEntry ? <>
-                <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
-                <strong>{money(cashHighlightedEntry.revenue)}</strong>
-              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Dias sem registro não comprovam venda zero.'}</span>}
-            </div>
-            <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={p.recorded===false?`${accessibleDate}, sem fechamento registrado`:`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
-                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
-                <small>{axisDate}</small><small>{weekday}</small>
-              </button>})}
-            </div>
-          </section>
+          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
         </>}
 
         {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">

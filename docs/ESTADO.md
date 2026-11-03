@@ -35,6 +35,6 @@
 
 ## Giro — preview local 02/11/2026
 - Layout aprovado aplicado na branch codex/giro-layout; ícone 3 provisório, sem main/deploy/banco.
-- BI em Relatórios; Caixa operacional, modal compacto e revisão B1; contagem reorganizada.
-- Node 22.23.4: 302 testes passaram; build final e 17 testes afetados passaram; revisão independente sem impeditivos.
-- Preview 4174/4175: desktop, 390px, perfis e menu conferidos; nome pela sessão na UI, carimbo DB pendente.
+- PR #197 rascunho: filtros, itens em largura total, contagem em cartões, gráfico diário/mensal; sem merge.
+- 306/306 na suíte; 7/7 após correção da revisão; build e regressão visual em seis larguras passaram.
+- 30 capturas antes/depois em 1440/768/390; sem overflow na nota/contagem; tabela Caixa ainda rola em 768/390.
