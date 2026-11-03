@@ -2,6 +2,11 @@ import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLo
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
+import GiroBrand from '../components/GiroBrand';
+import { receiptReviewerName, resetReceiptReviewer, receiptReviewerMatches } from '../lib/receipt-reviewer.mjs';
+import { listenForMenuDismiss } from '../lib/dismiss-menu.mjs';
+import GiroManagerInsights from '../components/GiroManagerInsights';
+import ReceiptOriginalPreview from '../components/ReceiptOriginalPreview';
 import CountPrintAction from '../components/CountPrintAction';
 import DiscardReceiptDialog from '../components/DiscardReceiptDialog';
 import { createPortal } from 'react-dom';
@@ -63,6 +68,8 @@ function Icon({ type, size = 20 }) {
     box: <><path d="m12 3 9 4.5v9L12 21l-9-4.5v-9L12 3Z"/><path d="m3.5 7.7 8.5 4.5 8.5-4.5M12 12.2V21"/></>,
     file: <><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></>,
     arrows: <><path d="M7 7h13l-3-3M17 17H4l3 3M20 7v5M4 12v5"/></>,
+    cart: <><path d="M3 4h2l2.5 12h11l2-9H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></>,
+    report: <><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 16v-3M12 16V8M16 16v-5"/></>,
     chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></>,
     plus: <><path d="M12 5v14M5 12h14"/></>,
@@ -1161,6 +1168,11 @@ export default function Home() {
   const [menuOpen,setMenuOpen]=useState(false);
   const [navCollapsed,setNavCollapsed]=useState(false);
   const [accountOpen,setAccountOpen]=useState(false);
+  const accountMenuRef=useRef(null);
+  useEffect(() => {
+    if (!accountOpen || !accountMenuRef.current) return;
+    return listenForMenuDismiss(accountMenuRef.current, () => setAccountOpen(false));
+  }, [accountOpen]);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -1184,6 +1196,13 @@ export default function Home() {
   const pendingRevisions=useRef(new Map());
 
   const [closings,setClosings]=useState([]);
+  const [cashDataStatus,setCashDataStatus]=useState('loading');
+  const requestReceiptOriginal = useCallback(async (receiptId) => {
+    if (!supabase || !accessCode) throw new Error('Entre novamente para abrir o original.');
+    const {data,error} = await boundedRpc(supabase,'pending_receipt_file',{p_token:accessCode,p_id:receiptId});
+    if (error || !data?.base64) throw new Error('Não foi possível carregar o original.');
+    return data;
+  },[supabase,accessCode]);
   const [cashEditId,setCashEditId]=useState('');
   const [cashConflict,setCashConflict]=useState(false);
   const [cashSaveTimedOut,setCashSaveTimedOut]=useState(false);
@@ -1202,7 +1221,7 @@ export default function Home() {
   const [cashSelectedDay,setCashSelectedDay]=useState('');
   const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
-    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
+    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
     dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]
   });
@@ -1233,6 +1252,10 @@ export default function Home() {
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
     )
   );
+  const reviewerName=receiptReviewerName(currentUser);
+  useEffect(() => {
+    setDraft(previous => resetReceiptReviewer(previous,currentUser));
+  }, [currentUser?.id, currentUser?.username, reviewerName, draft?.pendingId, draft?.fileName]);
   const [manualMode, setManualMode] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [manualChosenId, setManualChosenId] = useState('');
@@ -1268,7 +1291,7 @@ export default function Home() {
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
   const activeDialog = discardReceiptOpen ? 'discard-receipt' : mergePair ? 'merge' : detailDoc ? 'details' :
-    view === 'cash' && cashSelectedDay ? 'cash-day' :
+    (view === 'cash' || view === 'reports') && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
   useNavigationFocus([accessGranted, dataReady, view, manualMode, cashEntryMode, cashEditId,
     Boolean(draft), draft?.pendingId || draft?.fileName || ''].join('|'));
@@ -1279,7 +1302,7 @@ export default function Home() {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
-    } else if (view === 'cash' && cashSelectedDay) {
+    } else if ((view === 'cash' || view === 'reports') && cashSelectedDay) {
       setCashSelectedDay('');
     } else {
       setModal('');
@@ -1306,6 +1329,7 @@ export default function Home() {
   }
 
   async function loadSharedInventory(token) {
+    setCashDataStatus('loading');
     if (!supabase || !token) return false;
     const membership = await boundedRpc(supabase,'inventory_tenants', { p_token: token });
     if (membership.error || !membership.data?.user) {
@@ -1349,7 +1373,8 @@ export default function Home() {
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
     const {data:cashList,error:cashLoadError}=await boundedRpc(supabase,'cash_closings_list',{p_token:token});
-    if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
+    if(!cashLoadError && Array.isArray(cashList)) { setClosings(cashList); setCashDataStatus('ready'); }
+    else setCashDataStatus('error');
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
@@ -1619,7 +1644,6 @@ export default function Home() {
 
   const low = products.filter(isLow);
   const value = products.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.cost || 0), 0);
-  const units = products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
   const categories = ['Todas', ...new Set(products.map((p) => p.category).filter(Boolean))];
   // Re-run automatically whenever the shared catalog changes, without mutating it.
   const duplicatePairs = useMemo(() => findPotentialDuplicates(products), [products]);
@@ -1638,7 +1662,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'reports' ? ['VISÃO GERENCIAL','Relatórios','Vendas, comparação de períodos, compras e estoque.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Registre e revise os fechamentos de cada caixa.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1740,7 +1764,7 @@ export default function Home() {
     const revenueByDay=new Map(cashMonthly.daily.map(item=>[item.day,item.revenue]));
     return Array.from({length:daysInMonth},(_,index)=>{
       const day=`${cashMonth}-${String(index+1).padStart(2,'0')}`;
-      return {day,revenue:revenueByDay.get(day)??0};
+      return {day,revenue:revenueByDay.get(day)??0,recorded:revenueByDay.has(day)};
     });
   },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
   const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
@@ -1900,12 +1924,14 @@ export default function Home() {
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
     setCashEditId('');setCashConflict(false);setCashSaveTimedOut(false);
-    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
+    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
       credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
     setCashError('');
   }
   function editCashClosing(entry){
+    if (currentUser?.role !== 'admin') return;
+    setCashSelectedDay('');
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
     setCashEntryMode('edit');setCashConflict(false);setCashSaveTimedOut(false);
     setCashEditId(entry.id);
@@ -1931,7 +1957,7 @@ export default function Home() {
       const {data,error}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
       const latest=Array.isArray(data)?data.find(entry=>entry.id===cashEditId):null;
       if(error || !latest)throw new Error('Não foi possível recarregar. Seus campos foram preservados.');
-      setClosings(data);editCashClosing(latest);
+      setClosings(data);setCashDataStatus('ready');editCashClosing(latest);
     }catch(error){setCashError(error.message);}
     finally{cashSavingRef.current=false;setCashSaving(false);}
   }
@@ -1955,8 +1981,8 @@ export default function Home() {
       if(saveError)throw saveError;
       if(!data?.ok)throw new Error('Não foi possível salvar o fechamento.');
       const {data:updated,error:listError}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
-      if(!listError&&Array.isArray(updated))setClosings(updated);
-      else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
+      if(!listError&&Array.isArray(updated)){setClosings(updated);setCashDataStatus('ready');}
+      else {setCashDataStatus('error');setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);}
       setCashMonth(clean.day.slice(0,7));setCashSelectedDay('');
       setCashEditId('');setCashEntryMode('');setCashConflict(false);
       setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
@@ -2678,8 +2704,12 @@ export default function Home() {
       return;
     }
     if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
-    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
-      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    if (!receiptReviewerMatches(draft,currentUser)) {
+      setDraft(previous => resetReceiptReviewer(previous,currentUser));
+      setError('A conta da conferência mudou ou não está disponível. Confira novamente antes de confirmar.'); return;
+    }
+    if (!readyForFinalReview || !draft?.finalReviewed) {
+      setError('Conclua a conferência no quadro de confirmação final.'); return;
     }
     if (draft.manualInvoice) {
       if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
@@ -2941,37 +2971,37 @@ export default function Home() {
     </section></div>;
   }
   if (supabase && !accessLoaded) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><GiroBrand/></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
   }
   if (supabase && !accessGranted) {
     return <div className="auth-screen"><section className="auth-card">
-      <div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div>
+      <div className="auth-brand"><GiroBrand/></div>
       <div className="auth-eyebrow">ACESSO INDIVIDUAL</div>
-      <h1>Entrar no estoque</h1>
+      <h1>Entrar no Giro</h1>
       <p className="auth-intro">Use sua conta da cafeteria para consultar e atualizar o estoque compartilhado.</p>
       <form className="auth-form" onSubmit={handleLogin}>
         <label className="field"><span>Login</span><input type="text" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="Seu login"/></label>
         <label className="field"><span>Senha</span><input type="password" name="password" autoComplete="current-password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Sua senha"/></label>
-        <button className="btn primary auth-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando acesso…' : 'Entrar no estoque'}</button>
+        <button className="btn primary auth-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando acesso…' : 'Entrar no Giro'}</button>
       </form>
       {accessMessage && <div className="auth-message" role="status" style={{marginTop: 14}}>{accessMessage}</div>}
       <div className="auth-security"><Icon type="check" size={16}/> Sessão individual protegida, com validade de até 12 horas.</div>
     </section></div>;
   }
   if (supabase && accessGranted && !dataReady) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><GiroBrand/></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
   if (supabase && accessGranted && (mustChangePassword || currentUser?.role === 'superadmin')) {
-    return <main className="tenant-admin-screen"><header><h1>Estoque+ · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
+    return <main className="tenant-admin-screen"><header><h1>Giro · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
   }
 
   return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
     <aside className="sidebar" id="primary-navigation">
-      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}} type="button"><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
+      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}} type="button"><GiroBrand/></button>
       <button className="sidebar-close" type="button" aria-label="Fechar menu" onClick={()=>setMenuOpen(false)}>×</button>
-      <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>Meu estoque</b><small>Ambiente de demonstração</small></span><Icon type="down" size={15}/></div>
+      <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>{activeTenantName || 'Estabelecimento ativo'}</b><small>Unidade autorizada</small></span><Icon type="down" size={15}/></div>
       <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation" aria-label="Menu principal" onClick={e=>{if(e.target.closest(".nav-link"))setMenuOpen(false);}}>
         <button aria-label="Estoque" aria-current={view === 'stock' ? 'page' : undefined} className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')} type="button"><Icon type="grid"/><span>Estoque</span></button>
         <button aria-label="Contagem de estoque" aria-current={view === 'count' ? 'page' : undefined} className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')} type="button"><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
@@ -2979,7 +3009,8 @@ export default function Home() {
         {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')} type="button"><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
         <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')} type="button"><Icon type="arrows"/><span>Movimentações</span></button>
         <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')} type="button"><Icon type="chart"/><span>Fechamento de caixa</span></button>
-        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')} type="button"><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Relatórios" aria-current={view === 'reports' ? 'page' : undefined} className={view === 'reports' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('reports')} type="button"><Icon type="report"/><span>Relatórios</span></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')} type="button"><Icon type="cart"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
         {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')} type="button"><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
@@ -2991,19 +3022,17 @@ export default function Home() {
         <div className="topbar-start">
           <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
           <button type="button" className="nav-collapse-button" aria-label={navCollapsed?'Expandir menu lateral':'Recolher menu lateral'} title={navCollapsed?'Expandir menu':'Recolher menu'} aria-pressed={navCollapsed} onClick={()=>setNavCollapsed(o=>!o)}><Icon type="grid" size={17}/></button>
-          <div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div>
+          <div className="crumb"><span>{activeTenantName || 'Giro'}</span><Icon type="chevron" size={14}/><b>{page[1]}</b></div>
         </div>
         <div className="top-right">
-          <span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span>
           <button className="bell" aria-label="Ver itens com estoque baixo" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}} type="button"><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
-          <div className="account-menu">
+          <div className="account-menu" ref={accountMenuRef}>
             <button type="button" className="account-trigger" aria-haspopup="menu" aria-expanded={accountOpen} onClick={()=>setAccountOpen(o=>!o)}>
               <span className="user-avatar">{currentUser?.role==='admin'?'GE':'EQ'}</span>
               <span className="account-identity"><b>{currentUser?.display_name || 'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'}</small></span>
               <Icon type="down" size={14}/>
             </button>
-            {accountOpen&&<><button className="account-menu-dismiss" type="button" aria-label="Fechar menu do usuário" onClick={()=>setAccountOpen(false)}/>
-              <div className="account-dropdown" role="menu">
+            {accountOpen&&<><div className="account-dropdown" role="menu">
                 <p><b>{currentUser?.display_name||'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'} · {saveStatus||'Sessão ativa'}</small></p>
                 <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('settings');}}>Configurações</button>
                 {currentUser?.role === 'admin' && <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('permissions');}}>Permissões</button>}
@@ -3017,15 +3046,14 @@ export default function Home() {
         <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
-        {view === 'count' && <section className="panel" style={{padding:20}}>
-          <h2>Contagem física do estoque</h2>
-          <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
-          <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
+        {view === 'count' && <section className="panel giro-count-panel">
+          <div className="giro-count-start"><div><h2>Conferir quantidades</h2><p>Conte os produtos e revise as diferenças antes de ajustar o estoque.</p></div>
+          {!countDraft && <button className="btn primary" disabled={!products.length} onClick={beginCount} type="button"><Icon type="check" size={17}/>Iniciar contagem</button>}</div>
+          <div className="giro-count-status"><span>{products.length} produtos para conferir</span><span>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'Sem periodicidade definida'}</span></div>
           {countSettings.enabled && <p style={{color:countDue?'#a33':'#356b54'}}>{countDue ? 'Prazo vencido: conferência obrigatória pendente.' : 'A contagem está em dia.'}</p>}
           {stockCounts[0]&&<p>Última conferência: {new Date(stockCounts[0].completedAt).toLocaleString('pt-BR')} · {stockCounts[0].by}</p>}
           {countError&&<div className="error" role="alert">{countError}</div>}
-          {currentUser?.role==='admin'&&<div className="panel" style={{padding:15,marginTop:16}}>
-            <h3>Periodicidade obrigatória · Gestor</h3>
+          {currentUser?.role==='admin'&&<details className="giro-count-setting"><summary>Configurar periodicidade · Gestor</summary>
             <label style={{display:'flex',gap:9,alignItems:'center',margin:'12px 0'}}><input type="checkbox" checked={Boolean(settingsForm.enabled)} onChange={(e)=>setSettingsForm({...settingsForm,enabled:e.target.checked})}/> Exigir contagem periódica</label>
             <div className="meta-fields">
               <label><span>Periodicidade</span><select value={settingsForm.mode} onChange={(e)=>setSettingsForm({...settingsForm,mode:e.target.value})}><option value="interval">A cada X dias</option><option value="weekly">Dia fixo da semana</option><option value="monthly">Dia fixo do mês</option></select></label>
@@ -3034,11 +3062,10 @@ export default function Home() {
               {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
             </div>
             <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()} type="button">Salvar periodicidade</button>
-          </div>}<CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/>
-          {!countDraft && <button className="btn primary" onClick={beginCount} type="button">Iniciar contagem</button>}
+          </details>}<details className="giro-count-print"><summary>Imprimir folha de contagem</summary><CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/></details>
           {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" aria-label={'Quantidade contada de '+p.name+' em '+p.unit} value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
-          {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}} type="button">Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()} type="button">{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 style={{marginTop:22}}>Histórico de contagens</h3>
-          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
+          {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}} type="button">Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()} type="button">{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 className="giro-count-history-title">Histórico de contagens</h3>
+          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<div className="giro-count-empty"><Icon type="check" size={24}/><div><b>Nenhuma contagem concluída</b><p>As conferências salvas aparecerão aqui com as diferenças e o responsável.</p></div></div>}
           {/* COUNT HISTORY */}
         </section>}
         {(view === 'settings' || (view === 'administration' && currentUser?.role === 'admin')) && <TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={false} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/>}
@@ -3061,20 +3088,18 @@ export default function Home() {
         </section>}
         {view === 'stock' && currentUser?.role === 'admin' && duplicatePairs.length > 0 && <section className="alert-strip" role="status"><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>{duplicatePairs.length} possível(is) duplicata(s) no catálogo</b><p>Compare códigos e descrições; confira antes de corrigir os cadastros.</p></div><button onClick={() => setView('duplicates')} type="button">Revisar <Icon type="chevron" size={15}/></button></section>}
         {view === 'stock' && <>
-          <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
+          <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(2,minmax(0,1fr))'}}>
             <article className="stat"><div className="stat-top"><span>Produtos cadastrados</span><i className="stat-symbol green"><Icon type="box" size={19}/></i></div><strong className="stat-value">{products.length}</strong><div className="stat-foot"><span className="green-dot"/>Itens no catálogo</div></article>
             {currentUser?.role === 'admin' && <article className="stat"><div className="stat-top"><span>Valor em estoque</span><i className="stat-symbol beige"><Icon type="chart" size={19}/></i></div><strong className="stat-value money-value">{money(value)}</strong><div className="stat-foot subtle">Custo estimado dos itens disponíveis</div></article>}
-            <article className="stat"><div className="stat-top"><span>Estoque baixo</span><i className="stat-symbol yellow"><Icon type="alert" size={19}/></i></div><strong className="stat-value">{low.length}</strong><div className="stat-foot">{low.length ? <span className="warn-text">Precisam de reposição</span> : <span className="green-text">Tudo em dia</span>}</div></article>
-            <article className="stat"><div className="stat-top"><span>Quantidade total</span><i className="stat-symbol blue"><Icon type="arrows" size={19}/></i></div><strong className="stat-value">{qty(units)}</strong><div className="stat-foot subtle">Soma das quantidades cadastradas</div></article>
+            <article className="stat"><div className="stat-top"><span>Estoque baixo</span><i className="stat-symbol yellow"><Icon type="alert" size={19}/></i></div><button className="stat-value giro-stat-button" type="button" aria-label="Filtrar produtos que precisam de reposição" onClick={() => setFilter('Estoque baixo')}>{low.length}</button><div className="stat-foot">{low.length ? <span className="warn-text">Precisam de reposição</span> : <span className="green-text">Tudo em dia</span>}</div></article>
           </section>
-          {low.length > 0 && <section className="alert-strip"><span className="alert-icon"><Icon type="alert" size={19}/></span><div><b>{low.length} {low.length === 1 ? 'produto precisa' : 'produtos precisam'} de reposição</b><p>{low.slice(0, 3).map((p) => p.name).join(', ')}{low.length > 3 ? ' e mais ' + (low.length - 3) : ''} estão no mínimo ou abaixo dele.</p></div><button onClick={() => setFilter('Estoque baixo')} type="button">Ver produtos <Icon type="chevron" size={15}/></button></section>}
           <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}} type="button"><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
             <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
             <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
-          <section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')} type="button">Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)} type="button"><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
-          <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')} type="button">Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section>
+          <details className="giro-stock-details"><summary>Atividade recente e reposição</summary><section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')} type="button">Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)} type="button"><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
+          <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')} type="button">Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section></details>
         </>}
 
         {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
@@ -3134,10 +3159,12 @@ export default function Home() {
           </div>)}
         </section>}
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
+          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
           <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
             <b>Leitura local:</b> OCR, QR e código de barras são lidos no navegador, sem enviar a imagem a leitores de terceiros. O original continua arquivado no sistema. A consulta oficial da NFC-e permanece disponível; confira os dados antes do lançamento.
           </div>
+          </details>
           {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
               <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
@@ -3147,9 +3174,9 @@ export default function Home() {
             <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
             <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
           </section>}
-          <section className="panel pending-documents-panel">
+          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
+          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
-            {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
             {pendingBusy&&<small>Salvando conferência no servidor…</small>}
             {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
               <span className="history-file"><Icon type="file" size={18}/></span>
@@ -3159,7 +3186,7 @@ export default function Home() {
               {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
-          </section>
+          </details>
           {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">
@@ -3204,7 +3231,7 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
             <nav className="receipt-review-guide" aria-label="Etapas da conferência">
               <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
                 <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
@@ -3373,21 +3400,22 @@ export default function Home() {
             </div>}
             <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))} type="button"><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
             <section id="receipt-review-final" tabIndex={-1} className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
-              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Confirme a entrada no estoque.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
                 <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
-                <label className="field review-final-person"><span>Quem conferiu todos os itens *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável pela conferência"/></label>
+                <p className="giro-reviewer">Conferência por <b>{reviewerName || 'Conta indisponível'}</b><small>Preenchido pela conta conectada.</small></p>
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
-          </section>}
+          </div></section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
-          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
+          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}
 
         {view === 'cash' && <>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
+            <button className="btn secondary" type="button" disabled={cashImporting} onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>
             <button className="btn primary" type="button" disabled={cashImporting}
               onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
@@ -3434,39 +3462,40 @@ export default function Home() {
             </form>
             {cashEditId&&<CashCorrectionHistory history={cashAudit} onReload={()=>void loadCashAudit(cashEditId)}/>}
           </section>}
-          <section className="panel cash-summary">
-            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
-              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
-              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
-            </div>
-            <div className="cash-stats">
-              <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
-              <div><small>Fechamentos</small><strong>{cashChartData.count}</strong></div>
-              <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
-            </div>
-            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
-            <div className="cash-chart-inspector" role="status" aria-live="polite" aria-atomic="true" data-testid="cash-chart-inspector">
-              {cashHighlightedEntry ? <>
-                <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
-                <strong>{money(cashHighlightedEntry.revenue)}</strong>
-              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
-            </div>
-            <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
-                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
-                <small>{axisDate}</small><small>{weekday}</small>
-              </button>})}
-            </div>
-          </section>
           <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" disabled={cashSaving} onClick={()=>editCashClosing(entry)} type="button">Revisar</button>}</td></tr>})}
+            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td><button className="text-btn" type="button" onClick={()=>setCashSelectedDay(entry.day)}>Detalhes</button>{currentUser?.role==='admin'&&<button className="text-btn" disabled={cashSaving} onClick={()=>editCashClosing(entry)} type="button">Revisar</button>}</td></tr>})}
             {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+        {view === 'reports' && currentUser?.role === 'admin' && <>
+          <section className="panel cash-summary">
+            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
+              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
+              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
+            </div>
+          </section>
+          <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
+          <section className="panel cash-summary">
+            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
+            <div className="cash-chart-inspector" role="status" aria-live="polite" aria-atomic="true" data-testid="cash-chart-inspector">
+              {cashHighlightedEntry ? <>
+                <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
+                <strong>{money(cashHighlightedEntry.revenue)}</strong>
+              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Dias sem registro não comprovam venda zero.'}</span>}
+            </div>
+            <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
+              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={p.recorded===false?`${accessibleDate}, sem fechamento registrado`:`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
+                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
+                <small>{axisDate}</small><small>{weekday}</small>
+              </button>})}
+            </div>
+          </section>
+        </>}
+
+        {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
   <div className="cash-day-summary">
     <span>Total de faturamento do dia</span>
     <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
@@ -3477,7 +3506,7 @@ export default function Home() {
       const totals=cashTotals(entry);
       return <article className="cash-day-register-card" key={entry.id}>
         <div className="cash-day-register-head">
-          <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>
+          <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>{currentUser?.role==='admin'&&<button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Revisar caixa {entry.register}</button>}
         </div>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
@@ -3487,7 +3516,7 @@ export default function Home() {
 </div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>,document.body)}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
-        <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
+        <footer className="footer"><span><b>giro</b><i>/</i> Seu negócio em movimento.</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
       </div>
     </main>
 

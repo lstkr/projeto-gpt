@@ -32,3 +32,9 @@
 - Suíte uma vez: 276/282; seis falhas locais antigas Windows/bcryptjs/CRLF; CI fará validação Linux.
 - DANFE real: OCR local extraiu uma chave válida55; barcode dessa foto não leu; CODE128 sintético passou.
 - Revisão fiscal independente: achados corrigidos e sem novo impeditivo; CL-07/11/13/15/16 conferidas.
+
+## Giro — preview local 02/11/2026
+- Layout aprovado aplicado na branch codex/giro-layout; ícone 3 provisório, sem main/deploy/banco.
+- BI em Relatórios; Caixa operacional, modal compacto e revisão B1; contagem reorganizada.
+- Node 22.23.4: 302 testes passaram; build final e 17 testes afetados passaram; revisão independente sem impeditivos.
+- Preview 4174/4175: desktop, 390px, perfis e menu conferidos; nome pela sessão na UI, carimbo DB pendente.

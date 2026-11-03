@@ -86,7 +86,7 @@ const closings = [
     await page.goto(origin);
     await page.getByLabel('Login', {exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
-    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
     await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).click();
     await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
 
@@ -208,7 +208,7 @@ const closings = [
     sessionRevokedForQA=false;
     await page.getByLabel('Login',{exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
-    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
     await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
     // In Xvfb, separate Playwright pages can remain simultaneously visible.
     // Minimize and restore the actual Chromium window via CDP instead of

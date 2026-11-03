@@ -50,7 +50,7 @@ fs.mkdirSync(output, { recursive: true });
       await page.goto(origin);
       await page.getByLabel('Login', { exact: true }).fill('fixture.user');
       await page.getByLabel('Senha', { exact: true }).fill('Synthetic-password-only-123');
-      await page.getByRole('button', { name: 'Entrar no estoque', exact: true }).click();
+      await page.getByRole('button', { name: 'Entrar no Giro', exact: true }).click();
       if (scenario === 'superadmin') {
         await page.getByRole('heading', { name: 'Administração DBA', exact: true }).waitFor();
         assert.equal(await page.locator('.navigation').count(), 0);

@@ -46,7 +46,7 @@ async function verifyReading(browser,scenario,official){
     await page.goto(origin);
     await page.getByLabel('Login',{exact:true}).fill('synthetic.manager');
     await page.getByLabel('Senha',{exact:true}).fill('Synthetic-only-123');
-    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
     await page.getByRole('button',{name:'Notas fiscais',exact:true}).click();
     await page.getByRole('button',{name:'Conferir',exact:true}).click();
     if(scenario==='svrs')await page.getByText('Consulta automática concluída. Itens oficiais adotados para conferência.',{exact:true}).waitFor();

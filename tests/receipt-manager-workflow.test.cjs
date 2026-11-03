@@ -24,5 +24,6 @@ test('financial discrepancies are review warnings while invalid totals still blo
   assert.match(page,/totalsFinalMismatch && 'O total calculado difere/);
   assert.match(page,/if \(draftTotal < -0\.01\)/);
   assert.match(page,/receiptReviewRows\.some\(\(row\) => !row\.done\)/);
-  assert.match(page,/draft\?\.finalReviewed \|\| !draft\?\.checkedBy\?\.trim\(\)/);
+  assert.match(page,/if \(!receiptReviewerMatches\(draft,currentUser\)\)/);
+  assert.match(page,/!readyForFinalReview \|\| !draft\?\.finalReviewed/);
 });
