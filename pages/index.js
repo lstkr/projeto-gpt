@@ -1251,7 +1251,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(applyLocalFiscalKey(withLocalReceiptId(typeof updater === 'function' ? updater(previous) : updater, previous)), previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(typeof updater === 'function' ? updater(previous) : updater), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1795,7 +1795,7 @@ export default function Home() {
       setError('Conclua a entrada ou conferência atual antes de iniciar outra nota.');
       return;
     }
-    setDraft({
+    setDraft(withLocalReceiptId({
       source:'Nota cadastrada manualmente (sem validação SEFAZ)',
       fileName:'Nota digitada manualmente',
       supplier:'', supplierCnpj:'', invoiceNumber:'',
@@ -1803,7 +1803,7 @@ export default function Home() {
       checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
       items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
-    });
+    }));
     setError('');setView('documents');
   }
   function selectManualInvoiceProduct(index, id) {
@@ -2309,6 +2309,7 @@ export default function Home() {
     setPendingReceipts(Array.isArray(data)?data:[]);
   }
   async function storePendingReceipt(file,receipt){
+    receipt=withLocalReceiptId(receipt);
     if(!supabase||!accessCode)throw new Error('Faça login para salvar notas pendentes no servidor.');
     if(file.size>4000000)throw new Error('Limite de 4 MB por arquivo para arquivamento.');
     const bytes=new Uint8Array(await file.arrayBuffer());
@@ -2349,7 +2350,7 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
-    setDraft({...row.draft,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision});
+    setDraft(withLocalReceiptId({...row.draft,localReceiptId:undefined,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision}));
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
   async function viewPendingOriginal(row){
@@ -2845,7 +2846,7 @@ export default function Home() {
       pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
-    setDraft(nextDraft);
+    setDraft(withLocalReceiptId(nextDraft));
     setDraftQueue((old) => old.slice(1));
     setDraftBatch(nextDraft && draftBatch ? { ...draftBatch, current: draftBatch.current + 1 } : null);
     setError('');
@@ -3401,7 +3402,7 @@ export default function Home() {
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </div></section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
-          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}>{!documentView.days.length&&<option value="">Sem documentos no mês</option>}{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
+          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}><option value="">Todos os dias do mês</option>{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
           {documentView.documents.length ? documentView.documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento neste período</b><p>Escolha outro mês ou dia para consultar os documentos registrados.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}

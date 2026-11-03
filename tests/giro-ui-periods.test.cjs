@@ -34,7 +34,7 @@ test('documentos mostram só um dia e preservam o acesso ao legado sem data',asy
   const documents=[{date:'2026-11-01'},{date:'02/11/2026'},{date:'2026-10-03'},
     {importedAt:'2026-11-02T22:00:00Z'},{date:'inválida'}];
   const current=documentHistory(documents,'2026-11','');
-  assert.deepEqual(current.days,['2026-11-02','2026-11-01']);assert.equal(current.documents.length,1);
+  assert.deepEqual(current.days,['2026-11-02','2026-11-01']);assert.equal(current.documents.length,2);
   assert.deepEqual(documentHistory(documents,'2026-11','2026-11-01').documents,[documents[0]]);
   assert.deepEqual(documentHistory(documents,'2026-12','unknown').documents,[documents[3],documents[4]]);
   assert.equal(current.unknown,2,'data de importação nunca substitui emissão no filtro');
