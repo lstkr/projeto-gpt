@@ -17,6 +17,7 @@
 .giro-review-items .review-check-label { display:flex; align-items:center; gap:7px; min-width:0; }
 .giro-review-items .review-check-label span { overflow-wrap:normal; }
 .receipt-items-table td { overflow-wrap:anywhere; }
+.giro-review-items .receipt-items-table select { width:100%; min-width:0; box-sizing:border-box; }
 .giro-original-expand { display:none; }
 .giro-history-filters { display:flex; flex-wrap:wrap; gap:14px; padding:0 20px 18px; }
 .giro-period-controls { display:grid; grid-template-columns:110px 190px; gap:14px; align-items:end; flex:0 0 314px; }
@@ -77,7 +78,9 @@
   .giro-count-editor thead { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
   .giro-count-editor tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; padding:14px; gap:12px; }
   .giro-count-editor td { display:block; min-width:0; padding:0; border:0; white-space:normal; }
-  .giro-count-editor td:first-child { grid-column:1/-1; font-weight:650; }
+  .giro-count-editor td:first-child { font-weight:650; }
+  .giro-count-editor td:first-child::before { display:none; }
+  .giro-count-editor td:nth-child(2) { text-align:right; }
   .giro-count-editor td::before { content:attr(data-label); display:block; color:var(--muted); font-size:12px; margin-bottom:5px; }
   .giro-count-editor input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; border:1px solid #afbec4; border-radius:8px; padding:8px; font:inherit; }
   .giro-count-actions>span { flex-basis:100%; margin:0; }

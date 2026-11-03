@@ -37,4 +37,4 @@
 - Layout aprovado aplicado na branch codex/giro-layout; ícone 3 provisório, sem main/deploy/banco.
 - PR #197 rascunho: filtros, itens em largura total, contagem em cartões, gráfico diário/mensal; sem merge.
 - 306/306 na suíte; 7/7 após correção da revisão; build e regressão visual em seis larguras passaram.
-- 30 capturas antes/depois em 1440/768/390; sem overflow na nota/contagem; tabela Caixa ainda rola em 768/390.
+- Ajuste PR197: identidade local estável, selects tablet e cartões compactos; 6/6 afetados, duas capturas novas.

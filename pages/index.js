@@ -3,7 +3,7 @@ import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
 import GiroBrand from '../components/GiroBrand';
-import { receiptReviewerName, resetReceiptReviewer, receiptReviewerMatches } from '../lib/receipt-reviewer.mjs';
+import { receiptReviewerName, resetReceiptReviewer, receiptReviewerMatches, withLocalReceiptId } from '../lib/receipt-reviewer.mjs';
 import { listenForMenuDismiss } from '../lib/dismiss-menu.mjs';
 import PeriodControls from '../components/PeriodControls';
 import CashRevenueChart from '../components/CashRevenueChart';
@@ -1251,7 +1251,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(applyLocalFiscalKey(typeof updater === 'function' ? updater(previous) : updater), previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(withLocalReceiptId(typeof updater === 'function' ? updater(previous) : updater, previous)), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1260,7 +1260,7 @@ export default function Home() {
   const reviewerName=receiptReviewerName(currentUser);
   useEffect(() => {
     setDraft(previous => resetReceiptReviewer(previous,currentUser));
-  }, [currentUser?.id, currentUser?.username, reviewerName, draft?.pendingId, draft?.fileName]);
+  }, [currentUser?.id, currentUser?.username, reviewerName, draft?.localReceiptId]);
   const [manualMode, setManualMode] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [manualChosenId, setManualChosenId] = useState('');
@@ -2298,7 +2298,7 @@ export default function Home() {
 
   const cleanPendingDraft=(value)=>{
     if(!value) return {};
-    const {pendingId,pendingRevision, ...clean}=value;
+    const {pendingId,pendingRevision,localReceiptId, ...clean}=value;
     return {...clean,supplierCnpj:validatedSupplierCnpj(clean.supplierCnpj),ocrText:String(clean.ocrText||'').slice(0,100000),
       officialText:String(clean.officialText||'').slice(0,30000)};
   };
@@ -2838,7 +2838,7 @@ export default function Home() {
     if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, localReceiptId, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
