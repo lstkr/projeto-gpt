@@ -31,7 +31,9 @@ async function mockReading(page, scenario, official) {
       inventory_get:{user,revision:0,products:[],documents:[],movements:[]},
       inventory_permissions_list:{self:{'fiscal.pending.read':true,'fiscal.pending.review':true},users:[]},
       pending_receipts_list:[{id:'fixture.note',revision:0,fileName:draft.fileName,draft}],cash_closings_list:[],
-      inventory_validate_session:{ok:true,valid:true},pending_receipt_save:{ok:true,revision:1}};
+      inventory_validate_session:{ok:true,valid:true},pending_receipt_save:{ok:true,revision:1},
+      pending_receipt_file:{mime:'application/xml',fileName:'original-sintetico.xml',
+        base64:Buffer.from('<?xml version="1.0"?><exemplo>Original sintético, sem validade fiscal</exemplo>').toString('base64')}};
     assert.ok(name in responses,'RPC inesperada: '+name);
     if(name==='pending_receipt_save')assert.ok(!request.postDataJSON().p_draft.supplierCnpj||/^\d{14}$/.test(request.postDataJSON().p_draft.supplierCnpj));
     return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(responses[name])});

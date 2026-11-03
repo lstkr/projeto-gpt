@@ -113,3 +113,5 @@ CL-01/02/04/05/09/10/13/15/16 verificadas; sem autoaprovação da revisão indep
 Revisão independente única: apontou fallback da emissão para importação; corrigido no mesmo ciclo.
 O filtro usa somente emissão; notas sem data permanecem no grupo próprio; 7 testes afetados passaram após a correção.
 A suíte de 306 foi executada uma vez antes dessa correção localizada; CI final verifica o commit publicado.
+CI do incremento: 22 checks passaram; chart-layout parou porque o mock CNPJ não conhecia pending_receipt_file.
+Acrescentado somente um original XML sintético ao mock; os 4 cenários CNPJ passaram localmente. Nenhuma regra fiscal mudou.
