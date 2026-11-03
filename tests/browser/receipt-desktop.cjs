@@ -34,7 +34,7 @@ async function verifyReview(browser) {
   await page.goto(origin);
   await page.getByLabel('Login', {exact: true}).fill('synthetic.manager');
   await page.getByLabel('Senha', {exact: true}).fill('Synthetic-only-123');
-  await page.getByRole('button', {name: 'Entrar no estoque', exact: true}).click();
+  await page.getByRole('button', {name: 'Entrar no Giro', exact: true}).click();
   await page.getByRole('button', {name: 'Notas fiscais', exact: true}).click();
   await page.getByRole('button', {name: 'Cadastrar nota manualmente', exact: true}).click();
   const review = page.locator('.review-panel');
