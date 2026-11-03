@@ -1,3 +1,4 @@
+import { receiptItemsFromOcr } from '../lib/receipt-ocr-cleanup.mjs';
 import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -2152,9 +2153,9 @@ export default function Home() {
           for (let index = 0; index < canvases.length; index++) {
             receiptOcrProgressRef.current = { index, count: canvases.length, pass: 0 };
             await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-            const primaryResult = await worker.recognize(canvases[index]);
+            const primaryResult = await worker.recognize(canvases[index], {}, { text: true, blocks: true });
             const primaryText = primaryResult.data.text || '';
-            const primaryItems = parseReceiptOcr(primaryText);
+            const primaryItems = receiptItemsFromOcr(primaryResult.data, parseReceiptOcr);
 
             const printedTotal = parseReceiptTotals(primaryText).total;
             const primaryTotals = reconcileReceiptTotals(primaryText, '', primaryItems);
@@ -2166,9 +2167,9 @@ export default function Home() {
             if (needsRetry) {
               receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
               await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-              const alternateResult = await worker.recognize(canvases[index]);
+              const alternateResult = await worker.recognize(canvases[index], {}, { text: true, blocks: true });
               alternateText = alternateResult.data.text || '';
-              alternateItems = parseReceiptOcr(alternateText);
+              alternateItems = receiptItemsFromOcr(alternateResult.data, parseReceiptOcr);
             }
             setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
             // If either pass recognized real coded lines inside the receipt table,
