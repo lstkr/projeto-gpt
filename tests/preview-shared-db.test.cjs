@@ -92,5 +92,3 @@ test('build includes Preview policy without putting credentials in Next configur
   assert.match(server,/previewDatabaseIsBlocked\(/);
   assert.match(server,/inventory_validate_session/);
 });
-
-
