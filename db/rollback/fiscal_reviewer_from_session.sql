@@ -7,7 +7,7 @@ begin
  if position(anchor in definition)=0 then
   raise exception 'Autoria não encontrada; reversão interrompida para revisão' using errcode='55000';
  end if;
- execute replace(definition,anchor,'');
+ execute replace(definition,E'\n'||anchor,'');
 end $rollback$;
--- Helper privado é mantido sem grants; uma nova aplicação exige revisão da definição.
+drop function private.stamp_fiscal_reviewer(jsonb,jsonb,text);
 commit;
