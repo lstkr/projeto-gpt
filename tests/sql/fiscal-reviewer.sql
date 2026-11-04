@@ -31,7 +31,7 @@ begin
  assert public.inventory_get('review.a')=snapshot;
  perform public.inventory_save('review.a',attempt);
  saved:=public.inventory_get('review.a'); authored:=saved->'documents'->0;
- assert authored->>'checkedBy'='Gestor Sintético';
+ assert authored->>'checkedBy'='Gestor Sintético', 'Autoria sintética inesperada: ' || authored::text;
  assert (authored->>'checkedByUserId')::uuid is not null;
  assert authored->>'checkedByUserId'<>'forjado';
  assert (authored->>'checkedAt')::timestamptz=statement_timestamp();
