@@ -54,6 +54,11 @@ sql((ROOT/'tests/sql/fiscal-access-key-uniqueness.sql').read_text(encoding='utf8
 print('PASS E1 fiscal access key uniqueness, legacy, authorization and tenant isolation')
 sql((ROOT/'tests/sql/fiscal-reviewer.sql').read_text(encoding='utf8'))
 print('PASS autoria fiscal de sessão, legado, replay, negação e isolamento')
+sql((ROOT/'db/rollback/fiscal_reviewer_from_session.sql').read_text(encoding='utf8'))
+assert sql("select md5(replace(prosrc,E'\\r\\n',E'\\n')) from pg_proc where oid='private.inventory_save_impl(text,jsonb)'::regprocedure") == '563d3595988ad0a30c2e7eb4c0e2881a'
+sql((ROOT/'supabase/migrations/20261104171102_fiscal_reviewer_from_session.sql').read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/fiscal-reviewer.sql').read_text(encoding='utf8'))
+print('PASS rollback restaura definição E1 exata e reaplicação mantém autoria')
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
