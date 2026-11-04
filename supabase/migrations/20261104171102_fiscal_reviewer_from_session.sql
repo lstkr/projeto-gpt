@@ -10,15 +10,15 @@ begin
  stamp := jsonb_build_object('checkedBy',actor.display_name,'checkedByUserId',actor.id,'checkedAt',checked_at);
  select coalesce(jsonb_agg(case when old.doc is null then entry.doc || stamp else old.doc end order by entry.ord),'[]'::jsonb)
  into stamped_documents from jsonb_array_elements(incoming->'documents') with ordinality entry(doc,ord)
- left join lateral (select doc from jsonb_array_elements(coalesce(existing->'documents','[]')) doc
- where doc->>'id'=entry.doc->>'id' limit 1) old on true;
+ left join lateral (select historical.doc from jsonb_array_elements(coalesce(existing->'documents','[]')) historical(doc)
+ where historical.doc->>'id'=entry.doc->>'id' limit 1) old on true;
  select coalesce(jsonb_agg(case when old.movement is not null then old.movement
  when nullif(entry.movement->>'documentId','') is not null then entry.movement ||
  jsonb_build_object('by',actor.display_name,'byUserId',actor.id,'checkedAt',checked_at)
  else entry.movement end order by entry.ord),'[]'::jsonb)
  into stamped_movements from jsonb_array_elements(incoming->'movements') with ordinality entry(movement,ord)
- left join lateral (select movement from jsonb_array_elements(coalesce(existing->'movements','[]')) movement
- where movement->>'id'=entry.movement->>'id' limit 1) old on true;
+ left join lateral (select historical.movement from jsonb_array_elements(coalesce(existing->'movements','[]')) historical(movement)
+ where historical.movement->>'id'=entry.movement->>'id' limit 1) old on true;
  return incoming || jsonb_build_object('documents',stamped_documents,'movements',stamped_movements);
 end $$;
 revoke all on function private.stamp_fiscal_reviewer(jsonb,jsonb,text) from public,anon,authenticated;
