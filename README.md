@@ -21,6 +21,17 @@ node scripts/smoke-production.cjs
 O smoke confere homepage, worker PDF e rejeição de chamadas sem sessão.
 Não valida login, OCR, provedor fiscal ou lançamentos de estoque.
 
+## Restrição do banco na Vercel
+
+Preview e Production exigem `ESTOQUE_SUPABASE_ALLOWED_REF` com a ref de 20 caracteres
+permitida e `NEXT_PUBLIC_SUPABASE_URL` igual a `https://<ref>.supabase.co`, além de
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` pública do mesmo projeto. Preview também exige
+`NEXT_PUBLIC_SUPABASE_PREVIEW_URL` igual à URL. Não há exceção por branch.
+Ausência, ref inválida ou destino divergente bloqueiam build e execução antes do cliente.
+Na homologação, usar somente Estoque+ DB; não configurar segredo/service role no cliente.
+Após o preview: Lucas deve entrar como Gestor e Funcionário, conferir acesso e sair.
+Sem migração ou alteração de contas; reverter o commit desfaz a política adicional.
+
 ## Funcionalidades
 
 - Consulta e alteração das quantidades em estoque.
