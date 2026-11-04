@@ -35,13 +35,13 @@ test('SEFAZ precede dados do fornecedor e conferência dos itens', () => {
   assert.ok(sefaz >= 0 && supplier > sefaz && items > supplier);
 });
 
-test('QR expõe chave apenas no cartão identificado, com edição sob demanda', () => {
-  assert.equal((review.match(/QR Code identificado/g) || []).length, 1);
-  assert.ok(review.includes('qr-key-correction'));
-  assert.ok(review.includes('Chave incorreta? Corrigir'));
-  assert.ok(!review.includes('<span>Corrigir chave da NFC-e</span>'));
-  assert.ok(review.includes('href="https://github.com/pcelias-ctrl/nfc-e"'));
-  assert.ok(review.includes("draft.qrReader?.includes('API externa')"));
+test('identificação usa campo único e preserva consulta e proveniência sem cartão duplicado', () => {
+  assert.equal((review.match(/Chave de acesso NF-e\/NFC-e \(44 dígitos\)/g)||[]).length,1);
+  assert.ok(!review.includes('aria-label="Identificação fiscal da nota"'));
+  assert.ok(review.includes('Conferir QR Code'));
+  assert.ok(review.includes('QR Code não identificado'));
+  assert.ok(review.includes('Origem da identificação'));
+  assert.ok(review.includes('https://github.com/pcelias-ctrl/nfc-e'));
 });
 
 test('processamento compacto aparece acima da fila e integra OCR', () => {

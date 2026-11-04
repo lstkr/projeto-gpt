@@ -1251,7 +1251,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(applyLocalFiscalKey(withLocalReceiptId(typeof updater === 'function' ? updater(previous) : updater, previous)), previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(typeof updater === 'function' ? updater(previous) : updater), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1795,7 +1795,7 @@ export default function Home() {
       setError('Conclua a entrada ou conferência atual antes de iniciar outra nota.');
       return;
     }
-    setDraft({
+    setDraft(withLocalReceiptId({
       source:'Nota cadastrada manualmente (sem validação SEFAZ)',
       fileName:'Nota digitada manualmente',
       supplier:'', supplierCnpj:'', invoiceNumber:'',
@@ -1803,7 +1803,7 @@ export default function Home() {
       checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
       items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
-    });
+    }));
     setError('');setView('documents');
   }
   function selectManualInvoiceProduct(index, id) {
@@ -2309,6 +2309,7 @@ export default function Home() {
     setPendingReceipts(Array.isArray(data)?data:[]);
   }
   async function storePendingReceipt(file,receipt){
+    receipt=withLocalReceiptId(receipt);
     if(!supabase||!accessCode)throw new Error('Faça login para salvar notas pendentes no servidor.');
     if(file.size>4000000)throw new Error('Limite de 4 MB por arquivo para arquivamento.');
     const bytes=new Uint8Array(await file.arrayBuffer());
@@ -2349,7 +2350,7 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
-    setDraft({...row.draft,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision});
+    setDraft(withLocalReceiptId({...row.draft,localReceiptId:undefined,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision}));
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
   async function viewPendingOriginal(row){
@@ -2845,7 +2846,7 @@ export default function Home() {
       pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
-    setDraft(nextDraft);
+    setDraft(withLocalReceiptId(nextDraft));
     setDraftQueue((old) => old.slice(1));
     setDraftBatch(nextDraft && draftBatch ? { ...draftBatch, current: draftBatch.current + 1 } : null);
     setError('');
@@ -3232,24 +3233,6 @@ export default function Home() {
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
               <b>Chave da NFC-e não validada.</b> {draft.keyWarning}
-              {draft.ocrText && <label className="field qr-key-invalid-edit"><span>Corrigir chave de acesso</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>}
-            </div>}
-            {(draft.accessKey || draft.consultaUrl) && <div className="notice qr-identified-card" role="region" aria-label="Identificação fiscal da nota">
-              <div className="qr-identified-content">
-                <div className="qr-identified-title"><Icon type="check" size={17}/><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave fiscal identificada'}</b></div>
-                {draft.accessKey ? <code className="qr-identified-key">{draft.accessKey}</code> : <span>QR Code encontrado com endereço de consulta.</span>}
-                {draft.qrReader?.includes('API externa') ? <small>QR Code obtido pela API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e ↗</a>.</small> :
-                  draft.qrReader ? <small>Origem da leitura: {draft.qrReader} (leitura local, sem API externa).</small> :
-                  <small>Chave obtida pelo reconhecimento do documento; confira com a nota original.</small>}
-                {draft.ocrText && <details className="qr-key-correction">
-                  <summary>Chave incorreta? Corrigir</summary>
-                  <label className="field"><span>Chave de acesso (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>
-                </details>}
-              </div>
-              <div className="qr-identified-actions">
-                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
-                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
-              </div>
             </div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
               <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os itens oficiais são adotados por padrão e exigem conferência antes do lançamento.</p></div></div>
@@ -3263,6 +3246,14 @@ export default function Home() {
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
+              <p role="status" className={draft.qrDetected ? 'qr-detection-ok' : ''}>{draft.qrDetected ? '✓ QR Code identificado' : 'QR Code não identificado'}</p>
+              <div className="qr-identified-actions">
+                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
+                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Conferir QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
+              </div>
+              <details><summary>Origem da identificação</summary>
+                {draft.qrReader?.includes('API externa') ? <p>Origem: API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>.</p> : <p>{draft.qrReader || 'Chave obtida pelo reconhecimento do documento; confira com a nota original.'}</p>}
+              </details>
               <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
               <p id="local-key-status" role="status">{localKeyReview.message}</p>
               {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
@@ -3401,7 +3392,7 @@ export default function Home() {
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </div></section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
-          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}>{!documentView.days.length&&<option value="">Sem documentos no mês</option>}{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
+          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}><option value="">Todos os dias do mês</option>{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
           {documentView.documents.length ? documentView.documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento neste período</b><p>Escolha outro mês ou dia para consultar os documentos registrados.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}
@@ -3471,7 +3462,7 @@ export default function Home() {
             </div>
           </section>
           <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
-          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
+          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onReturnToYear={()=>{setCashChartScope('year');setCashSelectedDay('');}} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
         </>}
 
         {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">

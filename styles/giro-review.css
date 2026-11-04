@@ -82,7 +82,6 @@
   .giro-count-editor td:first-child::before { display:none; }
   .giro-count-editor td:nth-child(2) { text-align:right; }
   .giro-count-editor td::before { content:attr(data-label); display:block; color:var(--muted); font-size:12px; margin-bottom:5px; }
-  .giro-count-editor input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; border:1px solid #afbec4; border-radius:8px; padding:8px; font:inherit; }
   .giro-count-actions>span { flex-basis:100%; margin:0; }
   .giro-count-actions .btn { flex:1 1 130px; white-space:normal; }
   .giro-chart-layout { grid-template-columns:86px minmax(0,1fr); }
@@ -91,3 +90,9 @@
   .giro-revenue-bars .cash-bar-column { flex-basis:34px; }
   .giro-revenue-chart { padding:16px; }
 }
+
+.giro-count-editor input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; border:1px solid #afbec4; border-radius:8px; padding:8px; font:inherit; }
+
+.giro-partial { display:block; font-size:9px; line-height:1.3; }
+
+.qr-detection-ok { color:var(--text-positive); font-weight:600; }

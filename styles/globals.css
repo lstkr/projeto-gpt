@@ -722,7 +722,7 @@ td b small { color: var(--muted); font-size: 12px; font-weight: 550; }
 @media(min-width:1024px){
   .content:has(.review-panel){max-width:none;padding-inline:20px}
   .review-panel .meta-fields,.review-panel .invoice-document-details .meta-fields{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .receipt-items-table{max-height:70vh;overflow:auto}
+  .receipt-items-table{max-height:none;overflow:visible}
   .receipt-items-table table{min-width:1120px;width:100%}
   .receipt-items-table thead th{position:sticky;top:0;z-index:1;background:#f6f8f4;box-shadow:0 1px 0 var(--line)}
   .receipt-items-table td{vertical-align:top;padding-block:9px}
