@@ -13,9 +13,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_URL: https://abcdefghijklmnopqrst.supabase.co
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
-  NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://abcdefghijklmnopqrst.supabase.co
 
 jobs:
   build:
@@ -45,6 +45,7 @@ jobs:
       # The preview must remain fail-closed until an isolated database is set.
       - name: Build Next.js app (Vercel environment parity)
         env:
+          ESTOQUE_SUPABASE_ALLOWED_REF: abcdefghijklmnopqrst
           VERCEL: '1'
           VERCEL_ENV: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
         run: |

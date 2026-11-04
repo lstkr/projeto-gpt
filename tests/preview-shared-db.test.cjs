@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 const POLICY = import('../lib/preview-database-policy.mjs');
 const GUARD = import('../lib/server/inventory-session.mjs');
-const LIVE = 'https://synthetic-preview.supabase.co';
+const LIVE = 'https://abcdefghijklmnopqrst.supabase.co';
 const KEY = 'test_publishable_key_only';
 const TOKEN = 'a'.repeat(64);
 const USER_ID = '00000000-0000-4000-8000-000000000001';
@@ -16,31 +16,33 @@ const response = () => ({
 
 test('preview exige destino explícito, válido e igual ao configurado', async () => {
   const { previewDatabaseIsBlocked } = await POLICY;
-  const setup = {deploymentEnv:'preview',databaseUrl:LIVE,publicKey:KEY};
+  const setup = {deploymentEnv:'preview',databaseUrl:LIVE,publicKey:KEY,allowedRef:'abcdefghijklmnopqrst'};
   assert.equal(previewDatabaseIsBlocked(setup),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,allowSharedDatabase:true,branch:'other-feature'}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE}),false);
   assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,publicKey:''}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,databaseUrl:''}),true);
-  for (const databaseUrl of ['http://synthetic-preview.supabase.co',
-    'https://username@synthetic-preview.supabase.co', 'https://synthetic-preview.supabase.co:444',
-    'https://synthetic-preview.supabase.co/path', 'https://synthetic-preview.supabase.co/?query=1',
-    'https://synthetic-preview.supabase.co/#fragment']) {
+  for (const databaseUrl of ['http://abcdefghijklmnopqrst.supabase.co',
+    'https://username@abcdefghijklmnopqrst.supabase.co', 'https://abcdefghijklmnopqrst.supabase.co:444',
+    'https://abcdefghijklmnopqrst.supabase.co/path', 'https://abcdefghijklmnopqrst.supabase.co/?query=1',
+    'https://abcdefghijklmnopqrst.supabase.co/#fragment']) {
     assert.equal(previewDatabaseIsBlocked({...setup, previewUrl:databaseUrl, databaseUrl}), true);
   }
   assert.equal(previewDatabaseIsBlocked({...setup,previewUrl:LIVE,databaseUrl:'https://separate-preview.supabase.co'}),true);
   assert.equal(previewDatabaseIsBlocked({...setup,deploymentEnv:'production'}),false);
+  assert.equal(previewDatabaseIsBlocked({...setup,deploymentEnv:'production',allowedRef:''}),true);
 });
 
 test('preview autorizado ainda exige sessão nativa válida', async () => {
   const { requireInventorySession } = await GUARD;
-  const keys=['VERCEL_ENV','NEXT_PUBLIC_SUPABASE_PREVIEW_URL',
+  const keys=['ESTOQUE_SUPABASE_ALLOWED_REF','VERCEL_ENV','NEXT_PUBLIC_SUPABASE_PREVIEW_URL',
     'NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY'];
   const previous=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
   try {
     Object.assign(process.env, {
       VERCEL_ENV:'preview',
+      ESTOQUE_SUPABASE_ALLOWED_REF:'abcdefghijklmnopqrst',
       NEXT_PUBLIC_SUPABASE_PREVIEW_URL:LIVE,
       NEXT_PUBLIC_SUPABASE_URL:LIVE,
       NEXT_PUBLIC_SUPABASE_ANON_KEY:KEY
@@ -90,5 +92,3 @@ test('build includes Preview policy without putting credentials in Next configur
   assert.match(server,/previewDatabaseIsBlocked\(/);
   assert.match(server,/inventory_validate_session/);
 });
-
-
