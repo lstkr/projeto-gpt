@@ -2,7 +2,7 @@
 
 1. Nunca comprometer estoque, segurança ou funcionalidades existentes. Não declarar
    testes, migrações ou deploy aprovados sem evidência real.
-2. Começar respostas com `Agente: <nome>` e `Escopo desta entrega: <1 linha>`.
+2. Usar `Agente: <nome>` e `Escopo desta entrega: <1 linha>` somente na mensagem final.
    Linguagem simples, respostas curtas, no máximo uma decisão com recomendação.
    Explicar termo técnico novo na primeira vez; avisar sobre risco ou erro mesmo que atrase.
 3. Antes de editar, ler `docs/ESTADO.md`, os trechos relevantes do README, código,
@@ -34,3 +34,15 @@
     de teste. Confirmar deploy e smoke com evidência após merge autorizado.
 15. Ao fim do bloco, atualizar `docs/ESTADO.md` (máximo 40 linhas); relatar em 1–2 linhas
     o que mudou, por quê e limites da validação. Citar CL aplicáveis sem autoaprovação.
+
+## Modo econômico
+1. Uma mensagem final por entrega; sem progresso entre comandos, salvo instrução superior obrigatória.
+2. Final com até 10 linhas: Feito / Arquivos / Testes (passou/falhou) / Pendente / Preciso de mim; português simples, termo novo explicado em uma linha.
+3. Sem saídas, logs ou diffs no chat; só números e 1–3 linhas de erro; detalhes na PR, chat só com o link.
+4. Ler só o necessário: buscar com rg, ler trechos e não reler material já consultado.
+5. Na iteração, só testes afetados; suíte completa uma vez antes da entrega.
+6. Uma rodada independente ao fim, corrigindo no mesmo ciclo; repetir somente por erro grave.
+7. Raciocínio leve por padrão; elevar para banco/migração, autenticação/permissões, fiscal/SEFAZ ou concorrência.
+8. Decidir itens pequenos e registrar suposição em uma linha; perguntar só se bloqueado, uma pergunta com recomendação.
+9. Economia não reduz segurança, integridade fiscal/estoque, testes ou evidências: detalhes completos ficam na PR.
+10. Nada fora do escopo; regras de autorização e revisão continuam válidas.
