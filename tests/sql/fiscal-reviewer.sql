@@ -5,7 +5,7 @@ insert into private.establishments(id,name) values
 insert into private.app_users(username,password_hash,role,display_name) values
  ('review.manager','synthetic','admin','Gestor Sintético'),('review.employee','synthetic','employee','Funcionário Sintético');
 insert into private.tenant_memberships select u.id,e.id,u.role from private.app_users u cross join private.establishments e
- where u.username like 'review.%' and e.id in ('00000000-0000-4000-8000-0000000000d1','00000000-0000-4000-8000-0000000000d2');
+ where u.username like 'review.%' and (u.role='admin' or e.id='00000000-0000-4000-8000-0000000000d1') and e.id in ('00000000-0000-4000-8000-0000000000d1','00000000-0000-4000-8000-0000000000d2');
 insert into private.user_permissions select id,'fiscal.pending.review',false from private.app_users where username='review.employee';
 insert into private.app_sessions(token_hash,user_id,expires_at,tenant_id)
  select encode(extensions.digest(v.token,'sha256'),'hex'),u.id,now()+interval '1 hour',v.tenant::uuid
