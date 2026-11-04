@@ -1,0 +1,185 @@
+TAP version 13
+# Subtest: mês em andamento é parcial e não disputa menor mês registrado
+ok 1 - mês em andamento é parcial e não disputa menor mês registrado
+  ---
+  duration_ms: 46.0613
+  ...
+# Subtest: todos os dias é padrão; dia explícito e sem data continuam acessíveis
+ok 2 - todos os dias é padrão; dia explícito e sem data continuam acessíveis
+  ---
+  duration_ms: 14.6959
+  ...
+# Subtest: relatório detecta overflow interno mesmo quando documento não transborda
+ok 3 - relatório detecta overflow interno mesmo quando documento não transborda
+  ---
+  duration_ms: 13.4045
+  ...
+# Subtest: ano agrupa rubricas por mês, sem sangria nem dados presumidos
+ok 4 - ano agrupa rubricas por mês, sem sangria nem dados presumidos
+  ---
+  duration_ms: 34.6602
+  ...
+# Subtest: mês inclui todos os dias, diferencia zero registrado e exclui rubrica inválida
+ok 5 - mês inclui todos os dias, diferencia zero registrado e exclui rubrica inválida
+  ---
+  duration_ms: 0.674
+  ...
+# Subtest: histórico do caixa filtra mês ou ano sem alterar os registros
+ok 6 - histórico do caixa filtra mês ou ano sem alterar os registros
+  ---
+  duration_ms: 15.5255
+  ...
+# Subtest: documentos mostram só um dia e preservam o acesso ao legado sem data
+ok 7 - documentos mostram só um dia e preservam o acesso ao legado sem data
+  ---
+  duration_ms: 0.7627
+  ...
+# Subtest: Rio Sul: preserves line-level discount and fiscal gross/net totals
+ok 8 - Rio Sul: preserves line-level discount and fiscal gross/net totals
+  ---
+  duration_ms: 6.2944
+  ...
+# Subtest: Cia da Fruta: numbered item is not mistaken for product code and integer quantity is read
+ok 9 - Cia da Fruta: numbered item is not mistaken for product code and integer quantity is read
+  ---
+  duration_ms: 0.4256
+  ...
+# Subtest: Cia da Fruta: right-aligned total on description row is reconciled
+ok 10 - Cia da Fruta: right-aligned total on description row is reconciled
+  ---
+  duration_ms: 0.2876
+  ...
+# Subtest: Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns
+ok 11 - Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns
+  ---
+  duration_ms: 0.228
+  ...
+# Subtest: Without numbered item column, the first code is still the fiscal product code
+ok 12 - Without numbered item column, the first code is still the fiscal product code
+  ---
+  duration_ms: 0.2841
+  ...
+# Subtest: Rudi Bonow: preserves printed manjericão ML for supervisor review
+ok 13 - Rudi Bonow: preserves printed manjericão ML for supervisor review
+  ---
+  duration_ms: 0.9545
+  ...
+# Subtest: Two separate fiscal rows with the same code are never collapsed
+ok 14 - Two separate fiscal rows with the same code are never collapsed
+  ---
+  duration_ms: 1.0826
+  ...
+# Subtest: Different fiscal units never count as matching, even at the same price
+ok 15 - Different fiscal units never count as matching, even at the same price
+  ---
+  duration_ms: 0.5299
+  ...
+# Subtest: Normalized aliases are equivalent, without converting different dimensions
+ok 16 - Normalized aliases are equivalent, without converting different dimensions
+  ---
+  duration_ms: 0.3581
+  ...
+# Subtest: Conflicting OCR totals produce an alert instead of selecting the closest
+ok 17 - Conflicting OCR totals produce an alert instead of selecting the closest
+  ---
+  duration_ms: 0.5418
+  ...
+# Subtest: Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 30,90
+ok 18 - Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 30,90
+  ---
+  duration_ms: 0.4532
+  ...
+# Subtest: Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50
+ok 19 - Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50
+  ---
+  duration_ms: 0.2868
+  ...
+# Subtest: Public café: Caramella (Câmara), preserves zero-cost entries and tip
+ok 20 - Public café: Caramella (Câmara), preserves zero-cost entries and tip
+  ---
+  duration_ms: 0.6902
+  ...
+# Subtest: Leading zeros and numeric code zero preserve original spelling and match once
+ok 21 - Leading zeros and numeric code zero preserve original spelling and match once
+  ---
+  duration_ms: 0.5635
+  ...
+# Subtest: Different nonempty codes are never merged by identical descriptions
+ok 22 - Different nonempty codes are never merged by identical descriptions
+  ---
+  duration_ms: 0.2513
+  ...
+# Subtest: Repeated identical fiscal rows survive both readings, including an extra occurrence
+ok 23 - Repeated identical fiscal rows survive both readings, including an extra occurrence
+  ---
+  duration_ms: 0.2989
+  ...
+# Subtest: Rows without codes match by description without collapsing repeated purchases
+ok 24 - Rows without codes match by description without collapsing repeated purchases
+  ---
+  duration_ms: 0.3845
+  ...
+# Subtest: Empty names and absent codes cannot establish product identity
+ok 25 - Empty names and absent codes cannot establish product identity
+  ---
+  duration_ms: 0.1561
+  ...
+# Subtest: Matching codes with incompatible descriptions require review
+ok 26 - Matching codes with incompatible descriptions require review
+  ---
+  duration_ms: 0.1655
+  ...
+# Subtest: Repeated code with different units aligns by unit even when official rows are reordered
+ok 27 - Repeated code with different units aligns by unit even when official rows are reordered
+  ---
+  duration_ms: 0.1924
+  ...
+# Subtest: All item discounts are summed when no summary discount is printed
+ok 28 - All item discounts are summed when no summary discount is printed
+  ---
+  duration_ms: 0.4251
+  ...
+# Subtest: Subtotal and discount conflicts cannot cancel out silently at the same final total
+ok 29 - Subtotal and discount conflicts cannot cancel out silently at the same final total
+  ---
+  duration_ms: 0.1967
+  ...
+# Subtest: Printed total is preserved and inconsistent item sum or discount is flagged
+ok 30 - Printed total is preserved and inconsistent item sum or discount is flagged
+  ---
+  duration_ms: 0.1711
+  ...
+# Subtest: Summary discount replaces item sum instead of applying it twice; zero is explicit
+ok 31 - Summary discount replaces item sum instead of applying it twice; zero is explicit
+  ---
+  duration_ms: 0.1584
+  ...
+# Subtest: arquivar e renomear preserva identidade e confirmação; outra nota recebe identidade nova
+ok 32 - arquivar e renomear preserva identidade e confirmação; outra nota recebe identidade nova
+  ---
+  duration_ms: 8.924
+  ...
+# Subtest: pending cancellation is guarded by database role, not UI alone
+ok 33 - pending cancellation is guarded by database role, not UI alone
+  ---
+  duration_ms: 1.1531
+  ...
+# Subtest: official data becomes default only for verified SEFAZ response
+ok 34 - official data becomes default only for verified SEFAZ response
+  ---
+  duration_ms: 0.2435
+  ...
+# Subtest: financial discrepancies are review warnings while invalid totals still block
+ok 35 - financial discrepancies are review warnings while invalid totals still block
+  ---
+  duration_ms: 0.3236
+  ...
+1..35
+# tests 35
+# suites 0
+# pass 35
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 171.8175

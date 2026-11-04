@@ -1,0 +1,369 @@
+Vulnerabilities, secrets and configuration	Set up job	﻿2026-11-03T23:09:45.6543938Z Current runner version: '2.338.2'
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6580247Z ##[group]Runner Image Provisioner
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6581728Z Hosted Compute Agent
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6582674Z Version: 20261028.624
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6583694Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6585092Z Build Date: 2026-10-28T21:51:42Z
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6586380Z Worker ID: {c7749b21-706a-4067-a0bb-c16183ec1b0f}
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6588070Z Region: eastus2
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6589044Z Cloud: Azure
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6590125Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6593489Z ##[group]Operating System
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6594633Z Ubuntu
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6595697Z 24.04.5
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6596516Z LTS
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6597570Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6598781Z ##[group]Runner Image
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6599935Z Image: ubuntu-24.04
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6601000Z Version: 20261101.360.1
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6602826Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261101.360/images/ubuntu/Ubuntu2404-Readme.md
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6606056Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261101.360
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6608061Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6609948Z ##[group]GITHUB_TOKEN Permissions
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6613261Z Contents: read
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6614314Z Metadata: read
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6615241Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6618882Z Secret source: Actions
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6620380Z Cache mode: write
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.6621996Z Prepare workflow directory
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.7182138Z Prepare all required actions
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.7250043Z Getting action download info
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:45.9225833Z Download action repository 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' (SHA:11bd71901bbe5b1630ceea73d27597364c9af683)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:46.1375536Z Download action repository 'aquasecurity/trivy-action@v0.36.0' (SHA:ed142fd0673e97e23eac54620cfb913e5ce36c25)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:46.3959148Z Getting action download info
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:46.5033631Z Download action repository 'aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514' (SHA:3fb12ec12f41e471780db15c232d5dd185dcb514)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:46.5914214Z Download action repository 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae' (SHA:27d5ce7f107fe9357f9df03efb73ab90386fccae)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:47.9916629Z Getting action download info
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:48.0825609Z Download action repository 'actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb' (SHA:9255dc7a253b0ccc959486e2bca901246202afeb)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:48.3373594Z Download action repository 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' (SHA:8e8c483db84b4bee98b60c0593521ed34d9990e8)
+Vulnerabilities, secrets and configuration	Set up job	2026-11-03T23:09:48.4981855Z Complete job name: Vulnerabilities, secrets and configuration
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	﻿2026-11-03T23:09:48.5875399Z ##[group]Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5876172Z with:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5876399Z   persist-credentials: false
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5876664Z   repository: lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5879422Z   token: ***
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5879651Z   ssh-strict: true
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5879859Z   ssh-user: git
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5880052Z   clean: true
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5880272Z   sparse-checkout-cone-mode: true
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5880530Z   fetch-depth: 1
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5880742Z   fetch-tags: false
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5880950Z   show-progress: true
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5881166Z   lfs: false
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5881350Z   submodules: false
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5881559Z   set-safe-directory: true
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5882036Z env:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5882346Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5882780Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5883232Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:48.5883651Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1540559Z Syncing repository: lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1542039Z ##[group]Getting Git version info
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1543201Z Working directory is '/home/runner/work/projeto-gpt/projeto-gpt'
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1544278Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1632191Z git version 2.56.0
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1655422Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1673032Z Temporarily overriding HOME='/home/runner/work/_temp/f79af093-a785-4198-8bf1-43f89681f916' before making global git config changes
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1674420Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1680188Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1735223Z Deleting the contents of '/home/runner/work/projeto-gpt/projeto-gpt'
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1740728Z ##[group]Initializing the repository
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1744467Z [command]/usr/bin/git init /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1878504Z hint: Using 'master' as the name for the initial branch. This default branch name
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1880015Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1880896Z hint: to use in all of your new repositories, which will suppress this warning,
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1881595Z hint: call:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1881907Z hint:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1882361Z hint: 	git config --global init.defaultBranch <name>
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1882884Z hint:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1883393Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1884251Z hint: 'development'. The just-created branch can be renamed via this command:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1884895Z hint:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1885225Z hint: 	git branch -m <name>
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1885616Z hint:
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1886153Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1892346Z Initialized empty Git repository in /home/runner/work/projeto-gpt/projeto-gpt/.git/
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1904703Z [command]/usr/bin/git remote add origin https://github.com/lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1961381Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1962131Z ##[group]Disabling automatic garbage collection
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1962773Z [command]/usr/bin/git config --local gc.auto 0
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1995287Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.1996118Z ##[group]Setting up auth
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2004311Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2045527Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2511031Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2560882Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2810117Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2861533Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2862263Z ##[group]Fetching the repository
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.2874323Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +6df3df9fc9fd507c48e2266288cd609606c8cfad:refs/remotes/origin/main
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6088729Z From https://github.com/lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6089811Z  * [new ref]         6df3df9fc9fd507c48e2266288cd609606c8cfad -> origin/main
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6091705Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6092394Z ##[group]Determining the checkout info
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6093160Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6095175Z [command]/usr/bin/git sparse-checkout disable
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6170880Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6217635Z ##[group]Checking out the ref
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6224781Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6469927Z Switched to a new branch 'main'
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6475835Z branch 'main' set up to track 'origin/main'.
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6482950Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6541415Z [command]/usr/bin/git log -1 --format=%H
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6609274Z 6df3df9fc9fd507c48e2266288cd609606c8cfad
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6619851Z ##[group]Removing auth
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6623983Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6663439Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6900998Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6935502Z http.https://github.com/.extraheader
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6944458Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.6989329Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:49.7222664Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	﻿2026-11-03T23:09:49.7641822Z ##[group]Run aquasecurity/trivy-action@v0.36.0
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7642175Z with:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7642369Z   scan-type: fs
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7642576Z   scan-ref: .
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7642782Z   scanners: vuln,secret,misconfig
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7643043Z   severity: HIGH,CRITICAL
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7643259Z   exit-code: 1
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7643449Z   format: table
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7643635Z   cache: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7643833Z   ignore-unfixed: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7644062Z   vuln-type: os,library
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7644376Z   cache-dir: /home/runner/work/projeto-gpt/projeto-gpt/.cache/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7644756Z   list-all-pkgs: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7644983Z   version: v0.70.0
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7645200Z   skip-setup-trivy: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7647883Z   token-setup-trivy: ***
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7648133Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7648422Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7648857Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7649326Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7649700Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7708800Z ##[start-action display=Install Trivy;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7833485Z ##[group]Run aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7833920Z with:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7834118Z   version: v0.70.0
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7834326Z   cache: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7836765Z   token: ***
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7836996Z   path: $HOME/.local/bin
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7837462Z   github-server-url: https://github.com
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7837793Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7838070Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7838494Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7838936Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7839330Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7846435Z ##[start-action display=Binary dir;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.binary-dir]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7877965Z ##[group]Run echo "dir=$HOME/.local/bin/trivy-bin" >> $GITHUB_OUTPUT
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7878501Z ^[[36;1mecho "dir=$HOME/.local/bin/trivy-bin" >> $GITHUB_OUTPUT^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7901595Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7901964Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7902262Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7902916Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7903356Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7903727Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.7998394Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.binary-dir;outcome=success;conclusion=success;duration_ms=15]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8003180Z ##[start-action display=Check the version for caching;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8009811Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8012301Z ##[start-action display=Restore Trivy binary from cache;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.cache]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8018879Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8021228Z ##[start-action display=Checkout install script;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_checkout]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8128176Z ##[group]Run actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8128594Z with:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8128800Z   repository: aquasecurity/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8129080Z   sparse-checkout: contrib
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8129320Z   path: trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8129753Z   fetch-depth: 1
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8129988Z   ref: 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8130313Z   github-server-url: https://github.com
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8132822Z   token: ***
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8133028Z   ssh-strict: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8133230Z   ssh-user: git
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8133438Z   persist-credentials: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8133672Z   clean: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8133888Z   sparse-checkout-cone-mode: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8134141Z   fetch-tags: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8134354Z   show-progress: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8134569Z   lfs: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8134753Z   submodules: false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8134964Z   set-safe-directory: true
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8135186Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8135461Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8135883Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8136322Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8136693Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.8995183Z Syncing repository: aquasecurity/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9001864Z ##[group]Getting Git version info
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9002753Z Working directory is '/home/runner/work/projeto-gpt/projeto-gpt/trivy'
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9042712Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9086431Z git version 2.56.0
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9138811Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9155029Z Temporarily overriding HOME='/home/runner/work/_temp/46e85c45-3ab9-4fab-9d95-7cd3f4e2076c' before making global git config changes
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9157029Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9161038Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9209966Z ##[group]Initializing the repository
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9215371Z [command]/usr/bin/git init /home/runner/work/projeto-gpt/projeto-gpt/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9262514Z hint: Using 'master' as the name for the initial branch. This default branch name
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9263707Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9265017Z hint: to use in all of your new repositories, which will suppress this warning,
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9266031Z hint: call:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9266697Z hint:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9267570Z hint: 	git config --global init.defaultBranch <name>
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9268257Z hint:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9268873Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9270223Z hint: 'development'. The just-created branch can be renamed via this command:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9270992Z hint:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9271394Z hint: 	git branch -m <name>
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9271833Z hint:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9272486Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9273685Z Initialized empty Git repository in /home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9279780Z [command]/usr/bin/git remote add origin https://github.com/aquasecurity/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9316522Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9317395Z ##[group]Disabling automatic garbage collection
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9321199Z [command]/usr/bin/git config --local gc.auto 0
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9362069Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9362966Z ##[group]Setting up auth
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9363752Z Removing SSH command configuration
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9371794Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9408092Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9676050Z Removing HTTP extra header
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9677329Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9720500Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9984331Z Removing includeIf entries pointing to credentials config files
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:49.9992277Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0038764Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0281731Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0332045Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git.path /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0375662Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0420888Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/trivy/.git.path /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0467521Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/trivy/.git/worktrees/*.path /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0503952Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0504459Z ##[group]Fetching the repository
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.0513190Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --filter=blob:none --depth=1 origin 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3025349Z From https://github.com/aquasecurity/trivy
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3026025Z  * branch            75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a -> FETCH_HEAD
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3031781Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3034440Z ##[group]Determining the checkout info
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3034919Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3035271Z ##[group]Setting up sparse checkout
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3039839Z [command]/usr/bin/git sparse-checkout set contrib
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3091357Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3091743Z ##[group]Checking out the ref
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.3097360Z [command]/usr/bin/git checkout --progress --force 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5261008Z Note: switching to '75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a'.
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5262015Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5262811Z You are in 'detached HEAD' state. You can look around, make experimental
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5263793Z changes and commit them, and you can discard any commits you make in this
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5264703Z state without impacting any branches by switching back to a branch.
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5265267Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5265633Z If you want to create a new branch to retain commits you create, you may
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5266477Z do so (now or later) by using -c with the switch command. Example:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5266969Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5267489Z   git switch -c <new-branch-name>
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5267858Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5268045Z Or undo this operation with:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5268355Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5268626Z   git switch -
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5268852Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5269233Z Turn off this advice by setting config variable advice.detachedHead to false
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5269842Z 
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5270202Z HEAD is now at 75c4dc0 chore: add client option to install script (#9962)
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5285443Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5338931Z [command]/usr/bin/git log -1 --format=%H
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5376592Z 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5520014Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_checkout;outcome=success;conclusion=success;duration_ms=749]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5523118Z ##[start-action display=Install Trivy;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_2]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5548120Z ##[group]Run echo "installing Trivy binary"
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5548473Z ^[[36;1mecho "installing Trivy binary"^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5548977Z ^[[36;1mbash ./trivy/contrib/install.sh -b /home/runner/.local/bin/trivy-bin -c setup-trivy v0.70.0^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5549572Z ^[[36;1mcp -r ./trivy/contrib /home/runner/.local/bin/trivy-bin/contrib^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5549962Z ^[[36;1mrm -rf ./trivy^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5569553Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5569931Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5570241Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5570667Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5571096Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5571481Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5610326Z installing Trivy binary
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.5756990Z aquasecurity/trivy info checking GitHub for tag 'v0.70.0'
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7626223Z aquasecurity/trivy info found version: 0.70.0 for v0.70.0/Linux/64bit
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7888249Z ##[error]Process completed with exit code 6.
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7896840Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_2;outcome=failure;conclusion=failure;duration_ms=237]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7901357Z ##[start-action display=Add Trivy binary to $GITHUB_PATH;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_3]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7904080Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7906167Z ##[start-action display=Save Trivy binary to cache;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_cache]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7910015Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7922824Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy;outcome=failure;conclusion=failure;duration_ms=1021]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7925090Z ##[start-action display=Get current date;id=__aquasecurity_trivy-action.date]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7927449Z ##[end-action id=__aquasecurity_trivy-action.date;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7929903Z ##[start-action display=Restore DB from cache;id=__aquasecurity_trivy-action.__actions_cache]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7932436Z ##[end-action id=__aquasecurity_trivy-action.__actions_cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7934949Z ##[start-action display=Set GitHub Path;id=__aquasecurity_trivy-action.__run]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7936812Z ##[end-action id=__aquasecurity_trivy-action.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7939134Z ##[start-action display=Clear Trivy Envs file;id=__aquasecurity_trivy-action.__run_2]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7941067Z ##[end-action id=__aquasecurity_trivy-action.__run_2;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7945872Z ##[start-action display=Set Trivy environment variables;id=__aquasecurity_trivy-action.__run_3]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7948277Z ##[end-action id=__aquasecurity_trivy-action.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7951432Z ##[start-action display=Run Trivy;id=__aquasecurity_trivy-action.__run_4]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7953349Z ##[end-action id=__aquasecurity_trivy-action.__run_4;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7955220Z ##[start-action display=Remove Trivy Envs file;id=__aquasecurity_trivy-action.__run_5]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7976049Z ##[group]Run rm -f trivy_envs.txt
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7976347Z ^[[36;1mrm -f trivy_envs.txt^[[0m
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7997327Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7997833Z env:
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7998140Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7998588Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7999040Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.7999415Z ##[endgroup]
+Vulnerabilities, secrets and configuration	Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.8061993Z ##[end-action id=__aquasecurity_trivy-action.__run_5;outcome=success;conclusion=success;duration_ms=10]
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	﻿2026-11-03T23:09:50.8372333Z Post job cleanup.
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.8376221Z ##[start-action display=Install Trivy;id=__4d543f20-b811-4f8d-a13f-af8e4103aa78.__aquasecurity_setup-trivy]
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.8475648Z Post job cleanup.
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.8479277Z ##[start-action display=Checkout install script;id=__4d543f20-b811-4f8d-a13f-af8e4103aa78.__aquasecurity_setup-trivy.__actions_checkout]
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.8530265Z Post job cleanup.
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9548483Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9593751Z git version 2.56.0
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9648383Z Temporarily overriding HOME='/home/runner/work/_temp/2d715030-b4e6-4787-a864-bfa79aa2ed82' before making global git config changes
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9671398Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9672844Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt/trivy
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9703885Z Removing SSH command configuration
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9709811Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:50.9762719Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0149771Z Removing HTTP extra header
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0150659Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0249523Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0597628Z Removing includeIf entries pointing to credentials config files
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0608103Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0668534Z includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0678650Z includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/worktrees/*.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0707831Z includeif.gitdir:/github/workspace/trivy/.git.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0718048Z includeif.gitdir:/github/workspace/trivy/.git/worktrees/*.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0720144Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0724913Z /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0741536Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git.path /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0792018Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/worktrees/*.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0829669Z /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0842342Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0897915Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/trivy/.git.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0934468Z /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0946501Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/trivy/.git.path /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.0994291Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/trivy/.git/worktrees/*.path
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1028720Z /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1039300Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/trivy/.git/worktrees/*.path /github/runner_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1087775Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1359216Z Removing credentials config '/home/runner/work/_temp/git-credentials-72789fb2-9847-412b-9dc2-466da8bfd617.config'
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1471677Z ##[end-action id=__4d543f20-b811-4f8d-a13f-af8e4103aa78.__aquasecurity_setup-trivy.__actions_checkout;outcome=success;conclusion=success;duration_ms=299]
+Vulnerabilities, secrets and configuration	Post Trivy filesystem audit (fail for HIGH or CRITICAL)	2026-11-03T23:09:51.1476305Z ##[end-action id=__4d543f20-b811-4f8d-a13f-af8e4103aa78.__aquasecurity_setup-trivy;outcome=success;conclusion=success;duration_ms=309]
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	﻿2026-11-03T23:09:51.1546495Z Post job cleanup.
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2509278Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2583230Z git version 2.56.0
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2612959Z Temporarily overriding HOME='/home/runner/work/_temp/55b8204c-88b1-4c57-81ef-3948346f2614' before making global git config changes
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2614428Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2623261Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2682809Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.2734886Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.3021112Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683	2026-11-03T23:09:51.3061809Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	Complete job	﻿2026-11-03T23:09:51.3539328Z Cleaning up orphan processes
+Vulnerabilities, secrets and configuration	Complete job	2026-11-03T23:09:51.3898791Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

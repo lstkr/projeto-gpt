@@ -1,0 +1,12 @@
+components/CashRevenueChart.js
+docs/ESTADO.md
+docs/giro-ui-followup.md
+lib/history-view.mjs
+lib/receipt-reviewer.mjs
+lib/revenue-chart.mjs
+pages/index.js
+scripts/preview/overflow-report.cjs
+styles/giro-review.css
+tests/giro-followup.test.cjs
+tests/giro-ui-periods.test.cjs
+tests/receipt-local-id.test.cjs

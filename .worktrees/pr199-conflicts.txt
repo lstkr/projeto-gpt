@@ -1,0 +1,40 @@
+8bd2fa589ba694f8288d4b31c509da08b01bc981
+100644 c21b9dd0622846d370bd4ad685c5f89f0eb0e99d 2	components/CashRevenueChart.js
+100644 a09062384878d72547204b237d84d7cf923ed36e 3	components/CashRevenueChart.js
+100644 d848b8a620a36cd126399b859c9c4e39831949fc 1	docs/ESTADO.md
+100644 144bc097272c0465318559531a5b55902545cbe4 2	docs/ESTADO.md
+100644 a5497700aed9733f53a35c65f611e389da27148f 3	docs/ESTADO.md
+100644 bf0b5ffc88e5bd421de1067129ff5913150d8f54 2	lib/history-view.mjs
+100644 c8a808342dd00e90d188b1bcb31b5b7693037e04 3	lib/history-view.mjs
+100644 d11ad6085f5cdcf2e684c38965ce2c3fe3dcf15d 2	lib/receipt-reviewer.mjs
+100644 d30ddc238462df830c011575a1edefca54bb42dc 3	lib/receipt-reviewer.mjs
+100644 74bfbdda98714784bc40c19cad532712555d7cba 2	lib/revenue-chart.mjs
+100644 c9fe8d727a73d827b9f0e1877980e0aa3ce16b40 3	lib/revenue-chart.mjs
+100644 c4f6d5b258e1e4025d462078b0ac58a6386dabcb 1	pages/index.js
+100644 102a5b5a30fd0c21d9fdc5a5aa3897fa59bc68c1 2	pages/index.js
+100644 243f5b1f4528d7a835ac3d6e969cbab4fc848a93 3	pages/index.js
+100644 0256a2c103d7c79539ac8da9a5617b89d0730d9a 2	styles/giro-review.css
+100644 bfda65812ecdbc95ac584461ec2e13470b2e3e18 3	styles/giro-review.css
+100644 b46323f6e975a6f9469471f91bdcca4365bcd93f 2	tests/giro-ui-periods.test.cjs
+100644 f844797773d12e439a5349e7813625511648200e 3	tests/giro-ui-periods.test.cjs
+100644 af30a19c270300d36742be419958ae085cade8a4 2	tests/receipt-local-id.test.cjs
+100644 631da0509e39502a09e55d296f02605e0d51b473 3	tests/receipt-local-id.test.cjs
+
+Auto-merging components/CashRevenueChart.js
+CONFLICT (add/add): Merge conflict in components/CashRevenueChart.js
+Auto-merging docs/ESTADO.md
+CONFLICT (content): Merge conflict in docs/ESTADO.md
+Auto-merging lib/history-view.mjs
+CONFLICT (add/add): Merge conflict in lib/history-view.mjs
+Auto-merging lib/receipt-reviewer.mjs
+CONFLICT (add/add): Merge conflict in lib/receipt-reviewer.mjs
+Auto-merging lib/revenue-chart.mjs
+CONFLICT (add/add): Merge conflict in lib/revenue-chart.mjs
+Auto-merging pages/index.js
+CONFLICT (content): Merge conflict in pages/index.js
+Auto-merging styles/giro-review.css
+CONFLICT (add/add): Merge conflict in styles/giro-review.css
+Auto-merging tests/giro-ui-periods.test.cjs
+CONFLICT (add/add): Merge conflict in tests/giro-ui-periods.test.cjs
+Auto-merging tests/receipt-local-id.test.cjs
+CONFLICT (add/add): Merge conflict in tests/receipt-local-id.test.cjs

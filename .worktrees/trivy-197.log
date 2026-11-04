@@ -1,0 +1,514 @@
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	﻿2026-11-03T01:51:53.8035054Z Current runner version: '2.338.2'
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8070370Z ##[group]Runner Image Provisioner
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8071648Z Hosted Compute Agent
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8072792Z Version: 20261021.618
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8073843Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8075061Z Build Date: 2026-10-21T00:45:21Z
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8076390Z Worker ID: {9b435bd3-23ed-4d0d-ba56-a349ac254a19}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8077844Z Region: eastus2
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8078971Z Cloud: Azure
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8079907Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8082168Z ##[group]Operating System
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8083349Z Ubuntu
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8084175Z 24.04.5
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8085156Z LTS
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8086030Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8086898Z ##[group]Runner Image
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8088336Z Image: ubuntu-24.04
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8089330Z Version: 20261025.353.1
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8091620Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8094265Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8096155Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8098272Z ##[group]GITHUB_TOKEN Permissions
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8101011Z Contents: read
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8101946Z Metadata: read
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8103042Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8106421Z Secret source: Actions
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8108463Z Cache mode: write
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8109906Z Prepare workflow directory
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8686738Z Prepare all required actions
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:53.8759121Z Getting action download info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.0907368Z Download action repository 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' (SHA:11bd71901bbe5b1630ceea73d27597364c9af683)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.2003131Z Download action repository 'aquasecurity/trivy-action@v0.36.0' (SHA:ed142fd0673e97e23eac54620cfb913e5ce36c25)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.4731113Z Getting action download info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.5561932Z Download action repository 'aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514' (SHA:3fb12ec12f41e471780db15c232d5dd185dcb514)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.6513659Z Download action repository 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae' (SHA:27d5ce7f107fe9357f9df03efb73ab90386fccae)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.8239541Z Getting action download info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:54.8990851Z Download action repository 'actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb' (SHA:9255dc7a253b0ccc959486e2bca901246202afeb)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.0640959Z Download action repository 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' (SHA:8e8c483db84b4bee98b60c0593521ed34d9990e8)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.2196330Z Complete job name: Vulnerabilities, secrets and configuration
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3243003Z ##[group]Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3244438Z with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3244973Z   persist-credentials: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3245674Z   repository: lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3254504Z   token: ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3255049Z   ssh-strict: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3255583Z   ssh-user: git
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3256091Z   clean: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3256635Z   sparse-checkout-cone-mode: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3257327Z   fetch-depth: 1
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3258177Z   fetch-tags: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3258741Z   show-progress: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3259293Z   lfs: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3259785Z   submodules: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3260341Z   set-safe-directory: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3261289Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3262039Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3263220Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3264533Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.3265590Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6530221Z Syncing repository: lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6534230Z ##[group]Getting Git version info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6536749Z Working directory is '/home/runner/work/projeto-gpt/projeto-gpt'
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6539903Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6628855Z git version 2.56.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6652242Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6668019Z Temporarily overriding HOME='/home/runner/work/_temp/354fc0c5-88de-40cd-ab88-3e1135cb6da8' before making global git config changes
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6672498Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6676157Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6735648Z Deleting the contents of '/home/runner/work/projeto-gpt/projeto-gpt'
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6745197Z ##[group]Initializing the repository
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6747884Z [command]/usr/bin/git init /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6868140Z hint: Using 'master' as the name for the initial branch. This default branch name
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6871719Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6875064Z hint: to use in all of your new repositories, which will suppress this warning,
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6878005Z hint: call:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6879523Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6881378Z hint: 	git config --global init.defaultBranch <name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6883631Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6885755Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6889341Z hint: 'development'. The just-created branch can be renamed via this command:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6892109Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6893699Z hint: 	git branch -m <name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6895519Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6898200Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6901097Z Initialized empty Git repository in /home/runner/work/projeto-gpt/projeto-gpt/.git/
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6908541Z [command]/usr/bin/git remote add origin https://github.com/lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6951928Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6954044Z ##[group]Disabling automatic garbage collection
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6956146Z [command]/usr/bin/git config --local gc.auto 0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6993320Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.6994973Z ##[group]Setting up auth
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7002385Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7050565Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7490527Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7540778Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7812162Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7868710Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7871474Z ##[group]Fetching the repository
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:55.7885837Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +282afe53424fe3af87885928fdd17e45ebcd28d8:refs/remotes/pull/197/merge
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0910555Z From https://github.com/lstkr/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0912737Z  * [new ref]         282afe53424fe3af87885928fdd17e45ebcd28d8 -> pull/197/merge
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0919929Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0921757Z ##[group]Determining the checkout info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0924015Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0925939Z [command]/usr/bin/git sparse-checkout disable
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.0991854Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1033238Z ##[group]Checking out the ref
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1037389Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/197/merge
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1258351Z Note: switching to 'refs/remotes/pull/197/merge'.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1259756Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1261135Z You are in 'detached HEAD' state. You can look around, make experimental
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1264435Z changes and commit them, and you can discard any commits you make in this
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1267276Z state without impacting any branches by switching back to a branch.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1268761Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1269874Z If you want to create a new branch to retain commits you create, you may
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1271715Z do so (now or later) by using -c with the switch command. Example:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1272799Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1273260Z   git switch -c <new-branch-name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1274218Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1274665Z Or undo this operation with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1275354Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1275747Z   git switch -
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1276282Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1277118Z Turn off this advice by setting config variable advice.detachedHead to false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1278629Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1279973Z HEAD is now at 282afe5 Merge 74d3e64a209aa232d898bceda745b6bae0f95cdf into 7766b1cdae2c8e63da1a32c27061c647b07a8754
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1284027Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1327234Z [command]/usr/bin/git log -1 --format=%H
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1363653Z 282afe53424fe3af87885928fdd17e45ebcd28d8
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1376344Z ##[group]Removing auth
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1382293Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1428385Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1674282Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1712274Z http.https://github.com/.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1721659Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.1766205Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2014272Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2805918Z ##[group]Run aquasecurity/trivy-action@v0.36.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2807162Z with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2808189Z   scan-type: fs
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2809072Z   scan-ref: .
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2809967Z   scanners: vuln,secret,misconfig
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2811045Z   severity: HIGH,CRITICAL
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2811990Z   exit-code: 1
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2812838Z   format: table
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2813695Z   cache: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2814578Z   ignore-unfixed: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2815531Z   vuln-type: os,library
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2816805Z   cache-dir: /home/runner/work/projeto-gpt/projeto-gpt/.cache/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2818355Z   list-all-pkgs: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2819295Z   version: v0.70.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2820213Z   skip-setup-trivy: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2829458Z   token-setup-trivy: ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2830426Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2831544Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2833190Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2834863Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2836322Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.2914452Z ##[start-action display=Install Trivy;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3194962Z ##[group]Run aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3196509Z with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3197326Z   version: v0.70.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3198465Z   cache: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3207946Z   token: ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3208846Z   path: $HOME/.local/bin
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3209925Z   github-server-url: https://github.com
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3211026Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3212124Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3213714Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3215392Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3216843Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3237691Z ##[start-action display=Binary dir;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.binary-dir]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3297682Z ##[group]Run echo "dir=$HOME/.local/bin/trivy-bin" >> $GITHUB_OUTPUT
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3299395Z ^[[36;1mecho "dir=$HOME/.local/bin/trivy-bin" >> $GITHUB_OUTPUT^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3358383Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3359691Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3360782Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3362388Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3364019Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3365434Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3484813Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.binary-dir;outcome=success;conclusion=success;duration_ms=24]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3494891Z ##[start-action display=Check the version for caching;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3511273Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3518838Z ##[start-action display=Restore Trivy binary from cache;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.cache]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3535020Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3542634Z ##[start-action display=Checkout install script;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_checkout]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3721118Z ##[group]Run actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3722514Z with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3723345Z   repository: aquasecurity/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3724386Z   sparse-checkout: contrib
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3725591Z   path: trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3726437Z   fetch-depth: 1
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3727387Z   ref: 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3728876Z   github-server-url: https://github.com
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3738062Z   token: ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3738913Z   ssh-strict: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3739754Z   ssh-user: git
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3740631Z   persist-credentials: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3741578Z   clean: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3742511Z   sparse-checkout-cone-mode: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3743541Z   fetch-tags: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3744434Z   show-progress: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3745386Z   lfs: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3746197Z   submodules: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3747088Z   set-safe-directory: true
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3748137Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3749222Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3750799Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3752433Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.3753872Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4704338Z Syncing repository: aquasecurity/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4720457Z ##[group]Getting Git version info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4723453Z Working directory is '/home/runner/work/projeto-gpt/projeto-gpt/trivy'
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4773394Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4823234Z git version 2.56.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4856125Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4888720Z Temporarily overriding HOME='/home/runner/work/_temp/3d7d2cd6-e3c3-40a6-9d09-c98f69d7e5e3' before making global git config changes
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4894814Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4899673Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4931245Z ##[group]Initializing the repository
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.4940060Z [command]/usr/bin/git init /home/runner/work/projeto-gpt/projeto-gpt/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5009794Z hint: Using 'master' as the name for the initial branch. This default branch name
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5039245Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5043058Z hint: to use in all of your new repositories, which will suppress this warning,
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5045893Z hint: call:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5051056Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5053023Z hint: 	git config --global init.defaultBranch <name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5055288Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5057769Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5061258Z hint: 'development'. The just-created branch can be renamed via this command:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5064078Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5065739Z hint: 	git branch -m <name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5067789Z hint:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5070497Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5096072Z Initialized empty Git repository in /home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5103243Z [command]/usr/bin/git remote add origin https://github.com/aquasecurity/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5115039Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5117977Z ##[group]Disabling automatic garbage collection
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5120550Z [command]/usr/bin/git config --local gc.auto 0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5132967Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5135828Z ##[group]Setting up auth
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5138288Z Removing SSH command configuration
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5142160Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5196294Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5618466Z Removing HTTP extra header
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5624335Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.5703114Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6010151Z Removing includeIf entries pointing to credentials config files
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6014457Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6068713Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6363888Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-c17812a9-6362-4fb8-8653-41a6200054c0.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6427453Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git.path /home/runner/work/_temp/git-credentials-c17812a9-6362-4fb8-8653-41a6200054c0.config
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6471393Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/projeto-gpt/projeto-gpt/trivy/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c17812a9-6362-4fb8-8653-41a6200054c0.config
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6528584Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/trivy/.git.path /github/runner_temp/git-credentials-c17812a9-6362-4fb8-8653-41a6200054c0.config
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6576730Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/trivy/.git/worktrees/*.path /github/runner_temp/git-credentials-c17812a9-6362-4fb8-8653-41a6200054c0.config
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6621349Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6622822Z ##[group]Fetching the repository
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.6634465Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --filter=blob:none --depth=1 origin 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8960254Z From https://github.com/aquasecurity/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8962708Z  * branch            75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a -> FETCH_HEAD
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8968717Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8971179Z ##[group]Determining the checkout info
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8973783Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8976235Z ##[group]Setting up sparse checkout
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.8978454Z [command]/usr/bin/git sparse-checkout set contrib
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.9030779Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.9033356Z ##[group]Checking out the ref
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:56.9036002Z [command]/usr/bin/git checkout --progress --force 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1346013Z Note: switching to '75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a'.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1347071Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1348076Z You are in 'detached HEAD' state. You can look around, make experimental
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1350617Z changes and commit them, and you can discard any commits you make in this
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1353488Z state without impacting any branches by switching back to a branch.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1355037Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1356180Z If you want to create a new branch to retain commits you create, you may
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1359008Z do so (now or later) by using -c with the switch command. Example:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1360498Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1361302Z   git switch -c <new-branch-name>
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1362397Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1363100Z Or undo this operation with:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1364092Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1364704Z   git switch -
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1365470Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1366699Z Turn off this advice by setting config variable advice.detachedHead to false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1368624Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1369722Z HEAD is now at 75c4dc0 chore: add client option to install script (#9962)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1374666Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1413220Z [command]/usr/bin/git log -1 --format=%H
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1448728Z 75c4dc0f45c5d7ffd05ae26df1e0c666787bdf2a
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1563557Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_checkout;outcome=success;conclusion=success;duration_ms=801]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1571558Z ##[start-action display=Install Trivy;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_2]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1631832Z ##[group]Run echo "installing Trivy binary"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1632955Z ^[[36;1mecho "installing Trivy binary"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1634523Z ^[[36;1mbash ./trivy/contrib/install.sh -b /home/runner/.local/bin/trivy-bin -c setup-trivy v0.70.0^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1636373Z ^[[36;1mcp -r ./trivy/contrib /home/runner/.local/bin/trivy-bin/contrib^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1638071Z ^[[36;1mrm -rf ./trivy^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1660658Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1661806Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1662910Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1664327Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1665827Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1667108Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1722293Z installing Trivy binary
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.1875877Z aquasecurity/trivy info checking GitHub for tag 'v0.70.0'
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:57.2434079Z aquasecurity/trivy info found version: 0.70.0 for v0.70.0/Linux/64bit
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9025963Z aquasecurity/trivy info installed /home/runner/.local/bin/trivy-bin/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9484050Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_2;outcome=success;conclusion=success;duration_ms=1791]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9488413Z ##[start-action display=Add Trivy binary to $GITHUB_PATH;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_3]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9578996Z ##[group]Run echo /home/runner/.local/bin/trivy-bin >> $GITHUB_PATH
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9579474Z ^[[36;1mecho /home/runner/.local/bin/trivy-bin >> $GITHUB_PATH^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9599302Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9599659Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9600085Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9600527Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9600968Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9601363Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9651901Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__run_3;outcome=success;conclusion=success;duration_ms=16]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9654636Z ##[start-action display=Save Trivy binary to cache;id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_cache]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9660500Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy.__actions_cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9673207Z ##[end-action id=__aquasecurity_trivy-action.__aquasecurity_setup-trivy;outcome=success;conclusion=success;duration_ms=2675]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9675543Z ##[start-action display=Get current date;id=__aquasecurity_trivy-action.date]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9702824Z ##[group]Run echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9703257Z ^[[36;1mecho "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9725036Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9725407Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9725726Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9726167Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9726640Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9727037Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9791819Z ##[end-action id=__aquasecurity_trivy-action.date;outcome=success;conclusion=success;duration_ms=11]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9794245Z ##[start-action display=Restore DB from cache;id=__aquasecurity_trivy-action.__actions_cache]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9800269Z ##[end-action id=__aquasecurity_trivy-action.__actions_cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9804343Z ##[start-action display=Set GitHub Path;id=__aquasecurity_trivy-action.__run]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9851529Z ##[group]Run echo "$GITHUB_ACTION_PATH" >> $GITHUB_PATH
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9851989Z ^[[36;1mecho "$GITHUB_ACTION_PATH" >> $GITHUB_PATH^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9871908Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9872300Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9872630Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9873102Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9873591Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9874148Z   GITHUB_ACTION_PATH: /home/runner/work/_actions/aquasecurity/trivy-action/v0.36.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9874575Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9925832Z ##[end-action id=__aquasecurity_trivy-action.__run;outcome=success;conclusion=success;duration_ms=12]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9928639Z ##[start-action display=Clear Trivy Envs file;id=__aquasecurity_trivy-action.__run_2]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9955092Z ##[group]Run rm -f trivy_envs.txt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9955429Z ^[[36;1mrm -f trivy_envs.txt^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9955712Z ^[[36;1mtouch trivy_envs.txt^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9974948Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9975326Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9975650Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9976287Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9976762Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:58.9977187Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0050413Z ##[end-action id=__aquasecurity_trivy-action.__run_2;outcome=success;conclusion=success;duration_ms=12]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0059083Z ##[start-action display=Set Trivy environment variables;id=__aquasecurity_trivy-action.__run_3]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0085823Z ##[group]Run # Note: There is currently no way to distinguish between undefined variables and empty strings in GitHub Actions.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0086730Z ^[[36;1m# Note: There is currently no way to distinguish between undefined variables and empty strings in GitHub Actions.^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0087401Z ^[[36;1m# This limitation affects how we handle default values and empty inputs.^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0088336Z ^[[36;1m# For more information, see: https://github.com/actions/runner/issues/924^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0088783Z ^[[36;1m^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0089151Z ^[[36;1m# The following logic implements the configuration priority described in the README:^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0089584Z ^[[36;1m#^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0089774Z ^[[36;1m# Inputs^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0089992Z ^[[36;1m# Environment Variables^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0090242Z ^[[36;1m# Config File^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0090468Z ^[[36;1m# Defaults^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0090678Z ^[[36;1m#^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0091085Z ^[[36;1m# As noted above defaults are awkward to handle as GitHub Actions will inject those values as the input^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0091771Z ^[[36;1m# if the caller doesn't provide them, thus if the input matches the default we don't set it as we^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0092443Z ^[[36;1m# can't tell the difference.  Plus if we did set it when it was the default value then it could potentially^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0093176Z ^[[36;1m# override an external environment variable, or something in the callers configuration file, which then wouldn't^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0093777Z ^[[36;1m# match the configuration priority that is documented.^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0094126Z ^[[36;1mset_env_var_if_provided() {^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0094397Z ^[[36;1m  local var_name="$1"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0094649Z ^[[36;1m  local input_value="$2"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0094913Z ^[[36;1m  local default_value="$3"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0095155Z ^[[36;1m^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0095633Z ^[[36;1m  if [ -n "$input_value" ] && [ "$input_value" != "$default_value" ]; then^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0096130Z ^[[36;1m    # If action was provided with explicit input by the caller set that^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0096662Z ^[[36;1m    # Use printf %q to safely escape special characters and prevent command injection^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0097190Z ^[[36;1m    printf 'export %s=%q\n' "$var_name" "$input_value" >> trivy_envs.txt^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0097846Z ^[[36;1m  fi^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0098048Z ^[[36;1m}^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0098234Z ^[[36;1m^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0098532Z ^[[36;1m# Set environment variables, handling those with default values^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0099118Z ^[[36;1m# cf. https://aquasecurity.github.io/trivy/latest/docs/configuration/#environment-variables^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0099673Z ^[[36;1mset_env_var_if_provided "TRIVY_INPUT" "$INPUT_INPUT" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0100095Z ^[[36;1mset_env_var_if_provided "TRIVY_EXIT_CODE" "$INPUT_EXIT_CODE" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0100619Z ^[[36;1mset_env_var_if_provided "TRIVY_IGNORE_UNFIXED" "$INPUT_IGNORE_UNFIXED" "false"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0101163Z ^[[36;1mset_env_var_if_provided "TRIVY_PKG_TYPES" "$INPUT_VULN_TYPE" "os,library"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0101759Z ^[[36;1mset_env_var_if_provided "TRIVY_SEVERITY" "$INPUT_SEVERITY" "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0102312Z ^[[36;1mset_env_var_if_provided "TRIVY_FORMAT" "$INPUT_FORMAT" "table"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0102754Z ^[[36;1mset_env_var_if_provided "TRIVY_TEMPLATE" "$INPUT_TEMPLATE" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0103336Z ^[[36;1mset_env_var_if_provided "TRIVY_OUTPUT" "$INPUT_OUTPUT" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0103759Z ^[[36;1mset_env_var_if_provided "TRIVY_SKIP_DIRS" "$INPUT_SKIP_DIRS" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0104208Z ^[[36;1mset_env_var_if_provided "TRIVY_SKIP_FILES" "$INPUT_SKIP_FILES" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0104652Z ^[[36;1mset_env_var_if_provided "TRIVY_TIMEOUT" "$INPUT_TIMEOUT" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0105120Z ^[[36;1mset_env_var_if_provided "TRIVY_IGNORE_POLICY" "$INPUT_IGNORE_POLICY" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0105588Z ^[[36;1mset_env_var_if_provided "TRIVY_QUIET" "$INPUT_HIDE_PROGRESS" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0106070Z ^[[36;1mset_env_var_if_provided "TRIVY_LIST_ALL_PKGS" "$INPUT_LIST_ALL_PKGS" "false"^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0106554Z ^[[36;1mset_env_var_if_provided "TRIVY_SCANNERS" "$INPUT_SCANNERS" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0106984Z ^[[36;1mset_env_var_if_provided "TRIVY_CONFIG" "$INPUT_TRIVY_CONFIG" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0107406Z ^[[36;1mset_env_var_if_provided "TRIVY_TF_VARS" "$INPUT_TF_VARS" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0108167Z ^[[36;1mset_env_var_if_provided "TRIVY_DOCKER_HOST" "$INPUT_DOCKER_HOST" ""^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0127926Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0128298Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0128603Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0129028Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0129472Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0129848Z   INPUT_INPUT: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0130052Z   INPUT_EXIT_CODE: 1
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0130272Z   INPUT_IGNORE_UNFIXED: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0130523Z   INPUT_VULN_TYPE: os,library
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0130774Z   INPUT_SEVERITY: HIGH,CRITICAL
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0131012Z   INPUT_FORMAT: table
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0131237Z   INPUT_TEMPLATE: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0131440Z   INPUT_OUTPUT: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0131638Z   INPUT_SKIP_DIRS: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0131841Z   INPUT_SKIP_FILES: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0132049Z   INPUT_TIMEOUT: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0132249Z   INPUT_IGNORE_POLICY: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0132467Z   INPUT_HIDE_PROGRESS: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0132688Z   INPUT_LIST_ALL_PKGS: false
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0132945Z   INPUT_SCANNERS: vuln,secret,misconfig
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0133215Z   INPUT_TRIVY_CONFIG: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0133422Z   INPUT_TF_VARS: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0133623Z   INPUT_DOCKER_HOST: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0134001Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0188411Z ##[end-action id=__aquasecurity_trivy-action.__run_3;outcome=success;conclusion=success;duration_ms=12]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0193405Z ##[start-action display=Run Trivy;id=__aquasecurity_trivy-action.__run_4]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0219781Z ##[group]Run entrypoint.sh
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0220092Z ^[[36;1mentrypoint.sh^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0240151Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0240529Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0240893Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0241441Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0241927Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0242348Z   INPUT_SCAN_TYPE: fs
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0242591Z   INPUT_IMAGE_REF: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0242819Z   INPUT_SCAN_REF: .
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0243051Z   INPUT_TRIVYIGNORES: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0243297Z   INPUT_GITHUB_PAT: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0243565Z   INPUT_LIMIT_SEVERITIES_FOR_SARIF: 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0243967Z   TRIVY_CACHE_DIR: /home/runner/work/projeto-gpt/projeto-gpt/.cache/trivy
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0244372Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0323399Z Running Trivy with options: trivy fs .
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0942798Z 2026-11-03T01:51:59Z	INFO	[vulndb] Need to update DB
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:51:59.0943671Z 2026-11-03T01:51:59Z	INFO	[vulndb] Downloading vulnerability DB...
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1775582Z 2026-11-03T01:51:59Z	INFO	[vulndb] Downloading artifact...	repo="mirror.gcr.io/aquasec/trivy-db:2"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1789094Z 50.45 MiB / 131.39 MiB [----------------------->____________________________________] 38.40% ? p/s ?116.36 MiB / 131.39 MiB [---------------------------------------------------->______] 88.56% ? p/s ?131.39 MiB / 131.39 MiB [--------------------------------------------------------->] 100.00% ? p/s ?131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 134.72 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 134.72 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 134.72 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 126.03 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 126.03 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 126.03 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 117.89 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 117.89 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 117.89 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 110.29 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 110.29 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 110.29 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 103.17 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 103.17 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [------------------------------------------->] 100.00% 103.17 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [-------------------------------------------->] 100.00% 96.52 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [-------------------------------------------->] 100.00% 96.52 MiB p/s ETA 0s131.39 MiB / 131.39 MiB [-----------------------------------------------] 100.00% 33.45 MiB p/s 4.1s2026-11-03T01:52:04Z	INFO	[vulndb] Artifact successfully downloaded	repo="mirror.gcr.io/aquasec/trivy-db:2"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1805990Z 2026-11-03T01:52:04Z	INFO	[vuln] Vulnerability scanning is enabled
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1806824Z 2026-11-03T01:52:04Z	INFO	[misconfig] Misconfiguration scanning is enabled
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1808338Z 2026-11-03T01:52:04Z	INFO	[checks-client] Need to update the checks bundle
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:04.1813437Z 2026-11-03T01:52:04Z	INFO	[checks-client] Downloading the checks bundle...
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.1505698Z 234.57 KiB / 234.57 KiB [------------------------------------------------------] 100.00% ? p/s 100ms2026-11-03T01:52:06Z	WARN	[rego] Module will be skipped as current version of Trivy is older than minimum trivy version required - please update Trivy to use this module	file_path="home/runner/work/projeto-gpt/projeto-gpt/.cache/trivy/policy/content/policies/cloud/policies/aws/cloudfront/enable_logging.rego" minimum_trivy_version="0.72.0"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.1508742Z 2026-11-03T01:52:06Z	INFO	[secret] Secret scanning is enabled
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.1509623Z 2026-11-03T01:52:06Z	INFO	[secret] If your scanning is slow, please try '--scanners vuln,misconfig' to disable secret scanning
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.1510911Z 2026-11-03T01:52:06Z	INFO	[secret] Please see https://trivy.dev/docs/v0.70/guide/scanner/secret#recommendation for faster secret detection
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4568659Z 2026-11-03T01:52:06Z	INFO	[npm] To collect the license information of packages, "npm install" needs to be performed beforehand	dir="node_modules"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4580436Z 2026-11-03T01:52:06Z	INFO	[npm] To collect the license information of packages, "npm install" needs to be performed beforehand	dir="scripts/admin/node_modules"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4813442Z 2026-11-03T01:52:06Z	INFO	Number of language-specific files	num=2
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4814396Z 2026-11-03T01:52:06Z	INFO	[npm] Detecting vulnerabilities...
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4897172Z 2026-11-03T01:52:06Z	INFO	Detected config files	num=0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4901368Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4901835Z Report Summary
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4902059Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4902825Z ┌─────────────────────────────────┬──────┬─────────────────┬─────────┬───────────────────┐
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4903775Z │             Target              │ Type │ Vulnerabilities │ Secrets │ Misconfigurations │
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4904507Z ├─────────────────────────────────┼──────┼─────────────────┼─────────┼───────────────────┤
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4905335Z │ package-lock.json               │ npm  │        0        │    -    │         -         │
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4906036Z ├─────────────────────────────────┼──────┼─────────────────┼─────────┼───────────────────┤
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4906712Z │ scripts/admin/package-lock.json │ npm  │        0        │    -    │         -         │
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4907695Z └─────────────────────────────────┴──────┴─────────────────┴─────────┴───────────────────┘
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4908273Z Legend:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4908604Z - '-': Not scanned
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4909021Z - '0': Clean (no security findings detected)
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4909383Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4909427Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4917174Z 📣 ^[[34mNotices:^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4918041Z   - Version 0.76.1 of Trivy is now available, current version is 0.70.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4918516Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4918897Z To suppress version checks, run Trivy scans with the --skip-version-check flag
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.4919428Z 
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5071971Z ##[end-action id=__aquasecurity_trivy-action.__run_4;outcome=success;conclusion=success;duration_ms=7487]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5075182Z ##[start-action display=Remove Trivy Envs file;id=__aquasecurity_trivy-action.__run_5]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5096129Z ##[group]Run rm -f trivy_envs.txt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5096426Z ^[[36;1mrm -f trivy_envs.txt^[[0m
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5116251Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5116596Z env:
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5116915Z   NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5117336Z   NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-key
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5118052Z   NEXT_PUBLIC_SUPABASE_PREVIEW_URL: https://ci-placeholder.supabase.co
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5118436Z ##[endgroup]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5179555Z ##[end-action id=__aquasecurity_trivy-action.__run_5;outcome=success;conclusion=success;duration_ms=10]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5433898Z Post job cleanup.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5438103Z ##[start-action display=Install Trivy;id=__882ba7c0-f683-42bb-8f14-4e61c8ddbe70.__aquasecurity_setup-trivy]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5561063Z Post job cleanup.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5564230Z ##[start-action display=Checkout install script;id=__882ba7c0-f683-42bb-8f14-4e61c8ddbe70.__aquasecurity_setup-trivy.__actions_checkout]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.5632706Z Post job cleanup.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.6524271Z ##[end-action id=__882ba7c0-f683-42bb-8f14-4e61c8ddbe70.__aquasecurity_setup-trivy.__actions_checkout;outcome=success;conclusion=success;duration_ms=95]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.6532046Z ##[end-action id=__882ba7c0-f683-42bb-8f14-4e61c8ddbe70.__aquasecurity_setup-trivy;outcome=success;conclusion=success;duration_ms=109]
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.6660751Z Post job cleanup.
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7755528Z [command]/usr/bin/git version
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7788334Z git version 2.56.0
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7832928Z Temporarily overriding HOME='/home/runner/work/_temp/af40a7b4-00db-4391-ba36-531cd496a740' before making global git config changes
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7844401Z Adding repository directory to the temporary git global config as a safe directory
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7861257Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/projeto-gpt/projeto-gpt
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7921276Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.7990121Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.8333808Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.8413943Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.8957981Z Cleaning up orphan processes
+Vulnerabilities, secrets and configuration	UNKNOWN STEP	2026-11-03T01:52:06.9328413Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

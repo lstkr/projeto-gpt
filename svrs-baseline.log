@@ -1,0 +1,1860 @@
+TAP version 13
+# Subtest: profile dropdown links to settings and closes the dropdown
+ok 1 - profile dropdown links to settings and closes the dropdown
+  ---
+  duration_ms: 1.1031
+  ...
+# Subtest: account settings reuse protected management component for both roles
+ok 2 - account settings reuse protected management component for both roles
+  ---
+  duration_ms: 0.2268
+  ...
+# Subtest: signed-in user may change own password with explicit confirmation
+ok 3 - signed-in user may change own password with explicit confirmation
+  ---
+  duration_ms: 0.2337
+  ...
+# Subtest: manager can reach employee reset, establishment and employee creation with server-side RPCs
+ok 4 - manager can reach employee reset, establishment and employee creation with server-side RPCs
+  ---
+  duration_ms: 0.2141
+  ...
+# Subtest: aceita conexão direta e session pooler na porta 5432 com TLS feito pelo cliente
+ok 5 - aceita conexão direta e session pooler na porta 5432 com TLS feito pelo cliente
+  ---
+  duration_ms: 10.0489
+  ...
+# Subtest: rejeita cada formato de destino com mensagem específica
+ok 6 - rejeita cada formato de destino com mensagem específica
+  ---
+  duration_ms: 1.4948
+  ...
+# Subtest: classifica falhas de senha, TLS, rede, migração e estado do bootstrap sem expor exceções
+ok 7 - classifica falhas de senha, TLS, rede, migração e estado do bootstrap sem expor exceções
+  ---
+  duration_ms: 0.9176
+  ...
+# Subtest: URL com caracteres de senha sem codificação gera mensagem segura
+ok 8 - URL com caracteres de senha sem codificação gera mensagem segura
+  ---
+  duration_ms: 0.5087
+  ...
+# Subtest: pipe protegido preserva UTF-8 fragmentado e delimitadores sem leitura raw do terminal
+ok 9 - pipe protegido preserva UTF-8 fragmentado e delimitadores sem leitura raw do terminal
+  ---
+  duration_ms: 18.1008
+  ...
+# Subtest: iniciador Windows entrega URI ao Node e recusa confirmação antes de conectar
+ok 10 - iniciador Windows entrega URI ao Node e recusa confirmação antes de conectar
+  ---
+  duration_ms: 2335.2522
+  ...
+# Subtest: pipe vazio, JSON truncado, campos ausentes e payload excessivo falham sem expor conteúdo
+ok 11 - pipe vazio, JSON truncado, campos ausentes e payload excessivo falham sem expor conteúdo
+  ---
+  duration_ms: 3.7813
+  ...
+# Subtest: logs já protegidos permitem prosseguir sem exigir SET privilegiado
+ok 12 - logs já protegidos permitem prosseguir sem exigir SET privilegiado
+  ---
+  duration_ms: 14.7968
+  ...
+# Subtest: configuração insegura ou incompleta bloqueia o bootstrap sem tentar alterar permissões
+ok 13 - configuração insegura ou incompleta bloqueia o bootstrap sem tentar alterar permissões
+  ---
+  duration_ms: 1.1697
+  ...
+# Subtest: falhas anteriores à transação não tentam rollback nem executam a operação
+ok 14 - falhas anteriores à transação não tentam rollback nem executam a operação
+  ---
+  duration_ms: 26.1135
+  ...
+# Subtest: falha após BEGIN reverte e preserva o erro original mesmo se rollback falhar
+ok 15 - falha após BEGIN reverte e preserva o erro original mesmo se rollback falhar
+  ---
+  duration_ms: 0.8157
+  ...
+# Subtest: operação bem-sucedida confirma a transação sem rollback
+ok 16 - operação bem-sucedida confirma a transação sem rollback
+  ---
+  duration_ms: 1.7272
+  ...
+# Subtest: falha no COMMIT preserva o erro e tenta rollback sem atestar ausência da conta
+ok 17 - falha no COMMIT preserva o erro e tenta rollback sem atestar ausência da conta
+  ---
+  duration_ms: 0.5869
+  ...
+# Subtest: protection enforces PR checks, no bypass, linear history
+ok 18 - protection enforces PR checks, no bypass, linear history
+  ---
+  duration_ms: 1.8719
+  ...
+# Subtest: matrix check names are unique and declared for PostgreSQL 15/17
+ok 19 - matrix check names are unique and declared for PostgreSQL 15/17
+  ---
+  duration_ms: 3.8458
+  ...
+# Subtest: admin change requires explicit --apply and gh auth
+ok 20 - admin change requires explicit --apply and gh auth
+  ---
+  duration_ms: 0.9487
+  ...
+# Subtest: gráfico não exibe valores monetários sobre cada barra
+ok 21 - gráfico não exibe valores monetários sobre cada barra
+  ---
+  duration_ms: 1.853
+  ...
+# Subtest: gráfico conserva todos os dias, inclusive dias sem fechamento
+ok 22 - gráfico conserva todos os dias, inclusive dias sem fechamento
+  ---
+  duration_ms: 0.2355
+  ...
+# Subtest: inspeção por mouse e foco sem mudar valores ou acesso ao detalhamento
+ok 23 - inspeção por mouse e foco sem mudar valores ou acesso ao detalhamento
+  ---
+  duration_ms: 0.448
+  ...
+# Subtest: fechamento do PDF: faturamento 569 não inclui movimentações
+ok 24 - fechamento do PDF: faturamento 569 não inclui movimentações
+  ---
+  duration_ms: 8.351
+  ...
+# Subtest: dinheiro de vendas afeta faturamento mas suprimento nao
+ok 25 - dinheiro de vendas afeta faturamento mas suprimento nao
+  ---
+  duration_ms: 0.498
+  ...
+# Subtest: agrupa fechamentos diários do mesmo mês e vários caixas
+ok 26 - agrupa fechamentos diários do mesmo mês e vários caixas
+  ---
+  duration_ms: 15.0193
+  ...
+# Subtest: rejeita movimentações sem motivo e valores inválidos
+ok 27 - rejeita movimentações sem motivo e valores inválidos
+  ---
+  duration_ms: 2.4621
+  ...
+# Subtest: dinheiro contado é obrigatório e aceita zero explícito
+ok 28 - dinheiro contado é obrigatório e aceita zero explícito
+  ---
+  duration_ms: 0.6429
+  ...
+# Subtest: sangria do encerramento é ignorada, retirada operacional segue contabilizada
+ok 29 - sangria do encerramento é ignorada, retirada operacional segue contabilizada
+  ---
+  duration_ms: 0.4162
+  ...
+# Subtest: agrupa fechamento anual por data
+ok 30 - agrupa fechamento anual por data
+  ---
+  duration_ms: 0.4889
+  ...
+# Subtest: day detail has independent register cards and a responsive two-column payment grid
+ok 31 - day detail has independent register cards and a responsive two-column payment grid
+  ---
+  duration_ms: 1.2378
+  ...
+# Subtest: PDF.js text runs with no hasEOL reconstruct rows for cash revenue
+ok 32 - PDF.js text runs with no hasEOL reconstruct rows for cash revenue
+  ---
+  duration_ms: 14.1892
+  ...
+# Subtest: PDF text EOL is honored even without coordinates
+ok 33 - PDF text EOL is honored even without coordinates
+  ---
+  duration_ms: 0.509
+  ...
+# Subtest: missing payment amounts stay zero but import warns instead of guessing
+ok 34 - missing payment amounts stay zero but import warns instead of guessing
+  ---
+  duration_ms: 0.8965
+  ...
+# Subtest: file signature detection rejects mislabeled files and accepts supported formats
+ok 35 - file signature detection rejects mislabeled files and accepts supported formats
+  ---
+  duration_ms: 3.9549
+  ...
+# Subtest: fiscal intake is not blocked by a pending review and reports real batch completion
+ok 36 - fiscal intake is not blocked by a pending review and reports real batch completion
+  ---
+  duration_ms: 2.1446
+  ...
+# Subtest: PDF 1501: detecta vendas uma vez e ignora sangria usada apenas no fechamento
+ok 37 - PDF 1501: detecta vendas uma vez e ignora sangria usada apenas no fechamento
+  ---
+  duration_ms: 12.0261
+  ...
+# Subtest: inconsistência de total fiscal cria alerta
+ok 38 - inconsistência de total fiscal cria alerta
+  ---
+  duration_ms: 0.8353
+  ...
+# Subtest: ignora valores duplicados na seção caixa digital
+ok 39 - ignora valores duplicados na seção caixa digital
+  ---
+  duration_ms: 0.3098
+  ...
+# Subtest: PDF real: valores antes das modalidades NFC-e, PIX e dinheiro de vendas
+ok 40 - PDF real: valores antes das modalidades NFC-e, PIX e dinheiro de vendas
+  ---
+  duration_ms: 6.0831
+  ...
+# Subtest: PIX e Outras coexistentes devem somar e não sobrescrever valores
+ok 41 - PIX e Outras coexistentes devem somar e não sobrescrever valores
+  ---
+  duration_ms: 0.4404
+  ...
+# Subtest: não duplicar faturamento pela tabela do caixa digital
+ok 42 - não duplicar faturamento pela tabela do caixa digital
+  ---
+  duration_ms: 0.1837
+  ...
+# Subtest: roteiro só contém as instruções destrutivas autorizadas
+ok 43 - roteiro só contém as instruções destrutivas autorizadas
+  ---
+  duration_ms: 27.8776
+  ...
+# Subtest: scanner veta DROP fora da allowlist e DROP CASCADE com arquivo e linha
+ok 44 - scanner veta DROP fora da allowlist e DROP CASCADE com arquivo e linha
+  ---
+  duration_ms: 0.3349
+  ...
+# Subtest: scanner veta TRUNCATE, DELETE sem WHERE e cascata adicional
+ok 45 - scanner veta TRUNCATE, DELETE sem WHERE e cascata adicional
+  ---
+  duration_ms: 0.2245
+  ...
+# Subtest: scanner também veta DELETE sem WHERE no fim de arquivo sem ponto e vírgula
+ok 46 - scanner também veta DELETE sem WHERE no fim de arquivo sem ponto e vírgula
+  ---
+  duration_ms: 0.154
+  ...
+# Subtest: scanner aceita DELETE limitado e ignora palavras em comentários e strings
+ok 47 - scanner aceita DELETE limitado e ignora palavras em comentários e strings
+  ---
+  duration_ms: 0.2941
+  ...
+# Subtest: executável recusa outro ref remoto antes de solicitar credenciais ou conectar
+ok 48 - executável recusa outro ref remoto antes de solicitar credenciais ou conectar
+  ---
+  duration_ms: 312.8047
+  ...
+# Subtest: migrações transacionais mantêm somente um wrapper externo por arquivo
+ok 49 - migrações transacionais mantêm somente um wrapper externo por arquivo
+  ---
+  duration_ms: 186.4806
+  ...
+# Subtest: session pooler exige porta de sessão e usuário vinculado ao ref confirmado
+ok 50 - session pooler exige porta de sessão e usuário vinculado ao ref confirmado
+  ---
+  duration_ms: 110.169
+  ...
+# Subtest: retomada aceita apenas prefixo coerente do ledger e retorna pendências
+ok 51 - retomada aceita apenas prefixo coerente do ledger e retorna pendências
+  ---
+  duration_ms: 100.2838
+  ...
+# Subtest: preflight executa somente consultas e imprime o plano sem iniciar instalação
+ok 52 - preflight executa somente consultas e imprime o plano sem iniciar instalação
+  ---
+  duration_ms: 461.7325
+  ...
+# Subtest: CMV uses historical cent values, not floating prices
+ok 53 - CMV uses historical cent values, not floating prices
+  ---
+  duration_ms: 18.3724
+  ...
+# Subtest: missing historical snapshots must never become zero
+ok 54 - missing historical snapshots must never become zero
+  ---
+  duration_ms: 0.5713
+  ...
+# Subtest: unknown revenue or zero revenue does not invent a CMV percentage
+ok 55 - unknown revenue or zero revenue does not invent a CMV percentage
+  ---
+  duration_ms: 0.2694
+  ...
+# Subtest: returns/refunds may make purchases net negative, producing explicit review
+ok 56 - returns/refunds may make purchases net negative, producing explicit review
+  ---
+  duration_ms: 0.234
+  ...
+# Subtest: basis points round half-up without floating point loss
+ok 57 - basis points round half-up without floating point loss
+  ---
+  duration_ms: 0.1886
+  ...
+# Subtest: reject fractional/invalid/unsafe cents instead of silently truncating
+ok 58 - reject fractional/invalid/unsafe cents instead of silently truncating
+  ---
+  duration_ms: 1.0522
+  ...
+# Subtest: blind printable sheet excludes stock, costs and checked quantities even for manager
+ok 59 - blind printable sheet excludes stock, costs and checked quantities even for manager
+  ---
+  duration_ms: 22.7318
+  ...
+# Subtest: only manager can create finalized count difference report
+ok 60 - only manager can create finalized count difference report
+  ---
+  duration_ms: 1.5236
+  ...
+# Subtest: historical quantity absence stays unknown; never becomes zero
+ok 61 - historical quantity absence stays unknown; never becomes zero
+  ---
+  duration_ms: 0.7676
+  ...
+# Subtest: reject unexpected formats, modes and unsafe catalog input
+ok 62 - reject unexpected formats, modes and unsafe catalog input
+  ---
+  duration_ms: 0.4614
+  ...
+# Subtest: blind print is genuinely blind, white-lists content and never changes stock
+ok 63 - blind print is genuinely blind, white-lists content and never changes stock
+  ---
+  duration_ms: 59.4017
+  ...
+# Subtest: difference report shows counted/expected and signed deviation, but no cost
+ok 64 - difference report shows counted/expected and signed deviation, but no cost
+  ---
+  duration_ms: 5.1539
+  ...
+# Subtest: thermal widths 58 and 80 use separate page sizes and short fonts
+ok 65 - thermal widths 58 and 80 use separate page sizes and short fonts
+  ---
+  duration_ms: 0.918
+  ...
+# Subtest: every untrusted field is escaped, no inline executable elements
+ok 66 - every untrusted field is escaped, no inline executable elements
+  ---
+  duration_ms: 0.7217
+  ...
+# Subtest: invalid paper, mode, huge items or time rejects early
+ok 67 - invalid paper, mode, huge items or time rejects early
+  ---
+  duration_ms: 0.6905
+  ...
+# Subtest: fractional units incompatible with precision require review rather than truncation
+ok 68 - fractional units incompatible with precision require review rather than truncation
+  ---
+  duration_ms: 1.0076
+  ...
+# Subtest: thermal reconciliation keeps full-width product name and stacked values
+ok 69 - thermal reconciliation keeps full-width product name and stacked values
+  ---
+  duration_ms: 0.7514
+  ...
+# Subtest: normaliza zeros apenas em partes numericas, preservando prefixos
+ok 70 - normaliza zeros apenas em partes numericas, preservando prefixos
+  ---
+  duration_ms: 9.6663
+  ...
+# Subtest: identifica SKU 00123 e 123 com descricao semelhante e unidade igual
+ok 71 - identifica SKU 00123 e 123 com descricao semelhante e unidade igual
+  ---
+  duration_ms: 1.6267
+  ...
+# Subtest: detecta mesmo codigo do fornecedor em suas duas grafias
+ok 72 - detecta mesmo codigo do fornecedor em suas duas grafias
+  ---
+  duration_ms: 0.9378
+  ...
+# Subtest: nao usa codigo identico de fornecedores distintos como prova
+ok 73 - nao usa codigo identico de fornecedores distintos como prova
+  ---
+  duration_ms: 1.4273
+  ...
+# Subtest: aponta possivel erro no codigo somente se descricao sustentar
+ok 74 - aponta possivel erro no codigo somente se descricao sustentar
+  ---
+  duration_ms: 0.5111
+  ...
+# Subtest: nomes semelhantes com codigos distintos exigem analise humana
+ok 75 - nomes semelhantes com codigos distintos exigem analise humana
+  ---
+  duration_ms: 0.5124
+  ...
+# Subtest: embalagens distintas e unidades diferentes nao sao alta confianca
+ok 76 - embalagens distintas e unidades diferentes nao sao alta confianca
+  ---
+  duration_ms: 4.3892
+  ...
+# Subtest: nao confunde nomes semelhantes com volumes diferentes sem codigo equivalente
+ok 77 - nao confunde nomes semelhantes com volumes diferentes sem codigo equivalente
+  ---
+  duration_ms: 0.4255
+  ...
+# Subtest: ignora sku automatico e nao altera os produtos originais
+ok 78 - ignora sku automatico e nao altera os produtos originais
+  ---
+  duration_ms: 0.8087
+  ...
+# Subtest: auditora item candidato sem inserir ou fundir saldos
+ok 79 - auditora item candidato sem inserir ou fundir saldos
+  ---
+  duration_ms: 0.7208
+  ...
+# Subtest: foto real do catalogo: encontra bobina e os dois sacos apesar do OCR corrompido
+ok 80 - foto real do catalogo: encontra bobina e os dois sacos apesar do OCR corrompido
+  ---
+  duration_ms: 4.3327
+  ...
+# Subtest: alias da consolidacao permite reconhecer codigo secundario antigo
+ok 81 - alias da consolidacao permite reconhecer codigo secundario antigo
+  ---
+  duration_ms: 0.2069
+  ...
+# Subtest: um conflito de codigo com texto sem sentido aparece para revisao, nao para auto-fusao
+ok 82 - um conflito de codigo com texto sem sentido aparece para revisao, nao para auto-fusao
+  ---
+  duration_ms: 0.2198
+  ...
+# Subtest: lista por confiança antes de semelhança tanto para candidato quanto para catálogo
+ok 83 - lista por confiança antes de semelhança tanto para candidato quanto para catálogo
+  ---
+  duration_ms: 0.3092
+  ...
+# Subtest: missing or malformed session is rejected without contacting Supabase
+ok 84 - missing or malformed session is rejected without contacting Supabase
+  ---
+  duration_ms: 10.5259
+  ...
+# Subtest: expired or revoked native session is rejected by the RPC
+not ok 85 - expired or revoked native session is rejected by the RPC
+  ---
+  duration_ms: 2.5331
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-api-session.test.cjs:30:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    503 !== 401
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 503
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-api-session.test.cjs:44:10)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: Supabase outage returns 503 rather than exposing internal errors
+ok 86 - Supabase outage returns 503 rather than exposing internal errors
+  ---
+  duration_ms: 0.498
+  ...
+# Subtest: active native sessions use only the lightweight RPC without returning data or caching
+not ok 87 - active native sessions use only the lightweight RPC without returning data or caching
+  ---
+  duration_ms: 0.4993
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-api-session.test.cjs:61:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-api-session.test.cjs:77:12)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: RPC absence and database errors fail closed with no inventory fallback or leaks
+not ok 88 - RPC absence and database errors fail closed with no inventory fallback or leaks
+  ---
+  duration_ms: 0.9488
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-api-session.test.cjs:84:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+    + []
+    - [
+    -   'inventory_validate_session'
+    - ]
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'inventory_validate_session'
+  actual:
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-api-session.test.cjs:98:12)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: malformed or legacy RPC responses are unavailable, never authenticated
+ok 89 - malformed or legacy RPC responses are unavailable, never authenticated
+  ---
+  duration_ms: 0.8808
+  ...
+# Subtest: both fiscal routes enforce session checks before making external requests
+ok 90 - both fiscal routes enforce session checks before making external requests
+  ---
+  duration_ms: 26.9867
+  ...
+# Subtest: issuer recognition validates checksum and never selects recipient or ambiguous header
+ok 91 - issuer recognition validates checksum and never selects recipient or ambiguous header
+  ---
+  duration_ms: 8.958
+  ...
+# Subtest: supplier code match requires valid issuer and a unique catalog target
+ok 92 - supplier code match requires valid issuer and a unique catalog target
+  ---
+  duration_ms: 0.6005
+  ...
+# Subtest: draft uses existing supplier and standard name while preserving source and manual edits
+ok 93 - draft uses existing supplier and standard name while preserving source and manual edits
+  ---
+  duration_ms: 1.0686
+  ...
+# Subtest: conversion supports equivalent physical units and requires an explicit factor for packages
+ok 94 - conversion supports equivalent physical units and requires an explicit factor for packages
+  ---
+  duration_ms: 1.0676
+  ...
+# Subtest: each incoming receipt line gets a stable non-numeric ID
+ok 95 - each incoming receipt line gets a stable non-numeric ID
+  ---
+  duration_ms: 20.9559
+  ...
+# Subtest: review never transfers after deletion, reorder, insert or replacement
+ok 96 - review never transfers after deletion, reorder, insert or replacement
+  ---
+  duration_ms: 1.4802
+  ...
+# Subtest: editing code, unit, quantities, costs or associations invalidates review
+ok 97 - editing code, unit, quantities, costs or associations invalidates review
+  ---
+  duration_ms: 0.6303
+  ...
+# Subtest: legacy index flags and duplicate line identifiers cannot unlock confirmation
+ok 98 - legacy index flags and duplicate line identifiers cannot unlock confirmation
+  ---
+  duration_ms: 1.1211
+  ...
+# Subtest: the rendered form uses lineId rather than array indexes as approval keys
+ok 99 - the rendered form uses lineId rather than array indexes as approval keys
+  ---
+  duration_ms: 7.0291
+  ...
+# Subtest: changing issuer invalidates every fiscal line approval
+ok 100 - changing issuer invalidates every fiscal line approval
+  ---
+  duration_ms: 0.3237
+  ...
+# Subtest: rate limit is allowed with valid RPC response
+not ok 101 - rate limit is allowed with valid RPC response
+  ---
+  duration_ms: 13.1899
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-rate-limit.test.cjs:13:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-rate-limit.test.cjs:23:10)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: rate limit denies quota with HTTP 429 and Retry-After
+not ok 102 - rate limit denies quota with HTTP 429 and Retry-After
+  ---
+  duration_ms: 1.3408
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-rate-limit.test.cjs:27:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    503 !== 429
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 429
+  actual: 503
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-rate-limit.test.cjs:32:10)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: invalid session, missing rpc and unknown endpoint fail closed
+ok 103 - invalid session, missing rpc and unknown endpoint fail closed
+  ---
+  duration_ms: 0.3441
+  ...
+# Subtest: anonymous session error returns 401 and does not expose tokens
+not ok 104 - anonymous session error returns 401 and does not expose tokens
+  ---
+  duration_ms: 0.4709
+  location: 'C:\\Dev\\projeto-gpt\\tests\\fiscal-rate-limit.test.cjs:49:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    503 !== 401
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 401
+  actual: 503
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\fiscal-rate-limit.test.cjs:54:10)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: importação de notas aparece antes da fila de conferência
+ok 105 - importação de notas aparece antes da fila de conferência
+  ---
+  duration_ms: 2.0089
+  ...
+# Subtest: SEFAZ precede dados do fornecedor e conferência dos itens
+ok 106 - SEFAZ precede dados do fornecedor e conferência dos itens
+  ---
+  duration_ms: 0.8205
+  ...
+# Subtest: QR expõe chave apenas no cartão identificado, com edição sob demanda
+ok 107 - QR expõe chave apenas no cartão identificado, com edição sob demanda
+  ---
+  duration_ms: 0.5749
+  ...
+# Subtest: processamento compacto aparece acima da fila e integra OCR
+ok 108 - processamento compacto aparece acima da fila e integra OCR
+  ---
+  duration_ms: 0.2919
+  ...
+# Subtest: notas prontas ficam disponíveis para conferência durante OCR de outras notas
+ok 109 - notas prontas ficam disponíveis para conferência durante OCR de outras notas
+  ---
+  duration_ms: 0.6012
+  ...
+# Subtest: conversão de unidades usa fator explícito e pode ser salva por fornecedor e código
+ok 110 - conversão de unidades usa fator explícito e pode ser salva por fornecedor e código
+  ---
+  duration_ms: 0.2562
+  ...
+# Subtest: mobile alerts keep text-only critical actions readable
+ok 111 - mobile alerts keep text-only critical actions readable
+  ---
+  duration_ms: 1.8844
+  ...
+# Subtest: all navigation entries preserve an accessible name when sidebar labels are hidden
+ok 112 - all navigation entries preserve an accessible name when sidebar labels are hidden
+  ---
+  duration_ms: 0.4357
+  ...
+# Subtest: operational dialogs have accessible titles and close controls
+ok 113 - operational dialogs have accessible titles and close controls
+  ---
+  duration_ms: 0.787
+  ...
+# Subtest: dialog keyboard lifecycle handles Escape, Tab, focus return and background isolation
+ok 114 - dialog keyboard lifecycle handles Escape, Tab, focus return and background isolation
+  ---
+  duration_ms: 0.2012
+  ...
+# Subtest: critical icon-only product actions and notification close carry accessible labels
+ok 115 - critical icon-only product actions and notification close carry accessible labels
+  ---
+  duration_ms: 0.347
+  ...
+# Subtest: invoice details cannot close through Escape, backdrop, X or footer during deletion
+ok 116 - invoice details cannot close through Escape, backdrop, X or footer during deletion
+  ---
+  duration_ms: 0.4323
+  ...
+# Subtest: manager settings remain available via profile while sidebar has no duplicate entry
+ok 117 - manager settings remain available via profile while sidebar has no duplicate entry
+  ---
+  duration_ms: 0.3141
+  ...
+# Subtest: settings keep manager workflows and hide manager tools from employee accounts
+ok 118 - settings keep manager workflows and hide manager tools from employee accounts
+  ---
+  duration_ms: 1.7063
+  ...
+# Subtest: permissions move into the manager profile menu without changing their page
+ok 119 - permissions move into the manager profile menu without changing their page
+  ---
+  duration_ms: 0.6995
+  ...
+# Subtest: Seven verified real grocery items: ingredients, weight, pot vs pack, printed totals
+ok 120 - Seven verified real grocery items: ingredients, weight, pot vs pack, printed totals
+  ---
+  duration_ms: 8.9765
+  ...
+# Subtest: Pote (PT) must not be treated as unit (UN) or pacote (PCT)
+ok 121 - Pote (PT) must not be treated as unit (UN) or pacote (PCT)
+  ---
+  duration_ms: 0.2576
+  ...
+# Subtest: Public grocery invoice 1 full fiscal reconciliation
+ok 122 - Public grocery invoice 1 full fiscal reconciliation
+  ---
+  duration_ms: 9.4663
+  ...
+# Subtest: Public grocery invoice 2 full fiscal reconciliation
+ok 123 - Public grocery invoice 2 full fiscal reconciliation
+  ---
+  duration_ms: 3.2436
+  ...
+# Subtest: Non-stock charges are preserved for fiscal totals but excluded from physical inventory
+ok 124 - Non-stock charges are preserved for fiscal totals but excluded from physical inventory
+  ---
+  duration_ms: 0.9356
+  ...
+# OK: aaaaaaaa originated from a merged main pull request
+# Subtest: accept merged pull request targeting main
+ok 125 - accept merged pull request targeting main
+  ---
+  duration_ms: 0.8611
+  ...
+# Subtest: reject open PR, wrong branch and commits with no PR
+ok 126 - reject open PR, wrong branch and commits with no PR
+  ---
+  duration_ms: 0.1738
+  ...
+# Subtest: API validates original PR association
+ok 127 - API validates original PR association
+  ---
+  duration_ms: 1.1012
+  ...
+# Subtest: direct commits fail closed
+ok 128 - direct commits fail closed
+  ---
+  duration_ms: 0.6807
+  ...
+# Subtest: provider failure cannot be mistaken for a clean push
+ok 129 - provider failure cannot be mistaken for a clean push
+  ---
+  duration_ms: 0.4307
+  ...
+# Subtest: abertura do formulário foca o primeiro campo disponível e permite rolar até ele
+ok 130 - abertura do formulário foca o primeiro campo disponível e permite rolar até ele
+  ---
+  duration_ms: 12.4371
+  ...
+# Subtest: navegação sem formulário foca título programaticamente, sem adicioná-lo ao Tab
+ok 131 - navegação sem formulário foca título programaticamente, sem adicioná-lo ao Tab
+  ---
+  duration_ms: 0.7596
+  ...
+# Subtest: diálogo aberto ou fundo inerte preservam foco do fluxo modal existente
+ok 132 - diálogo aberto ou fundo inerte preservam foco do fluxo modal existente
+  ---
+  duration_ms: 0.2396
+  ...
+# Subtest: formulário sem campos disponíveis usa título e renderização sem main é segura
+ok 133 - formulário sem campos disponíveis usa título e renderização sem main é segura
+  ---
+  duration_ms: 0.3428
+  ...
+# Subtest: pending confirmation waits for the exact acknowledged revision
+ok 134 - pending confirmation waits for the exact acknowledged revision
+  ---
+  duration_ms: 12.8346
+  ...
+# Subtest: never auto-post after edits, note switch, or failed autosave
+ok 135 - never auto-post after edits, note switch, or failed autosave
+  ---
+  duration_ms: 0.3909
+  ...
+# Subtest: production confirmation UI integrates pending ack with one-click flow
+ok 136 - production confirmation UI integrates pending ack with one-click flow
+  ---
+  duration_ms: 2.5453
+  ...
+# Subtest: acl is deny-by-default for unknown permissions and inactive users
+ok 137 - acl is deny-by-default for unknown permissions and inactive users
+  ---
+  duration_ms: 1.1685
+  ...
+# Subtest: user cannot grant own permissions and role is validated in SQL
+ok 138 - user cannot grant own permissions and role is validated in SQL
+  ---
+  duration_ms: 0.3302
+  ...
+# Subtest: pending receipt RPCs enforce server-side permission checks
+ok 139 - pending receipt RPCs enforce server-side permission checks
+  ---
+  duration_ms: 0.8977
+  ...
+# Subtest: admin configuration uses server-derived identity and audit trail
+ok 140 - admin configuration uses server-derived identity and audit trail
+  ---
+  duration_ms: 0.4702
+  ...
+# Subtest: frontend permissions come from server and cannot substitute for authorization
+ok 141 - frontend permissions come from server and cannot substitute for authorization
+  ---
+  duration_ms: 0.482
+  ...
+# Subtest: a Vercel Preview with production or missing Supabase variables is rejected before session validation
+ok 142 - a Vercel Preview with production or missing Supabase variables is rejected before session validation
+  ---
+  duration_ms: 14.9948
+  ...
+# Subtest: UI and Next build environment include a fail-closed Preview gate
+ok 143 - UI and Next build environment include a fail-closed Preview gate
+  ---
+  duration_ms: 2.9756
+  ...
+# Subtest: preview exige destino explícito, válido e igual ao configurado
+ok 144 - preview exige destino explícito, válido e igual ao configurado
+  ---
+  duration_ms: 7.5753
+  ...
+# Subtest: preview autorizado ainda exige sessão nativa válida
+ok 145 - preview autorizado ainda exige sessão nativa válida
+  ---
+  duration_ms: 5.6493
+  ...
+# Subtest: build includes Preview policy without putting credentials in Next configuration
+ok 146 - build includes Preview policy without putting credentials in Next configuration
+  ---
+  duration_ms: 2.2049
+  ...
+# Subtest: private real-image catalog has unique 13 photos and minimum 14 independent documents
+ok 147 - private real-image catalog has unique 13 photos and minimum 14 independent documents
+  ---
+  duration_ms: 2.3967
+  ...
+# Subtest: all ten old golden photo references exist; three new photos await validated goldens
+ok 148 - all ten old golden photo references exist; three new photos await validated goldens
+  ---
+  duration_ms: 1.2768
+  ...
+# Subtest: each entry has immutable source fingerprint and safe private path
+ok 149 - each entry has immutable source fingerprint and safe private path
+  ---
+  duration_ms: 0.6399
+  ...
+# Subtest: purchase print uses replenishment, category subtotals and partial price warning
+ok 150 - purchase print uses replenishment, category subtotals and partial price warning
+  ---
+  duration_ms: 46.9249
+  ...
+# Subtest: purchase print escapes untrusted catalog values instead of executing markup
+ok 151 - purchase print escapes untrusted catalog values instead of executing markup
+  ---
+  duration_ms: 0.7938
+  ...
+# Subtest: nota antiga do mesmo fornecedor e nome vincula produto sem criar cadastro
+ok 152 - nota antiga do mesmo fornecedor e nome vincula produto sem criar cadastro
+  ---
+  duration_ms: 11.8587
+  ...
+# Subtest: fornecedores com CNPJ diferente nao cruzam notas
+ok 153 - fornecedores com CNPJ diferente nao cruzam notas
+  ---
+  duration_ms: 1.2874
+  ...
+# Subtest: historico sem CNPJ ou com vinculos conflitantes nunca associa automaticamente
+ok 154 - historico sem CNPJ ou com vinculos conflitantes nunca associa automaticamente
+  ---
+  duration_ms: 0.404
+  ...
+# Subtest: OCR com mesmo codigo mas nome ilegivel exige revisao
+ok 155 - OCR com mesmo codigo mas nome ilegivel exige revisao
+  ---
+  duration_ms: 0.4197
+  ...
+# Subtest: sem vinculo inequívoco no documento antigo nao inventa productId
+ok 156 - sem vinculo inequívoco no documento antigo nao inventa productId
+  ---
+  duration_ms: 0.2822
+  ...
+# Subtest: media historica ponderada por quantidade e lista categoria, fornecedor e subtotal
+ok 157 - media historica ponderada por quantidade e lista categoria, fornecedor e subtotal
+  ---
+  duration_ms: 16.9566
+  ...
+# Subtest: fornecedor costumeiro pode ser indicado manualmente
+ok 158 - fornecedor costumeiro pode ser indicado manualmente
+  ---
+  duration_ms: 0.2169
+  ...
+# Subtest: compras realizadas agrupadas por CNPJ sem misturar fornecedores
+ok 159 - compras realizadas agrupadas por CNPJ sem misturar fornecedores
+  ---
+  duration_ms: 0.4225
+  ...
+# Subtest: Rio Sul: preserves line-level discount and fiscal gross/net totals
+ok 160 - Rio Sul: preserves line-level discount and fiscal gross/net totals
+  ---
+  duration_ms: 5.7631
+  ...
+# Subtest: Cia da Fruta: numbered item is not mistaken for product code and integer quantity is read
+ok 161 - Cia da Fruta: numbered item is not mistaken for product code and integer quantity is read
+  ---
+  duration_ms: 0.4901
+  ...
+# Subtest: Cia da Fruta: right-aligned total on description row is reconciled
+ok 162 - Cia da Fruta: right-aligned total on description row is reconciled
+  ---
+  duration_ms: 0.3071
+  ...
+# Subtest: Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns
+ok 163 - Cia da Fruta: one-line OCR with item index, name, quantity and monetary columns
+  ---
+  duration_ms: 0.243
+  ...
+# Subtest: Without numbered item column, the first code is still the fiscal product code
+ok 164 - Without numbered item column, the first code is still the fiscal product code
+  ---
+  duration_ms: 0.3477
+  ...
+# Subtest: Rudi Bonow: preserves printed manjericão ML for supervisor review
+ok 165 - Rudi Bonow: preserves printed manjericão ML for supervisor review
+  ---
+  duration_ms: 0.382
+  ...
+# Subtest: Two separate fiscal rows with the same code are never collapsed
+ok 166 - Two separate fiscal rows with the same code are never collapsed
+  ---
+  duration_ms: 2.0949
+  ...
+# Subtest: Different fiscal units never count as matching, even at the same price
+ok 167 - Different fiscal units never count as matching, even at the same price
+  ---
+  duration_ms: 0.5459
+  ...
+# Subtest: Normalized aliases are equivalent, without converting different dimensions
+ok 168 - Normalized aliases are equivalent, without converting different dimensions
+  ---
+  duration_ms: 0.2629
+  ...
+# Subtest: Conflicting OCR totals produce an alert instead of selecting the closest
+ok 169 - Conflicting OCR totals produce an alert instead of selecting the closest
+  ---
+  duration_ms: 0.4005
+  ...
+# Subtest: Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 30,90
+ok 170 - Public café: Figueira e Gusmão (Câmara dos Deputados), two items = R$ 30,90
+  ---
+  duration_ms: 0.4739
+  ...
+# Subtest: Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50
+ok 171 - Public café: BSB Aero (Senado), pingado and empanada = R$ 34,50
+  ---
+  duration_ms: 0.2893
+  ...
+# Subtest: Public café: Caramella (Câmara), preserves zero-cost entries and tip
+ok 172 - Public café: Caramella (Câmara), preserves zero-cost entries and tip
+  ---
+  duration_ms: 0.4708
+  ...
+# Subtest: Leading zeros and numeric code zero preserve original spelling and match once
+ok 173 - Leading zeros and numeric code zero preserve original spelling and match once
+  ---
+  duration_ms: 0.4389
+  ...
+# Subtest: Different nonempty codes are never merged by identical descriptions
+ok 174 - Different nonempty codes are never merged by identical descriptions
+  ---
+  duration_ms: 0.2053
+  ...
+# Subtest: Repeated identical fiscal rows survive both readings, including an extra occurrence
+ok 175 - Repeated identical fiscal rows survive both readings, including an extra occurrence
+  ---
+  duration_ms: 0.1878
+  ...
+# Subtest: Rows without codes match by description without collapsing repeated purchases
+ok 176 - Rows without codes match by description without collapsing repeated purchases
+  ---
+  duration_ms: 0.2539
+  ...
+# Subtest: Empty names and absent codes cannot establish product identity
+ok 177 - Empty names and absent codes cannot establish product identity
+  ---
+  duration_ms: 0.1052
+  ...
+# Subtest: Matching codes with incompatible descriptions require review
+ok 178 - Matching codes with incompatible descriptions require review
+  ---
+  duration_ms: 0.1032
+  ...
+# Subtest: Repeated code with different units aligns by unit even when official rows are reordered
+ok 179 - Repeated code with different units aligns by unit even when official rows are reordered
+  ---
+  duration_ms: 0.1916
+  ...
+# Subtest: All item discounts are summed when no summary discount is printed
+ok 180 - All item discounts are summed when no summary discount is printed
+  ---
+  duration_ms: 0.3974
+  ...
+# Subtest: Subtotal and discount conflicts cannot cancel out silently at the same final total
+ok 181 - Subtotal and discount conflicts cannot cancel out silently at the same final total
+  ---
+  duration_ms: 0.2118
+  ...
+# Subtest: Printed total is preserved and inconsistent item sum or discount is flagged
+ok 182 - Printed total is preserved and inconsistent item sum or discount is flagged
+  ---
+  duration_ms: 0.1875
+  ...
+# Subtest: Summary discount replaces item sum instead of applying it twice; zero is explicit
+ok 183 - Summary discount replaces item sum instead of applying it twice; zero is explicit
+  ---
+  duration_ms: 0.1993
+  ...
+# Subtest: pending cancellation is guarded by database role, not UI alone
+ok 184 - pending cancellation is guarded by database role, not UI alone
+  ---
+  duration_ms: 1.3528
+  ...
+# Subtest: official data becomes default only for verified SEFAZ response
+ok 185 - official data becomes default only for verified SEFAZ response
+  ---
+  duration_ms: 0.2942
+  ...
+# Subtest: financial discrepancies are review warnings while invalid totals still block
+ok 186 - financial discrepancies are review warnings while invalid totals still block
+  ---
+  duration_ms: 0.3026
+  ...
+# Subtest: OCR strategy: sound coded receipt with printed matching totals uses one pass
+ok 187 - OCR strategy: sound coded receipt with printed matching totals uses one pass
+  ---
+  duration_ms: 11.9639
+  ...
+# Subtest: OCR strategy: missing code, missing total, low confidence or mismatches require a second pass
+ok 188 - OCR strategy: missing code, missing total, low confidence or mismatches require a second pass
+  ---
+  duration_ms: 0.4172
+  ...
+# Subtest: adversarial malformed sessions are refused before database or external calls
+ok 189 - adversarial malformed sessions are refused before database or external calls
+  ---
+  duration_ms: 10.8176
+  ...
+# Subtest: valid-format token cannot self-assert privileges, session RPC is source of truth
+not ok 190 - valid-format token cannot self-assert privileges, session RPC is source of truth
+  ---
+  duration_ms: 1.4196
+  location: 'C:\\Dev\\projeto-gpt\\tests\\security-adversarial.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    0 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\security-adversarial.test.cjs:65:12)
+    async Test.run (node:internal/test_runner/test:935:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: outage and SQL errors do not leak credentials or return inventory
+ok 191 - outage and SQL errors do not leak credentials or return inventory
+  ---
+  duration_ms: 0.5663
+  ...
+# Subtest: security automation must check every pushed branch and disposable DB guards
+ok 192 - security automation must check every pushed branch and disposable DB guards
+  ---
+  duration_ms: 3.603
+  ...
+# Subtest: valid native token does not close a working session
+ok 193 - valid native token does not close a working session
+  ---
+  duration_ms: 5.8407
+  ...
+# Subtest: revocation and expiry are both fatal (28000)
+ok 194 - revocation and expiry are both fatal (28000)
+  ---
+  duration_ms: 0.3707
+  ...
+# Subtest: temporary service failures must not be mistaken for a revoked account
+ok 195 - temporary service failures must not be mistaken for a revoked account
+  ---
+  duration_ms: 0.2915
+  ...
+# Subtest: smoke sem URL ou com URL vazia termina antes de acessar a rede
+ok 196 - smoke sem URL ou com URL vazia termina antes de acessar a rede
+  ---
+  duration_ms: 4.5065
+  ...
+# Subtest: smoke rejeita URL insegura, credenciais, caminho, query e fragmento
+ok 197 - smoke rejeita URL insegura, credenciais, caminho, query e fragmento
+  ---
+  duration_ms: 6.6315
+  ...
+# Subtest: smoke usa somente o destino explícito e mantém as oito verificações
+ok 198 - smoke usa somente o destino explícito e mantém as oito verificações
+  ---
+  duration_ms: 36.3184
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: secret
+ok 199 - prévia rejeita chave privilegiada sintética: secret
+  ---
+  duration_ms: 11.5107
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: secret com espaço
+ok 200 - prévia rejeita chave privilegiada sintética: secret com espaço
+  ---
+  duration_ms: 0.2779
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: secret com tabulação
+ok 201 - prévia rejeita chave privilegiada sintética: secret com tabulação
+  ---
+  duration_ms: 0.1141
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: secret com quebra de linha
+ok 202 - prévia rejeita chave privilegiada sintética: secret com quebra de linha
+  ---
+  duration_ms: 0.0835
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: service JWT
+ok 203 - prévia rejeita chave privilegiada sintética: service JWT
+  ---
+  duration_ms: 0.1369
+  ...
+# Subtest: prévia rejeita chave privilegiada sintética: service JWT com espaços
+ok 204 - prévia rejeita chave privilegiada sintética: service JWT com espaços
+  ---
+  duration_ms: 0.0846
+  ...
+# Subtest: prévia aceita publishable e JWT anon sintéticos
+ok 205 - prévia aceita publishable e JWT anon sintéticos
+  ---
+  duration_ms: 0.3343
+  ...
+# Subtest: JWT malformado falha com erro de configuração
+ok 206 - JWT malformado falha com erro de configuração
+  ---
+  duration_ms: 0.4764
+  ...
+# Subtest: gerador falha antes de criar arquivos e não imprime chave privilegiada
+ok 207 - gerador falha antes de criar arquivos e não imprime chave privilegiada
+  ---
+  duration_ms: 411.5046
+  ...
+# Subtest: disabled counting never generates a mandatory date
+ok 208 - disabled counting never generates a mandatory date
+  ---
+  duration_ms: 36.9737
+  ...
+# Subtest: interval mode handles weeks and year rollover
+ok 209 - interval mode handles weeks and year rollover
+  ---
+  duration_ms: 1.2763
+  ...
+# Subtest: most recent completed count restarts the next deadline
+ok 210 - most recent completed count restarts the next deadline
+  ---
+  duration_ms: 0.5323
+  ...
+# Subtest: weekly mode: next weekday occurrence, not today
+ok 211 - weekly mode: next weekday occurrence, not today
+  ---
+  duration_ms: 0.6322
+  ...
+# Subtest: monthly mode handles short months, leap year and same-month deadline
+ok 212 - monthly mode handles short months, leap year and same-month deadline
+  ---
+  duration_ms: 0.9509
+  ...
+# Subtest: corrupt day settings cannot crash schedule calculation
+ok 213 - corrupt day settings cannot crash schedule calculation
+  ---
+  duration_ms: 0.5553
+  ...
+# Subtest: Brazilian local date and labels
+ok 214 - Brazilian local date and labels
+  ---
+  duration_ms: 0.4329
+  ...
+# Subtest: configuração ausente falha sem imprimir valores
+ok 215 - configuração ausente falha sem imprimir valores
+  ---
+  duration_ms: 7.1919
+  ...
+# Subtest: configuração usa exatamente as variáveis públicas e não retorna segredo servidor
+ok 216 - configuração usa exatamente as variáveis públicas e não retorna segredo servidor
+  ---
+  duration_ms: 1.2541
+  ...
+# Subtest: arquivos versionados não contêm destino legado nem chaves concretas embutidas
+ok 217 - arquivos versionados não contêm destino legado nem chaves concretas embutidas
+  ---
+  duration_ms: 173.6649
+  ...
+# Subtest: SVRS: preenche emitente, sete itens e totais impressos da página de contingência
+ok 218 - SVRS: preenche emitente, sete itens e totais impressos da página de contingência
+  ---
+  duration_ms: 535.3944
+  ...
+# Subtest: SVRS: desconto ausente é zero sem inventar fechamento
+ok 219 - SVRS: desconto ausente é zero sem inventar fechamento
+  ---
+  duration_ms: 9.9192
+  ...
+# Subtest: SVRS: CNPJ ausente ou inválido usa o emitente da chave; divergência alerta
+ok 220 - SVRS: CNPJ ausente ou inválido usa o emitente da chave; divergência alerta
+  ---
+  duration_ms: 10.8216
+  ...
+# Subtest: SVRS: divergências alertam sem corrigir valores e um centavo por item é tolerado
+ok 221 - SVRS: divergências alertam sem corrigir valores e um centavo por item é tolerado
+  ---
+  duration_ms: 3.3168
+  ...
+# Subtest: SVRS: ignora consumidor, preserva zeros dos códigos e lê múltiplos pagamentos
+ok 222 - SVRS: ignora consumidor, preserva zeros dos códigos e lê múltiplos pagamentos
+  ---
+  duration_ms: 7.2593
+  ...
+# Subtest: perfil do agente UI/UX declara escopo e 13 competencias (9 + 4)
+not ok 223 - perfil do agente UI/UX declara escopo e 13 competencias (9 + 4)
+  ---
+  duration_ms: 3.0518
+  location: 'C:\\Dev\\projeto-gpt\\tests\\uiux-agent-skills.test.cjs:10:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^---\nname: Estoque\+ Front-end UI\/UX\n/m. Input:
+    
+    '---\r\n' +
+      'name: Estoque+ Front-end UI/UX\r\n' +
+      'description: Agente senior de front-end, experiencia do usuario, design responsivo, acessibilidade e qualidade visual para o projeto Estoque+.\r\n' +
+      '---\r\n' +
+      '\r\n' +
+      '# Missão\r\n' +
+      '\r\n' +
+      'Atuar como desenvolvedor front-end sênior e especialista em UI/UX do Estoque+, sistema de estoque e documentos fiscais de uma cafeteria. Priorizar a experiência prática de gestores e funcionários sem comprometer as regras do sistema.\r\n' +
+      '\r\n' +
+      '## Escopo e competências existentes\r\n' +
+      '\r\n' +
+      '1. **Responsive Web Design:** telas úteis em 320, 375, 768, 1024, 1280 e 1920 px; sem precisar alterar zoom.\r\n' +
+      '2. **UI Design:** hierarquia, tipografia legível, cores, densidade, espaçamentos e consistência.\r\n' +
+      '3. **UX Design:** fluxos simples, poucos cliques, prevenção de erros e recuperação de tarefas.\r\n' +
+      '4. **React & Next.js:** componentes legíveis e manuteníveis, com estado previsível.\r\n' +
+      '5. **Accessibility (A11y):** teclado, leitor de tela, contraste, foco, sem dependência exclusiva de hover.\r\n' +
+      '6. **Interaction Design:** menus, modais, tooltips, popovers, confirmações e feedback contextual.\r\n' +
+      '7. **Form & Data Table UX:** tabelas largas com rolagem localizada, valores claros, revisão de linhas e formulários densos.\r\n' +
+      '8. **Error & Feedback Design:** mensagens acionáveis, progresso, sucesso, vazio, falha, sem esconder operações sensíveis.\r\n' +
+      '9. **Front-end Quality Assurance:** regressão automatizada, build, verificações visuais e honestidade sobre testes não executados.\r\n' +
+      '\r\n' +
+      '## Novas habilidades formais (aplicar conforme a tarefa)\r\n' +
+      '\r\n' +
+      '- **Design System Architect:** [../skills/design-system-architect/SKILL.md](../skills/design-system-architect/SKILL.md)\r\n' +
+      '- **Visual Regression Testing:** [../skills/visual-regression-testing/SKILL.md](../skills/visual-regression-testing/SKILL.md)\r\n' +
+      '- **Accessibility Specialist:** [../skills/accessibility-specialist/SKILL.md](../skills/accessibility-specialist/SKILL.md)\r\n' +
+      '- **UX Research & Usability Testing:** [../skills/ux-research-usability-testing/SKILL.md](../skills/ux-research-usability-testing/SKILL.md)\r\n' +
+      '\r\n' +
+      'Esses arquivos são skills do repositório no formato Agent Skills. Consulte as skills relacionadas **antes** de propor ou alterar a interface. Não alegue que scripts de regressão visual, auditoria automática de acessibilidade ou testes com pessoas foram executados se só existem instruções para realizá-los.\r\n' +
+      '\r\n' +
+      '## Contexto do Estoque+\r\n' +
+      '\r\n' +
+      '- Front-end em Next.js/React, majoritariamente `pages/index.js` e `styles/globals.css`. Refatorar de forma incremental, sem redesenhar todo o sistema a cada melhoria.\r\n' +
+      '- Fluxos de prioridade: **Conferência de notas fiscais**, **Contagem de estoque**, **Cadastro e tabela de produtos**, **Fechamento de caixa**, **Navegação e conta**.\r\n' +
+      '- A conferência de itens e totais pode exigir validação humana antes de lançar o estoque. Exibir avisos com clareza sem suprimir regras ou autorizações.\r\n' +
+      '- O controle de Gestor/Funcionário depende de autorização real no back-end, nunca só de esconder botões.\r\n' +
+      '- Não alterar APIs, RPCs, schema, migrações, permissões, sessões ou dados fiscais como mero ajuste visual; quando necessário, separar para revisão pelo agente back-end/banco.\r\n' +
+      '- Preservar as contas de usuário, credenciais, dados fiscais e os registros de estoque. Não executar resets.\r\n' +
+      '\r\n' +
+      '## Fluxo obrigatório em qualquer tarefa\r\n' +
+      '\r\n' +
+      '1. **Diagnóstico:** inspecionar o estado real do repositório, fluxo do usuário, restrições existentes e origem dos erros. Se houver captura, considerar também o contexto de uso (notebook, celular, operação de cafeteria).\r\n' +
+      '2. **Proposta curta:** explicar intenção, prioridade e impacto para o usuário. Não inventar validação, acessibilidade ou performance.\r\n' +
+      '3. **Implementação mínima:** preferir componentes e tokens reutilizáveis a CSS avulso repetido; preservar comportamento e dados.\r\n' +
+      '4. **Revisão de qualidade:** estado vazio, carregando, erro, sucesso, toques, teclado, popovers/menus, campos, contraste e viewport reduzida.\r\n' +
+      '5. **Validação:** executar `npm test` e `npm run build` quando possível. Testes específicos/visuais só podem ser declarados como realizados com resultados verificáveis.\r\n' +
+      '6. **Entrega:** branch + PR, checagens e merge após aprovação. Confirmar deploy na Vercel pelo commit associado; não confundir CI, deploy ou homologação funcional.\r\n' +
+      '\r\n' +
+      '## Critérios de aceite UI/UX\r\n' +
+      '\r\n' +
+      '- Não há rolagem horizontal da página inteira em larguras comuns; tabelas podem rolar no seu próprio contêiner.\r\n' +
+      '- Texto e elementos interativos continuam legíveis e utilizáveis em telas pequenas e com ampliação de texto.\r\n' +
+      '- Avisos críticos não dependem exclusivamente de cor, mouse ou hover e nunca desaparecem antes da confirmação necessária.\r\n' +
+      '- Nenhum botão visualmente oculto substitui autorização no servidor.\r\n' +
+      '- A experiência do Gestor e do Funcionário continua coerente; nomes, datas, valores e totais fiscais não mudam como efeito colateral de layout.\r\n' +
+      '- Em alterações que atinjam mais de uma tela, seguir as quatro skills recomendadas e registrar evidências de revisão.\r\n' +
+      '\r\n' +
+      '## Referências\r\n' +
+      '\r\n' +
+      '- [Agent Skills](https://agentskills.io)\r\n' +
+      '- [GitHub — skills de agentes](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills)\r\n' +
+      '- [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/)\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ---
+    name: Estoque+ Front-end UI/UX
+    description: Agente senior de front-end, experiencia do usuario, design responsivo, acessibilidade e qualidade visual para o projeto Estoque+.
+    ---
+    
+    # Missão
+    
+    Atuar como desenvolvedor front-end sênior e especialista em UI/UX do Estoque+, sistema de estoque e documentos fiscais de uma cafeteria. Priorizar a experiência prática de gestores e funcionários sem comprometer as regras do sistema.
+    
+    ## Escopo e competências existentes
+    
+    1. **Responsive Web Design:** telas úteis em 320, 375, 768, 1024, 1280 e 1920 px; sem precisar alterar zoom.
+    2. **UI Design:** hierarquia, tipografia legível, cores, densidade, espaçamentos e consistência.
+    3. **UX Design:** fluxos simples, poucos cliques, prevenção de erros e recuperação de tarefas.
+    4. **React & Next.js:** componentes legíveis e manuteníveis, com estado previsível.
+    5. **Accessibility (A11y):** teclado, leitor de tela, contraste, foco, sem dependência exclusiva de hover.
+    6. **Interaction Design:** menus, modais, tooltips, popovers, confirmações e feedback contextual.
+    7. **Form & Data Table UX:** tabelas largas com rolagem localizada, valores claros, revisão de linhas e formulários densos.
+    8. **Error & Feedback Design:** mensagens acionáveis, progresso, sucesso, vazio, falha, sem esconder operações sensíveis.
+    9. **Front-end Quality Assurance:** regressão automatizada, build, verificações visuais e honestidade sobre testes não executados.
+    
+    ## Novas habilidades formais (aplicar conforme a tarefa)
+    
+    - **Design System Architect:** [../skills/design-system-architect/SKILL.md](../skills/design-system-architect/SKILL.md)
+    - **Visual Regression Testing:** [../skills/visual-regression-testing/SKILL.md](../skills/visual-regression-testing/SKILL.md)
+    - **Accessibility Specialist:** [../skills/accessibility-specialist/SKILL.md](../skills/accessibility-specialist/SKILL.md)
+    - **UX Research & Usability Testing:** [../skills/ux-research-usability-testing/SKILL.md](../skills/ux-research-usability-testing/SKILL.md)
+    
+    Esses arquivos são skills do repositório no formato Agent Skills. Consulte as skills relacionadas **antes** de propor ou alterar a interface. Não alegue que scripts de regressão visual, auditoria automática de acessibilidade ou testes com pessoas foram executados se só existem instruções para realizá-los.
+    
+    ## Contexto do Estoque+
+    
+    - Front-end em Next.js/React, majoritariamente `pages/index.js` e `styles/globals.css`. Refatorar de forma incremental, sem redesenhar todo o sistema a cada melhoria.
+    - Fluxos de prioridade: **Conferência de notas fiscais**, **Contagem de estoque**, **Cadastro e tabela de produtos**, **Fechamento de caixa**, **Navegação e conta**.
+    - A conferência de itens e totais pode exigir validação humana antes de lançar o estoque. Exibir avisos com clareza sem suprimir regras ou autorizações.
+    - O controle de Gestor/Funcionário depende de autorização real no back-end, nunca só de esconder botões.
+    - Não alterar APIs, RPCs, schema, migrações, permissões, sessões ou dados fiscais como mero ajuste visual; quando necessário, separar para revisão pelo agente back-end/banco.
+    - Preservar as contas de usuário, credenciais, dados fiscais e os registros de estoque. Não executar resets.
+    
+    ## Fluxo obrigatório em qualquer tarefa
+    
+    1. **Diagnóstico:** inspecionar o estado real do repositório, fluxo do usuário, restrições existentes e origem dos erros. Se houver captura, considerar também o contexto de uso (notebook, celular, operação de cafeteria).
+    2. **Proposta curta:** explicar intenção, prioridade e impacto para o usuário. Não inventar validação, acessibilidade ou performance.
+    3. **Implementação mínima:** preferir componentes e tokens reutilizáveis a CSS avulso repetido; preservar comportamento e dados.
+    4. **Revisão de qualidade:** estado vazio, carregando, erro, sucesso, toques, teclado, popovers/menus, campos, contraste e viewport reduzida.
+    5. **Validação:** executar `npm test` e `npm run build` quando possível. Testes específicos/visuais só podem ser declarados como realizados com resultados verificáveis.
+    6. **Entrega:** branch + PR, checagens e merge após aprovação. Confirmar deploy na Vercel pelo commit associado; não confundir CI, deploy ou homologação funcional.
+    
+    ## Critérios de aceite UI/UX
+    
+    - Não há rolagem horizontal da página inteira em larguras comuns; tabelas podem rolar no seu próprio contêiner.
+    - Texto e elementos interativos continuam legíveis e utilizáveis em telas pequenas e com ampliação de texto.
+    - Avisos críticos não dependem exclusivamente de cor, mouse ou hover e nunca desaparecem antes da confirmação necessária.
+    - Nenhum botão visualmente oculto substitui autorização no servidor.
+    - A experiência do Gestor e do Funcionário continua coerente; nomes, datas, valores e totais fiscais não mudam como efeito colateral de layout.
+    - Em alterações que atinjam mais de uma tela, seguir as quatro skills recomendadas e registrar evidências de revisão.
+    
+    ## Referências
+    
+    - [Agent Skills](https://agentskills.io)
+    - [GitHub — skills de agentes](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills)
+    - [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/)
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\uiux-agent-skills.test.cjs:12:10)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:934:25)
+    Test.start (node:internal/test_runner/test:833:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: skill design-system-architect e valida e oferece instrucoes aplicaveis
+not ok 224 - skill design-system-architect e valida e oferece instrucoes aplicaveis
+  ---
+  duration_ms: 1.0576
+  location: 'C:\\Dev\\projeto-gpt\\tests\\uiux-agent-skills.test.cjs:19:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^---\nname: design-system-architect\ndescription: .+\n---\n/. Input:
+    
+    '---\r\n' +
+      'name: design-system-architect\r\n' +
+      'description: Padronizar componentes, design tokens, estilos, comportamento e arquitetura visual do Estoque+; usar em mudanças de layouts, formulários, tabelas, navegação ou criação de componentes reutilizáveis.\r\n' +
+      '---\r\n' +
+      '\r\n' +
+      '# Design System Architect — Estoque+\r\n' +
+      '\r\n' +
+      '## Objetivo\r\n' +
+      'Construir consistência visual e funcional de forma incremental, mantendo interface prática para funcionários e gestores da cafeteria.\r\n' +
+      '\r\n' +
+      '## Ao receber uma tarefa\r\n' +
+      '1. Localize padrões existentes em `styles/globals.css` e componentes em `pages/index.js` antes de introduzir novos. Evite criar estilos duplicados.\r\n' +
+      '2. Identifique elementos compartilháveis: botões, campos, rótulos, cartões, tabelas, alertas de revisão, popovers, diálogos, menus, status e loading.\r\n' +
+      '3. Use tokens semânticos para cores (fundo, texto, borda, sucesso, aviso, erro), tipografia, espaçamentos, raio, sombras e estados; mantenha contraste suficiente. Preserve aparência atual quando mudanças drásticas não foram pedidas.\r\n' +
+      '4. Prefira variantes explícitas e interfaces previsíveis a seletores globais que afetem outras telas. Componentes reutilizáveis podem ser extraídos gradualmente sem migração ampla.\r\n' +
+      '5. Garanta cinco estados quando aplicáveis: padrão, foco, hover, desabilitado, erro, além de loading/vazio/sucesso quando forem parte do fluxo.\r\n' +
+      '6. As tabelas de notas e estoque podem ter rolagem interna, mas os campos críticos e botões de ação devem continuar encontráveis.\r\n' +
+      '7. Escolha tamanhos e espaçamentos legíveis em notebook e celular, priorizando digitação de quantidade, custo, data e busca de produtos.\r\n' +
+      '\r\n' +
+      '## Padrões\r\n' +
+      '- Botões: ação primária visualmente inequívoca; ações destrutivas separadas e confirmadas.\r\n' +
+      '- Formulários: rótulo visível e unidade correta; explicação perto do campo; erros adjacentes; evitar cálculos manuais quando deriváveis com segurança.\r\n' +
+      '- Alertas fiscais: ícone + texto acessível, contexto e forma de correção, nunca apenas cor.\r\n' +
+      '- Componentes: sem lógica de autorização exclusivamente no front-end; os controles do banco continuam soberanos.\r\n' +
+      '- Valores: moeda BRL legível; não alterar dados ao apenas formatar.\r\n' +
+      '\r\n' +
+      '## Checklist de aceite\r\n' +
+      '- Sem CSS conflitante ou duplicado evidente.\r\n' +
+      '- Componente se comporta de modo consistente em pelo menos uma tela desktop e uma móvel.\r\n' +
+      '- Estados de foco, erro e desabilitado estão definidos.\r\n' +
+      '- Refatoração incremental, de baixa regressão.\r\n' +
+      '- Evidência de teste ou ressalva explícita sobre testes pendentes.\r\n' +
+      '\r\n' +
+      '## Referências\r\n' +
+      '- https://www.w3.org/WAI/ARIA/apg/\r\n' +
+      '- https://m3.material.io/foundations/design-tokens/overview\r\n' +
+      '- https://react.dev/learn/thinking-in-react\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ---
+    name: design-system-architect
+    description: Padronizar componentes, design tokens, estilos, comportamento e arquitetura visual do Estoque+; usar em mudanças de layouts, formulários, tabelas, navegação ou criação de componentes reutilizáveis.
+    ---
+    
+    # Design System Architect — Estoque+
+    
+    ## Objetivo
+    Construir consistência visual e funcional de forma incremental, mantendo interface prática para funcionários e gestores da cafeteria.
+    
+    ## Ao receber uma tarefa
+    1. Localize padrões existentes em `styles/globals.css` e componentes em `pages/index.js` antes de introduzir novos. Evite criar estilos duplicados.
+    2. Identifique elementos compartilháveis: botões, campos, rótulos, cartões, tabelas, alertas de revisão, popovers, diálogos, menus, status e loading.
+    3. Use tokens semânticos para cores (fundo, texto, borda, sucesso, aviso, erro), tipografia, espaçamentos, raio, sombras e estados; mantenha contraste suficiente. Preserve aparência atual quando mudanças drásticas não foram pedidas.
+    4. Prefira variantes explícitas e interfaces previsíveis a seletores globais que afetem outras telas. Componentes reutilizáveis podem ser extraídos gradualmente sem migração ampla.
+    5. Garanta cinco estados quando aplicáveis: padrão, foco, hover, desabilitado, erro, além de loading/vazio/sucesso quando forem parte do fluxo.
+    6. As tabelas de notas e estoque podem ter rolagem interna, mas os campos críticos e botões de ação devem continuar encontráveis.
+    7. Escolha tamanhos e espaçamentos legíveis em notebook e celular, priorizando digitação de quantidade, custo, data e busca de produtos.
+    
+    ## Padrões
+    - Botões: ação primária visualmente inequívoca; ações destrutivas separadas e confirmadas.
+    - Formulários: rótulo visível e unidade correta; explicação perto do campo; erros adjacentes; evitar cálculos manuais quando deriváveis com segurança.
+    - Alertas fiscais: ícone + texto acessível, contexto e forma de correção, nunca apenas cor.
+    - Componentes: sem lógica de autorização exclusivamente no front-end; os controles do banco continuam soberanos.
+    - Valores: moeda BRL legível; não alterar dados ao apenas formatar.
+    
+    ## Checklist de aceite
+    - Sem CSS conflitante ou duplicado evidente.
+    - Componente se comporta de modo consistente em pelo menos uma tela desktop e uma móvel.
+    - Estados de foco, erro e desabilitado estão definidos.
+    - Refatoração incremental, de baixa regressão.
+    - Evidência de teste ou ressalva explícita sobre testes pendentes.
+    
+    ## Referências
+    - https://www.w3.org/WAI/ARIA/apg/
+    - https://m3.material.io/foundations/design-tokens/overview
+    - https://react.dev/learn/thinking-in-react
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\uiux-agent-skills.test.cjs:22:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:934:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:633:18)
+    Test.postRun (node:internal/test_runner/test:1045:19)
+    Test.run (node:internal/test_runner/test:973:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: skill visual-regression-testing e valida e oferece instrucoes aplicaveis
+not ok 225 - skill visual-regression-testing e valida e oferece instrucoes aplicaveis
+  ---
+  duration_ms: 1.1086
+  location: 'C:\\Dev\\projeto-gpt\\tests\\uiux-agent-skills.test.cjs:19:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^---\nname: visual-regression-testing\ndescription: .+\n---\n/. Input:
+    
+    '---\r\n' +
+      'name: visual-regression-testing\r\n' +
+      'description: Planejar, executar e analisar regressões visuais de telas React/Next.js do Estoque+, especialmente em notebooks, celulares, tabelas e popovers. Usar em mudanças de CSS, layout, responsividade ou componentes visuais.\r\n' +
+      '---\r\n' +
+      '\r\n' +
+      '# Visual Regression Testing — Estoque+\r\n' +
+      '\r\n' +
+      '## Objetivo\r\n' +
+      'Detectar cortes, sobreposições, mudanças inesperadas, botões inacessíveis e regressões de layout antes de publicação.\r\n' +
+      '\r\n' +
+      '## Procedimento obrigatório\r\n' +
+      '1. Mapear telas atingidas: Estoque, Notas fiscais, Conferência de NF, Fechamento de caixa, Contagem de estoque, Lista de compras e navegação/usuário.\r\n' +
+      '2. Definir a matriz mínima de viewports: 320×700, 375×812, 768×1024, 1024×768, 1280×800 e 1920×1080. Incluir 1366×768 se a tarefa envolver notebooks.\r\n' +
+      '3. Testar menu expandido/recolhido, tabela com vários itens, texto longo de fornecedor, campos de valores, tooltip/popover aberto, carregamento, erro e estado vazio.\r\n' +
+      '4. Usar Playwright para capturar screenshots e comparar baselines **quando estiver disponível**. Se a ferramenta não estiver instalada no projeto, propor uma implantação incremental em PR próprio; não afirmar cobertura inexistente.\r\n' +
+      '5. Preparar fixtures sintéticas, estáveis e sem dados pessoais/credenciais. Congelar dados, horário, animações e fontes quando necessário para reprodutibilidade.\r\n' +
+      '6. Avaliar diffs com critérios de legibilidade e usabilidade, não só porcentagem de pixels. Atualizar baseline apenas depois de revisão consciente da alteração esperada.\r\n' +
+      '7. Executar `npm test` e `npm run build` além de qualquer validação visual aplicável; reportar resultados e limitações de ferramentas.\r\n' +
+      '\r\n' +
+      '## Invariantes e critérios de regressão\r\n' +
+      '- `document.documentElement.scrollWidth <= window.innerWidth` em telas sem tabelas transbordando a página.\r\n' +
+      '- Tabelas longas rolam *dentro* de `.table-wrap`, sem cortar botões importantes nem ocultar campos de confirmação.\r\n' +
+      '- Ações primárias, rótulos, inputs e diálogos permanecem visíveis e operáveis nos viewports analisados.\r\n' +
+      '- Popovers de avisos fiscais não são cortados pelo contêiner de scroll e não ocultam ações essenciais.\r\n' +
+      '- Conteúdo não é encoberto por sidebar, drawer ou topbar.\r\n' +
+      '- Layout deve suportar zoom 200% e aumento de texto; falhas devem ser informadas com evidência.\r\n' +
+      '\r\n' +
+      '## Saída esperada do teste\r\n' +
+      'Registrar viewport, navegador, commit, tela/estado, evidência (screenshot ou observação verificável), problema reproduzido, decisão e estado após correção. Separar claramente **teste executado**, **teste sugerido** e **não testado**.\r\n' +
+      '\r\n' +
+      '## Referências\r\n' +
+      '- https://playwright.dev/docs/test-snapshots\r\n' +
+      '- https://playwright.dev/docs/visual-comparisons\r\n' +
+      '- https://web.dev/learn/design/\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ---
+    name: visual-regression-testing
+    description: Planejar, executar e analisar regressões visuais de telas React/Next.js do Estoque+, especialmente em notebooks, celulares, tabelas e popovers. Usar em mudanças de CSS, layout, responsividade ou componentes visuais.
+    ---
+    
+    # Visual Regression Testing — Estoque+
+    
+    ## Objetivo
+    Detectar cortes, sobreposições, mudanças inesperadas, botões inacessíveis e regressões de layout antes de publicação.
+    
+    ## Procedimento obrigatório
+    1. Mapear telas atingidas: Estoque, Notas fiscais, Conferência de NF, Fechamento de caixa, Contagem de estoque, Lista de compras e navegação/usuário.
+    2. Definir a matriz mínima de viewports: 320×700, 375×812, 768×1024, 1024×768, 1280×800 e 1920×1080. Incluir 1366×768 se a tarefa envolver notebooks.
+    3. Testar menu expandido/recolhido, tabela com vários itens, texto longo de fornecedor, campos de valores, tooltip/popover aberto, carregamento, erro e estado vazio.
+    4. Usar Playwright para capturar screenshots e comparar baselines **quando estiver disponível**. Se a ferramenta não estiver instalada no projeto, propor uma implantação incremental em PR próprio; não afirmar cobertura inexistente.
+    5. Preparar fixtures sintéticas, estáveis e sem dados pessoais/credenciais. Congelar dados, horário, animações e fontes quando necessário para reprodutibilidade.
+    6. Avaliar diffs com critérios de legibilidade e usabilidade, não só porcentagem de pixels. Atualizar baseline apenas depois de revisão consciente da alteração esperada.
+    7. Executar `npm test` e `npm run build` além de qualquer validação visual aplicável; reportar resultados e limitações de ferramentas.
+    
+    ## Invariantes e critérios de regressão
+    - `document.documentElement.scrollWidth <= window.innerWidth` em telas sem tabelas transbordando a página.
+    - Tabelas longas rolam *dentro* de `.table-wrap`, sem cortar botões importantes nem ocultar campos de confirmação.
+    - Ações primárias, rótulos, inputs e diálogos permanecem visíveis e operáveis nos viewports analisados.
+    - Popovers de avisos fiscais não são cortados pelo contêiner de scroll e não ocultam ações essenciais.
+    - Conteúdo não é encoberto por sidebar, drawer ou topbar.
+    - Layout deve suportar zoom 200% e aumento de texto; falhas devem ser informadas com evidência.
+    
+    ## Saída esperada do teste
+    Registrar viewport, navegador, commit, tela/estado, evidência (screenshot ou observação verificável), problema reproduzido, decisão e estado após correção. Separar claramente **teste executado**, **teste sugerido** e **não testado**.
+    
+    ## Referências
+    - https://playwright.dev/docs/test-snapshots
+    - https://playwright.dev/docs/visual-comparisons
+    - https://web.dev/learn/design/
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\uiux-agent-skills.test.cjs:22:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:934:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:633:18)
+    Test.postRun (node:internal/test_runner/test:1045:19)
+    Test.run (node:internal/test_runner/test:973:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: skill accessibility-specialist e valida e oferece instrucoes aplicaveis
+not ok 226 - skill accessibility-specialist e valida e oferece instrucoes aplicaveis
+  ---
+  duration_ms: 3.1889
+  location: 'C:\\Dev\\projeto-gpt\\tests\\uiux-agent-skills.test.cjs:19:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^---\nname: accessibility-specialist\ndescription: .+\n---\n/. Input:
+    
+    '---\r\n' +
+      'name: accessibility-specialist\r\n' +
+      'description: Projetar e auditar acessibilidade WCAG 2.2 AA em interfaces React/Next.js do Estoque+, incluindo formulários, tabelas, menus, alertas, navegação por teclado e experiências móveis.\r\n' +
+      '---\r\n' +
+      '\r\n' +
+      '# Accessibility Specialist — Estoque+\r\n' +
+      '\r\n' +
+      '## Objetivo\r\n' +
+      'Assegurar que o sistema seja utilizável por teclado, toque, tecnologias assistivas e pessoas com baixa visão, sem comprometer a segurança e a integridade fiscal.\r\n' +
+      '\r\n' +
+      '## Revisão por componente\r\n' +
+      '1. **Semântica:** use botões para ações, links para navegação, labels de inputs, títulos hierárquicos e tabelas com cabeçalhos compreensíveis.\r\n' +
+      '2. **Teclado e foco:** ordem lógica, estado de foco visível, Escape para fechar popovers/menus, foco restaurado quando pertinente. Evitar armadilhas de teclado.\r\n' +
+      '3. **Feedback:** erros textuais junto do campo; `aria-live` ou `role="status"` para resultados assíncronos; alertas urgentes com `role="alert"` quando adequado, sem anúncios repetitivos.\r\n' +
+      '4. **Avisos fiscais:** nunca comunicar perigo somente por amarelo ou ícone; permitir ver todos os detalhes pelo teclado e pelo toque, sem depender exclusivamente do hover.\r\n' +
+      '5. **Visual:** seguir WCAG 2.2 nível AA, verificar contraste de texto/controles, reflow a 320px, zoom de 200%, tamanho de fonte e espaçamento. Alvos interativos de pelo menos 24×24 CSS px (com espaço equivalente quando aplicável); preferir área tocável de 44×44px em telas móveis.\r\n' +
+      '6. **Dialogs e menus:** indicar `aria-expanded`, `aria-controls` quando relevante; gerenciar foco e fechamento; não deixar conteúdo inacessível atrás de overlay.\r\n' +
+      '7. **Formulários financeiros:** descrever moeda/unidade, erros e relação entre subtotal, desconto e valor líquido; não aceitar alterações silenciosas.\r\n' +
+      '\r\n' +
+      '## Como validar\r\n' +
+      '- Revisão manual com Tab, Shift+Tab, Enter, espaço, setas quando pertinente e Escape.\r\n' +
+      '- Teste com leitor de tela (NVDA/VoiceOver) quando acessível.\r\n' +
+      '- Auditoria automatizada com `axe-core`/`@axe-core/playwright` somente se instalado/disponível; ferramenta automática não substitui teste manual.\r\n' +
+      '- Revisar fluxo real: abrir nota, interpretar alerta, marcar item conferido, verificar total, confirmar entrada no estoque, voltar ao menu e sair.\r\n' +
+      '- Reportar conformidades, violações, severidade e limites da validação. Nunca declarar certificação WCAG apenas por usar componentes semânticos.\r\n' +
+      '\r\n' +
+      '## Referências\r\n' +
+      '- https://www.w3.org/TR/WCAG22/\r\n' +
+      '- https://www.w3.org/WAI/ARIA/apg/\r\n' +
+      '- https://github.com/dequelabs/axe-core\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ---
+    name: accessibility-specialist
+    description: Projetar e auditar acessibilidade WCAG 2.2 AA em interfaces React/Next.js do Estoque+, incluindo formulários, tabelas, menus, alertas, navegação por teclado e experiências móveis.
+    ---
+    
+    # Accessibility Specialist — Estoque+
+    
+    ## Objetivo
+    Assegurar que o sistema seja utilizável por teclado, toque, tecnologias assistivas e pessoas com baixa visão, sem comprometer a segurança e a integridade fiscal.
+    
+    ## Revisão por componente
+    1. **Semântica:** use botões para ações, links para navegação, labels de inputs, títulos hierárquicos e tabelas com cabeçalhos compreensíveis.
+    2. **Teclado e foco:** ordem lógica, estado de foco visível, Escape para fechar popovers/menus, foco restaurado quando pertinente. Evitar armadilhas de teclado.
+    3. **Feedback:** erros textuais junto do campo; `aria-live` ou `role="status"` para resultados assíncronos; alertas urgentes com `role="alert"` quando adequado, sem anúncios repetitivos.
+    4. **Avisos fiscais:** nunca comunicar perigo somente por amarelo ou ícone; permitir ver todos os detalhes pelo teclado e pelo toque, sem depender exclusivamente do hover.
+    5. **Visual:** seguir WCAG 2.2 nível AA, verificar contraste de texto/controles, reflow a 320px, zoom de 200%, tamanho de fonte e espaçamento. Alvos interativos de pelo menos 24×24 CSS px (com espaço equivalente quando aplicável); preferir área tocável de 44×44px em telas móveis.
+    6. **Dialogs e menus:** indicar `aria-expanded`, `aria-controls` quando relevante; gerenciar foco e fechamento; não deixar conteúdo inacessível atrás de overlay.
+    7. **Formulários financeiros:** descrever moeda/unidade, erros e relação entre subtotal, desconto e valor líquido; não aceitar alterações silenciosas.
+    
+    ## Como validar
+    - Revisão manual com Tab, Shift+Tab, Enter, espaço, setas quando pertinente e Escape.
+    - Teste com leitor de tela (NVDA/VoiceOver) quando acessível.
+    - Auditoria automatizada com `axe-core`/`@axe-core/playwright` somente se instalado/disponível; ferramenta automática não substitui teste manual.
+    - Revisar fluxo real: abrir nota, interpretar alerta, marcar item conferido, verificar total, confirmar entrada no estoque, voltar ao menu e sair.
+    - Reportar conformidades, violações, severidade e limites da validação. Nunca declarar certificação WCAG apenas por usar componentes semânticos.
+    
+    ## Referências
+    - https://www.w3.org/TR/WCAG22/
+    - https://www.w3.org/WAI/ARIA/apg/
+    - https://github.com/dequelabs/axe-core
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\uiux-agent-skills.test.cjs:22:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:934:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:633:18)
+    Test.postRun (node:internal/test_runner/test:1045:19)
+    Test.run (node:internal/test_runner/test:973:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: skill ux-research-usability-testing e valida e oferece instrucoes aplicaveis
+not ok 227 - skill ux-research-usability-testing e valida e oferece instrucoes aplicaveis
+  ---
+  duration_ms: 1.5086
+  location: 'C:\\Dev\\projeto-gpt\\tests\\uiux-agent-skills.test.cjs:19:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^---\nname: ux-research-usability-testing\ndescription: .+\n---\n/. Input:
+    
+    '---\r\n' +
+      'name: ux-research-usability-testing\r\n' +
+      'description: Pesquisar, testar e melhorar a experiência de gestores e funcionários da cafeteria no Estoque+, usando avaliação heurística, jornadas, testes de usabilidade e evidências práticas.\r\n' +
+      '---\r\n' +
+      '\r\n' +
+      '# UX Research & Usability Testing — Estoque+\r\n' +
+      '\r\n' +
+      '## Objetivo\r\n' +
+      'Desenhar a interface a partir de tarefas reais, não apenas de preferências visuais. Reduzir tempo, erros e retrabalho de quem usa o sistema na cafeteria.\r\n' +
+      '\r\n' +
+      '## Papéis e jornadas essenciais\r\n' +
+      '- **Funcionário:** receber uma nota, usar foto ou XML, identificar produto já cadastrado, conferir unidades/descontos e registrar corretamente no estoque.\r\n' +
+      '- **Gestor:** corrigir divergências, consultar totais e históricos, fechar caixa, conferir contagem de estoque, gerenciar duplicatas e autorizações.\r\n' +
+      '- **Uso em campo:** celular durante recebimento; notebook com resolução e zoom padrão; desktop para auditoria de muitos itens.\r\n' +
+      '\r\n' +
+      '## Método de trabalho\r\n' +
+      '1. Transformar o relato do usuário em hipótese e tarefa observável: ex. "campo cortado no notebook" → avaliar fluxo da nota com viewport 1366×768.\r\n' +
+      '2. Identificar começo, fim, passos, decisões, erros e informações necessárias em cada tarefa.\r\n' +
+      '3. Aplicar revisão heurística: visibilidade do status, consistência, correspondência com linguagem da cafeteria, prevenção de erros, reconhecimento em vez de lembrança e recuperação.\r\n' +
+      '4. Propor solução de menor fricção sem ocultar conferências fiscais obrigatórias, regras de acesso ou ações destrutivas.\r\n' +
+      '5. Quando apropriado, sugerir um roteiro de teste com 3–5 tarefas representativas e perguntas neutras; só chamar de "pesquisa com usuários" se realmente houver observação ou respostas reais.\r\n' +
+      '6. Registrar métricas úteis: conclusão da tarefa, número de cliques/etapas, necessidade de zoom, tempo aproximado, erro de lançamento e retrabalho. Não fabricar resultados.\r\n' +
+      '7. Priorizar correções pelo impacto no usuário, frequência e risco financeiro/fiscal, distinguindo problemas bloqueadores de melhorias cosméticas.\r\n' +
+      '8. Depois da implementação, comparar jornada anterior/posterior e registrar dúvidas que exigem teste real.\r\n' +
+      '\r\n' +
+      '## Privacidade e ética\r\n' +
+      '- Usar dados sintéticos ou anonimizados em exemplos, imagens, gravações e screenshots.\r\n' +
+      '- Não compartilhar notas reais, CNPJ/CPF, credenciais ou informações de usuários com serviços de analytics ou ferramentas externas sem aprovação adequada.\r\n' +
+      '- Não adicionar telemetria, gravação de sessão ou cookies de terceiros apenas para fazer pesquisa.\r\n' +
+      '- Não incentivar padrões manipulativos, confirmação ambígua ou escondimento de riscos.\r\n' +
+      '\r\n' +
+      '## Entregáveis recomendados\r\n' +
+      '- Problema e contexto do usuário.\r\n' +
+      '- Fluxo atual e fluxo proposto em linguagem da cafeteria.\r\n' +
+      '- Hipótese e critério de sucesso mensurável.\r\n' +
+      '- Avaliação de riscos na conferência/estoque.\r\n' +
+      '- Evidências de teste real ou indicação explícita de que está pendente.\r\n' +
+      '\r\n' +
+      '## Referências\r\n' +
+      '- https://www.nngroup.com/articles/ten-usability-heuristics/\r\n' +
+      '- https://www.nngroup.com/articles/usability-testing-101/\r\n' +
+      '- https://www.w3.org/WAI/\r\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    ---
+    name: ux-research-usability-testing
+    description: Pesquisar, testar e melhorar a experiência de gestores e funcionários da cafeteria no Estoque+, usando avaliação heurística, jornadas, testes de usabilidade e evidências práticas.
+    ---
+    
+    # UX Research & Usability Testing — Estoque+
+    
+    ## Objetivo
+    Desenhar a interface a partir de tarefas reais, não apenas de preferências visuais. Reduzir tempo, erros e retrabalho de quem usa o sistema na cafeteria.
+    
+    ## Papéis e jornadas essenciais
+    - **Funcionário:** receber uma nota, usar foto ou XML, identificar produto já cadastrado, conferir unidades/descontos e registrar corretamente no estoque.
+    - **Gestor:** corrigir divergências, consultar totais e históricos, fechar caixa, conferir contagem de estoque, gerenciar duplicatas e autorizações.
+    - **Uso em campo:** celular durante recebimento; notebook com resolução e zoom padrão; desktop para auditoria de muitos itens.
+    
+    ## Método de trabalho
+    1. Transformar o relato do usuário em hipótese e tarefa observável: ex. "campo cortado no notebook" → avaliar fluxo da nota com viewport 1366×768.
+    2. Identificar começo, fim, passos, decisões, erros e informações necessárias em cada tarefa.
+    3. Aplicar revisão heurística: visibilidade do status, consistência, correspondência com linguagem da cafeteria, prevenção de erros, reconhecimento em vez de lembrança e recuperação.
+    4. Propor solução de menor fricção sem ocultar conferências fiscais obrigatórias, regras de acesso ou ações destrutivas.
+    5. Quando apropriado, sugerir um roteiro de teste com 3–5 tarefas representativas e perguntas neutras; só chamar de "pesquisa com usuários" se realmente houver observação ou respostas reais.
+    6. Registrar métricas úteis: conclusão da tarefa, número de cliques/etapas, necessidade de zoom, tempo aproximado, erro de lançamento e retrabalho. Não fabricar resultados.
+    7. Priorizar correções pelo impacto no usuário, frequência e risco financeiro/fiscal, distinguindo problemas bloqueadores de melhorias cosméticas.
+    8. Depois da implementação, comparar jornada anterior/posterior e registrar dúvidas que exigem teste real.
+    
+    ## Privacidade e ética
+    - Usar dados sintéticos ou anonimizados em exemplos, imagens, gravações e screenshots.
+    - Não compartilhar notas reais, CNPJ/CPF, credenciais ou informações de usuários com serviços de analytics ou ferramentas externas sem aprovação adequada.
+    - Não adicionar telemetria, gravação de sessão ou cookies de terceiros apenas para fazer pesquisa.
+    - Não incentivar padrões manipulativos, confirmação ambígua ou escondimento de riscos.
+    
+    ## Entregáveis recomendados
+    - Problema e contexto do usuário.
+    - Fluxo atual e fluxo proposto em linguagem da cafeteria.
+    - Hipótese e critério de sucesso mensurável.
+    - Avaliação de riscos na conferência/estoque.
+    - Evidências de teste real ou indicação explícita de que está pendente.
+    
+    ## Referências
+    - https://www.nngroup.com/articles/ten-usability-heuristics/
+    - https://www.nngroup.com/articles/usability-testing-101/
+    - https://www.w3.org/WAI/
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (C:\Dev\projeto-gpt\tests\uiux-agent-skills.test.cjs:22:12)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:934:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:633:18)
+    Test.postRun (node:internal/test_runner/test:1045:19)
+    Test.run (node:internal/test_runner/test:973:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:633:7)
+  ...
+# Subtest: perfil do agente preserva integridade de acesso e verificacao pre-merge
+ok 228 - perfil do agente preserva integridade de acesso e verificacao pre-merge
+  ---
+  duration_ms: 0.5765
+  ...
+# Subtest: user editor submits only metadata with existing authenticated RPC
+ok 229 - user editor submits only metadata with existing authenticated RPC
+  ---
+  duration_ms: 5.3304
+  ...
+# Subtest: front-end hides unauthorized targets while server remains authoritative
+ok 230 - front-end hides unauthorized targets while server remains authoritative
+  ---
+  duration_ms: 0.2729
+  ...
+# Subtest: client does not interpret or echo raw database errors
+ok 231 - client does not interpret or echo raw database errors
+  ---
+  duration_ms: 0.2231
+  ...
+# Subtest: photo registry preserves ten originals and eleven independent documents
+ok 232 - photo registry preserves ten originals and eleven independent documents
+  ---
+  duration_ms: 1.9665
+  ...
+# Subtest: cash photo 26/11/2025 recognizes every sale and movement without digital duplication
+ok 233 - cash photo 26/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 9.5355
+  ...
+# Subtest: cash photo 25/11/2025 recognizes every sale and movement without digital duplication
+ok 234 - cash photo 25/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.6257
+  ...
+# Subtest: cash photo 14/11/2025 recognizes every sale and movement without digital duplication
+ok 235 - cash photo 14/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.2982
+  ...
+# Subtest: cash photo 11/11/2025 recognizes every sale and movement without digital duplication
+ok 236 - cash photo 11/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.3923
+  ...
+# Subtest: cash photo 08/11/2025 recognizes every sale and movement without digital duplication
+ok 237 - cash photo 08/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.1687
+  ...
+# Subtest: cash photo 04/11/2025 recognizes every sale and movement without digital duplication
+ok 238 - cash photo 04/11/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.1657
+  ...
+# Subtest: cash photo 08/10/2025 recognizes every sale and movement without digital duplication
+ok 239 - cash photo 08/10/2025 recognizes every sale and movement without digital duplication
+  ---
+  duration_ms: 0.1927
+  ...
+# Subtest: cash-count discrepancy from photographed 2025-10-08 report remains a manual-review reference
+ok 240 - cash-count discrepancy from photographed 2025-10-08 report remains a manual-review reference
+  ---
+  duration_ms: 0.4515
+  ...
+# Subtest: cash report with S/N physical difference does not invent a numeric discrepancy
+ok 241 - cash report with S/N physical difference does not invent a numeric discrepancy
+  ---
+  duration_ms: 0.4429
+  ...
+# Subtest: fiscal photo ovo-duas-unidades preserves quantity, units and printed totals
+ok 242 - fiscal photo ovo-duas-unidades preserves quantity, units and printed totals
+  ---
+  duration_ms: 3.9596
+  ...
+# Subtest: fiscal photo tomate-quilo preserves quantity, units and printed totals
+ok 243 - fiscal photo tomate-quilo preserves quantity, units and printed totals
+  ---
+  duration_ms: 1.0059
+  ...
+# Subtest: fiscal photo rio-sul-com-desconto preserves quantity, units and printed totals
+ok 244 - fiscal photo rio-sul-com-desconto preserves quantity, units and printed totals
+  ---
+  duration_ms: 0.3919
+  ...
+# Subtest: fiscal photo rudi-quatro-itens preserves quantity, units and printed totals
+ok 245 - fiscal photo rudi-quatro-itens preserves quantity, units and printed totals
+  ---
+  duration_ms: 0.4103
+  ...
+1..245
+# tests 245
+# suites 0
+# pass 233
+# fail 12
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2453.5688

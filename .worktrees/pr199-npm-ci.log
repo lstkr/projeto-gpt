@@ -1,0 +1,13 @@
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'pdfjs-dist@6.4.299',
+npm warn EBADENGINE   required: { node: '>=22.13.0 || >=24' },
+npm warn EBADENGINE   current: { node: 'v22.11.0', npm: '10.9.0' }
+npm warn EBADENGINE }
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+added 72 packages, and audited 73 packages in 37s
+
+23 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities

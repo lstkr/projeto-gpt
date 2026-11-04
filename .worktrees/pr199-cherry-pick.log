@@ -1,0 +1,6 @@
+[detached HEAD 9d7719d] fix(ui): refine períodos e identidade local dos rascunhos
+ Date: Tue Nov 3 00:09:48 2026 -0300
+ 12 files changed, 84 insertions(+), 27 deletions(-)
+ create mode 100644 docs/giro-ui-followup.md
+ create mode 100644 scripts/preview/overflow-report.cjs
+ create mode 100644 tests/giro-followup.test.cjs

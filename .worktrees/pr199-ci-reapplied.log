@@ -1,0 +1,129 @@
+Refreshing checks status every 30 seconds. Press Ctrl+C to quit.
+
+Adversarial auth / API / regression	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+PostgreSQL attack lab / fiscal	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+PostgreSQL attack lab / multi-tenant	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / session	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+Vercel	pending	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Vercel is deploying your app
+Vulnerabilities, secrets and configuration	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Refreshing checks status every 30 seconds. Press Ctrl+C to quit.
+
+Vulnerabilities, secrets and configuration	fail	8s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Vulnerabilities, secrets and configuration	fail	6s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287505986	
+Native session / PostgreSQL 15	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506019	
+PostgreSQL attack lab / fiscal	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+application-build	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507045	
+Vercel	pending	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Vercel is deploying your app
+PostgreSQL attack lab / multi-tenant	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506163	
+Fiscal integrity / PostgreSQL 15	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287506656	
+Native session / PostgreSQL 17	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506499	
+Fiscal integrity / PostgreSQL 17	pass	19s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507117	
+build	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580187/job/126287512806	
+Adversarial auth / API / regression	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+chart-layout	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580175/job/126287506410	
+Adversarial auth / API / regression	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506203	
+Tenant isolation / PostgreSQL 17	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507494	
+PostgreSQL attack lab / fiscal	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506234	
+PostgreSQL attack lab / multi-tenant	pass	28s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / session	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+PostgreSQL attack lab / session	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506294	
+Tenant isolation / PostgreSQL 15	pass	26s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507230	
+Vercel Preview Comments	pass	0	https://vercel.com/github	
+bootstrap-tool	pass	7s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287506957	
+tests	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580255/job/126287506412	
+Refreshing checks status every 30 seconds. Press Ctrl+C to quit.
+
+Vulnerabilities, secrets and configuration	fail	8s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Vulnerabilities, secrets and configuration	fail	6s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287505986	
+chart-layout	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580175/job/126287506410	
+PostgreSQL attack lab / fiscal	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+Adversarial auth / API / regression	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+Adversarial auth / API / regression	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506203	
+Native session / PostgreSQL 15	pass	31s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506019	
+Fiscal integrity / PostgreSQL 15	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287506656	
+Fiscal integrity / PostgreSQL 17	pass	19s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507117	
+Native session / PostgreSQL 17	pass	37s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506499	
+PostgreSQL attack lab / fiscal	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506234	
+PostgreSQL attack lab / multi-tenant	pass	28s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / multi-tenant	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506163	
+PostgreSQL attack lab / session	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+PostgreSQL attack lab / session	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506294	
+Tenant isolation / PostgreSQL 15	pass	26s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507230	
+Tenant isolation / PostgreSQL 17	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507494	
+Vercel	pass	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Deployment has completed
+Vercel Preview Comments	pass	0	https://vercel.com/github	
+application-build	pass	43s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507045	
+bootstrap-tool	pass	7s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287506957	
+build	pass	42s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580187/job/126287512806	
+tests	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580255/job/126287506412	
+Refreshing checks status every 30 seconds. Press Ctrl+C to quit.
+
+Vulnerabilities, secrets and configuration	fail	8s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Vulnerabilities, secrets and configuration	fail	6s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287505986	
+chart-layout	pending	0	https://github.com/lstkr/projeto-gpt/actions/runs/41742580175/job/126287506410	
+PostgreSQL attack lab / fiscal	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+Adversarial auth / API / regression	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+Adversarial auth / API / regression	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506203	
+Native session / PostgreSQL 15	pass	31s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506019	
+Fiscal integrity / PostgreSQL 15	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287506656	
+Fiscal integrity / PostgreSQL 17	pass	19s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507117	
+Native session / PostgreSQL 17	pass	37s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506499	
+PostgreSQL attack lab / fiscal	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506234	
+PostgreSQL attack lab / multi-tenant	pass	28s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / multi-tenant	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506163	
+PostgreSQL attack lab / session	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+PostgreSQL attack lab / session	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506294	
+Tenant isolation / PostgreSQL 15	pass	26s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507230	
+Tenant isolation / PostgreSQL 17	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507494	
+Vercel	pass	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Deployment has completed
+Vercel Preview Comments	pass	0	https://vercel.com/github	
+application-build	pass	43s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507045	
+bootstrap-tool	pass	7s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287506957	
+build	pass	42s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580187/job/126287512806	
+tests	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580255/job/126287506412	
+Vulnerabilities, secrets and configuration	fail	8s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Vulnerabilities, secrets and configuration	fail	6s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287505986	
+Adversarial auth / API / regression	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+Adversarial auth / API / regression	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506203	
+Fiscal integrity / PostgreSQL 15	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287506656	
+Fiscal integrity / PostgreSQL 17	pass	19s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507117	
+Native session / PostgreSQL 15	pass	31s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506019	
+Native session / PostgreSQL 17	pass	37s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506499	
+PostgreSQL attack lab / fiscal	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+PostgreSQL attack lab / fiscal	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506234	
+PostgreSQL attack lab / multi-tenant	pass	28s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / multi-tenant	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506163	
+PostgreSQL attack lab / session	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+PostgreSQL attack lab / session	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506294	
+Tenant isolation / PostgreSQL 15	pass	26s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507230	
+Tenant isolation / PostgreSQL 17	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507494	
+Vercel	pass	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Deployment has completed
+Vercel Preview Comments	pass	0	https://vercel.com/github	
+application-build	pass	43s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507045	
+bootstrap-tool	pass	7s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287506957	
+build	pass	42s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580187/job/126287512806	
+chart-layout	pass	1m39s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580175/job/126287506410	
+tests	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580255/job/126287506412	
+Vulnerabilities, secrets and configuration	fail	8s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489263	
+Vulnerabilities, secrets and configuration	fail	6s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287505986	
+Adversarial auth / API / regression	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489739	
+Adversarial auth / API / regression	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506203	
+Fiscal integrity / PostgreSQL 15	pass	21s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287506656	
+Fiscal integrity / PostgreSQL 17	pass	19s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507117	
+Native session / PostgreSQL 15	pass	31s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506019	
+Native session / PostgreSQL 17	pass	37s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580178/job/126287506499	
+PostgreSQL attack lab / fiscal	pass	18s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489560	
+PostgreSQL attack lab / fiscal	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506234	
+PostgreSQL attack lab / multi-tenant	pass	28s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489675	
+PostgreSQL attack lab / multi-tenant	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506163	
+PostgreSQL attack lab / session	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742574686/job/126287489501	
+PostgreSQL attack lab / session	pass	20s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580170/job/126287506294	
+Tenant isolation / PostgreSQL 15	pass	26s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507230	
+Tenant isolation / PostgreSQL 17	pass	27s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287507494	
+Vercel	pass	0	https://vercel.com/lstkr/estoque-homologacao/Co9XQDaK7gpnZAkk1je7WZGMWCu3	Deployment has completed
+Vercel Preview Comments	pass	0	https://vercel.com/github	
+application-build	pass	43s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580275/job/126287507045	
+bootstrap-tool	pass	7s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580432/job/126287506957	
+build	pass	42s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580187/job/126287512806	
+chart-layout	pass	1m39s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580175/job/126287506410	
+tests	pass	17s	https://github.com/lstkr/projeto-gpt/actions/runs/41742580255/job/126287506412	
