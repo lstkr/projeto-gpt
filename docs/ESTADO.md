@@ -34,3 +34,7 @@
 - PR #197 rascunho: filtros, itens em largura total, contagem em cartões, gráfico diário/mensal; sem merge.
 - 306/306 na suíte; 7/7 após correção da revisão; build e regressão visual em seis larguras passaram.
 - Nova branch fix/giro-ui-followup: 6 ajustes focados; WebKit reserva estável; Firefox/Safari real pendentes.
+## Próximas entregas autorizadas em 03/11/2026
+- Ordem: tela/teclado (#199) → gráficos → faturamentos pendentes → unidades/custos.
+- Perfis futuros: Gestor → Gerente → Funcionário, selecionados na criação; liberações padronizadas.
+- Gestor define acessos de todos; Gerente somente de Funcionários; auditar autor/data de concessão e revogação.

@@ -50,14 +50,27 @@ async function verifyReview(browser) {
       if (event.key === 'Enter' && event.target.tagName === 'INPUT') window.receiptEnterPrevented.push(event.defaultPrevented);
     });
   });
+  const first = review.locator('input:not([type="checkbox"]):not(:disabled)').first();
+  await first.focus();
+  await page.keyboard.press('Tab');
+  await page.evaluate(() => {window.receiptTabTarget = document.activeElement;});
+  await first.focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement === window.receiptTabTarget),true);
+  await page.keyboard.press('Shift+Enter');
+  assert.equal(await first.evaluate(control => document.activeElement === control),true);
   for (const field of await review.locator('input:not([type="checkbox"]):not(:disabled)').all()) await field.press('Enter');
   const prevented = await page.evaluate(() => window.receiptEnterPrevented);
   assert.ok(prevented.length >= 8 && prevented.every(Boolean), 'Enter precisa ser bloqueado nos campos');
   assert.equal(writes.length, 0, 'Navegar e pressionar Enter não lança estoque');
   await review.getByRole('link', {name: 'Ir aos totais', exact: true}).click();
   assert.equal(await page.evaluate(() => document.activeElement.id), 'receipt-review-totals');
+  for (let index=0;index<14;index++) await review.getByRole('button',{name:'Adicionar item',exact:true}).click();
   for (const width of [1440, 1280, 390]) {
     await page.setViewportSize({width, height: 900});
+    const items = review.locator('.receipt-items-table');
+    const dimensions = await items.evaluate(element => ({height:element.clientHeight,content:element.scrollHeight}));
+    assert.ok(dimensions.content <= dimensions.height + 2,'Lista deve crescer sem rolagem interna');
     const overflow = await page.evaluate(() => ({overflow: document.documentElement.scrollWidth > innerWidth,
       outside: [...document.querySelectorAll('body *')].filter(el => el.scrollWidth > el.clientWidth + 2 && !el.closest('.table-wrap')).slice(0,15).map(el => ({name: el.className, text: el.textContent.slice(0,40), width: el.clientWidth, scroll: el.scrollWidth}))}));
     assert.equal(overflow.overflow, false, width+'px '+JSON.stringify(overflow.outside));
