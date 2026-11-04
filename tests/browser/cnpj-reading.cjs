@@ -61,6 +61,8 @@ async function verifyReading(browser,scenario,official){
       assert.equal(await page.getByLabel(/Desconto total/).inputValue(),'10');
       assert.equal(await page.getByLabel('Total líquido calculado automaticamente',{exact:true}).inputValue(),'80.00');
     }
+    assert.equal(await page.getByRole('region',{name:'Identificação fiscal da nota',exact:true}).count(),0);
+    assert.equal(await page.getByLabel('Chave de acesso NF-e/NFC-e (44 dígitos)',{exact:true}).count(),1);
     if(scenario==='danfe'){
       assert.match(await page.locator('#local-key-status').innerText(),/validados localmente/);
       assert.match(await page.getByRole('region',{name:'Identificação local pela chave'}).innerText(),/UF: RS.*Série: 001/);

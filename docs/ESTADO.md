@@ -23,11 +23,10 @@
 - Pré-comercial #178 adiado até uso comercial; produção não autorizada; QR externo sem uso pela tela.
 - Fotos reais apenas em testes locais; repositório só recebe dados sintéticos/anonimizados.
 - DANFE anexado abriu; arquivo da foto com duas NFC-e não encontrado e precisa ser reenviado.
-## Evidências deste bloco
+## Evidências
 - 27 testes relevantes passaram; build aprovado; navegador isolado passou quatro cenários incluindo DANFE.
 - Suíte uma vez: 276/282; seis falhas locais antigas Windows/bcryptjs/CRLF; CI fará validação Linux.
 - DANFE real: OCR local extraiu uma chave válida55; barcode dessa foto não leu; CODE128 sintético passou.
-- Modo econômico proposto em PR docs rascunho: cabeçalho só no final, leitura/testes/revisão focados; sem merge.
 - Revisão fiscal independente: achados corrigidos e sem novo impeditivo; CL-07/11/13/15/16 conferidas.
 ## Giro — preview local 02/11/2026
 - Layout aprovado aplicado na branch codex/giro-layout; ícone 3 provisório, sem main/deploy/banco.
@@ -35,6 +34,7 @@
 - 306/306 na suíte; 7/7 após correção da revisão; build e regressão visual em seis larguras passaram.
 - Nova branch fix/giro-ui-followup: 6 ajustes focados; WebKit reserva estável; Firefox/Safari real pendentes.
 ## Próximas entregas autorizadas em 03/11/2026
-- Ordem: tela/teclado (#199) → gráficos → faturamentos pendentes → unidades/custos.
+- #199: tela/teclado e gráficos; auditoria dos 17 pedidos em docs/pedidos-preview-status.md.
+- Depois: faturamentos pendentes → unidades/custos; não confundir issues fechadas com código integrado.
 - Perfis futuros: Gestor → Gerente → Funcionário, selecionados na criação; liberações padronizadas.
 - Gestor define acessos de todos; Gerente somente de Funcionários; auditar autor/data de concessão e revogação.

@@ -1,14 +1,13 @@
 import {businessToday} from '../lib/insight-period.mjs';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {revenueChart} from '../lib/revenue-chart.mjs';
+import {revenueChart,revenueDateLabel as label} from '../lib/revenue-chart.mjs';
 import {insightMoney} from '../lib/cash-insights.mjs';
 
-const label=(key,scope)=>new Date(key+(scope==='year'?'-01':'')+'T12:00:00').toLocaleDateString('pt-BR',scope==='year'?{month:'long',year:'numeric'}:{day:'2-digit',month:'long'});
 
 /** Apresenta escala, extremos e detalhe acessível; ausências não são venda zero.
  * CL-02: até 50 linhas para manter a rolagem e a série visual no mesmo componente.
  */
-export default function CashRevenueChart({entries,month,scope,onSelect}) {
+export default function CashRevenueChart({entries,month,scope,onSelect,onReturnToYear}) {
   const today=businessToday();
   const series=useMemo(()=>revenueChart(entries,{month,scope,today}),[entries,month,scope,today]);
   const [highlight,setHighlight]=useState('');
@@ -24,7 +23,9 @@ export default function CashRevenueChart({entries,month,scope,onSelect}) {
     return ()=>media.removeEventListener('change',position);
   },[series.lastKey,month,scope]);
   return <section className="panel giro-revenue-chart" aria-label="Evolução do faturamento">
+    {scope==='month'&&onReturnToYear&&<button type="button" className="btn secondary" onClick={onReturnToYear}>Voltar ao gráfico do ano</button>}
     <h2>Faturamento {scope==='year'?'mensal':'diário'} — {scope==='year'?month.slice(0,4):label(month,'year')}</h2>
+    {!series.points.length&&<p role="status">Nenhum fechamento registrado neste período.</p>}
     <div className="giro-chart-extremes">{[['Maior',series.max],['Menor',series.min]].map(([title,item])=><div key={title}><span>{title} {scope==='year'?'mês':'dia'} registrado</span><b>{item?insightMoney(item.cents):'Sem registros'}</b><small>{item?label(item.key,scope):'—'}</small></div>)}</div>
     <p className="cash-chart-inspector" role="status" aria-live="polite" data-testid="cash-chart-inspector">{point?`${label(point.key,scope)} · ${insightMoney(point.cents)}${point.partial?' · parcial':''}`:'Selecione uma coluna para detalhar. Dias sem registro não comprovam venda zero.'}</p>
     {series.invalid>0&&<p role="status">Série parcial: {series.invalid} fechamento(s) inválidos fora do gráfico.</p>}

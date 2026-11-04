@@ -93,7 +93,7 @@ const closings = [
 
     const columns = page.locator('.giro-revenue-bars .cash-bar-column');
     await columns.first().waitFor();
-    assert.equal(await columns.count(),31,'outubro precisa exibir 31 dias');
+    assert.equal(await columns.count(),5,'outubro mostra somente cinco dias com registro');
     assert.equal(await page.locator('.giro-revenue-bars .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
     const amountLabels = await columns.evaluateAll(items=>items.filter(item=>/R\$\s*[0-9]/.test(item.innerText)));
     assert.equal(amountLabels.length,0,'rótulos de moeda não podem ocupar o espaço estreito das colunas');
@@ -148,11 +148,14 @@ const closings = [
     assert.equal(await columns.count(),12,'ano deve conter doze meses');
     await page.getByRole('heading',{name:'Faturamento mensal — 2026',exact:true}).waitFor();
     await page.locator('.giro-revenue-bars button[aria-label^="outubro"]').click();
-    assert.equal(await columns.count(),31,'selecionar mês volta ao detalhe diário');
+    assert.equal(await columns.count(),5,'selecionar mês mostra só dias com fechamento');
+    await page.getByRole('button',{name:'Voltar ao gráfico do ano',exact:true}).click();
+    assert.equal(await columns.count(),12,'retorno explícito preserva os doze meses');
+    await page.getByRole('group',{name:'Período do gráfico',exact:true}).getByRole('button',{name:'Mês',exact:true}).click();
 
     await page.locator('.cash-chart-controls input[type=month]').fill('2028-02');
-    assert.equal(await columns.count(),29,'fevereiro bissexto precisa mostrar 29 dias');
-    assert.equal(await columns.filter({has:page.locator('.giro-chart-track i')}).count(),29);
+    assert.equal(await columns.count(),0,'mês sem fechamento não mostra dias vazios');
+    assert.equal(await columns.filter({has:page.locator('.giro-chart-track i')}).count(),0);
 
     // Stock count printing: previews must remain readable, modal and isolated.
     await page.getByRole('button',{name:'Contagem de estoque',exact:true}).click();

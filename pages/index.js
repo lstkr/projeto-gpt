@@ -3233,24 +3233,6 @@ export default function Home() {
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
               <b>Chave da NFC-e não validada.</b> {draft.keyWarning}
-              {draft.ocrText && <label className="field qr-key-invalid-edit"><span>Corrigir chave de acesso</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>}
-            </div>}
-            {(draft.accessKey || draft.consultaUrl) && <div className="notice qr-identified-card" role="region" aria-label="Identificação fiscal da nota">
-              <div className="qr-identified-content">
-                <div className="qr-identified-title"><Icon type="check" size={17}/><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave fiscal identificada'}</b></div>
-                {draft.accessKey ? <code className="qr-identified-key">{draft.accessKey}</code> : <span>QR Code encontrado com endereço de consulta.</span>}
-                {draft.qrReader?.includes('API externa') ? <small>QR Code obtido pela API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e ↗</a>.</small> :
-                  draft.qrReader ? <small>Origem da leitura: {draft.qrReader} (leitura local, sem API externa).</small> :
-                  <small>Chave obtida pelo reconhecimento do documento; confira com a nota original.</small>}
-                {draft.ocrText && <details className="qr-key-correction">
-                  <summary>Chave incorreta? Corrigir</summary>
-                  <label className="field"><span>Chave de acesso (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>
-                </details>}
-              </div>
-              <div className="qr-identified-actions">
-                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
-                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
-              </div>
             </div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
               <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os itens oficiais são adotados por padrão e exigem conferência antes do lançamento.</p></div></div>
@@ -3264,6 +3246,14 @@ export default function Home() {
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
+              <p role="status" className={draft.qrDetected ? 'qr-detection-ok' : ''}>{draft.qrDetected ? '✓ QR Code identificado' : 'QR Code não identificado'}</p>
+              <div className="qr-identified-actions">
+                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
+                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Conferir QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
+              </div>
+              <details><summary>Origem da identificação</summary>
+                {draft.qrReader?.includes('API externa') ? <p>Origem: API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>.</p> : <p>{draft.qrReader || 'Chave obtida pelo reconhecimento do documento; confira com a nota original.'}</p>}
+              </details>
               <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
               <p id="local-key-status" role="status">{localKeyReview.message}</p>
               {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
@@ -3472,7 +3462,7 @@ export default function Home() {
             </div>
           </section>
           <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
-          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
+          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onReturnToYear={()=>{setCashChartScope('year');setCashSelectedDay('');}} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
         </>}
 
         {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
