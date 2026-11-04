@@ -1,9 +1,11 @@
 # Estoque+ — Checklist de homologação / release candidate
 
+> Registro histórico: apontamentos e opt-in de banco compartilhado abaixo foram revogados. Use configuração explícita por ambiente conforme README; este registro não autoriza execução.
+
 Atualizado: 2026-10-21. PRs #40, #47, #48 e #49 **integrados**. A aplicação já está publicada para testes de homologação; **não declarar uso comercial homologado** enquanto a verificação manual permanecer incompleta.
 
 ## Banco existente autorizado para testes manuais (decisão do gestor)
-- **Autorização 20/10/2026:** reutilizar o Supabase atual `dpauqdihvhbbaellwjav`, SEM alterar contas existentes. Não criar novo banco agora.
+- **Autorização 20/10/2026:** reutilizar o Supabase atual `[referência legada removida]`, SEM alterar contas existentes. Não criar novo banco agora.
 - **Regra de preservação:** manter `private.app_users`, `password_hash`, `private.app_sessions` e os dados atuais. Não resetar senhas, reexecutar `db/schema.sql` no banco existente, truncar tabelas, semear usuários de teste por cima dos existentes ou executar SQL destrutivo.
 - **Atualização autorizada e executada em 21/10/2026:** migrações remotas `20261021131407` (cópias privadas de recuperação) e `20261021131601` (ACL fiscal + notas + sessão RPC + integridade transacional). Scripts SQL de origem foram conferidos com o PR #40; **não** executado `db/schema.sql` nem SQL para alterar usuários/senhas.
 - Resultado verificado: 2 usuários e 16 sessões **idênticos** aos registros originais; 1 estoque e 5 notas com dados históricos idênticos. `public.inventory_validate_session`, `public.pending_receipt_cancel`, `private.has_permission` e `public.inventory_permissions_list` agora **instaladas**; chamadas RPC com token inválido foram rejeitadas pelo papel `anon`.

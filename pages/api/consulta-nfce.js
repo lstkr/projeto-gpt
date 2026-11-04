@@ -2,6 +2,7 @@ import { requireInventorySession } from '../../lib/server/inventory-session.mjs'
 import { enforceFiscalRateLimit } from '../../lib/server/fiscal-rate-limit.mjs';
 // Server-side NFC-e public consultation. Only the official SVRS QR endpoint is allowed.
 import { load } from 'cheerio';
+import { parseSvrsHtml } from '../../lib/svrs-parser.mjs';
 
 const OFFICIAL_HOST = 'dfe-portal.svrs.rs.gov.br';
 const ALLOWED_INPUTS = new Map([
@@ -80,20 +81,6 @@ function parseOfficialItems(html) {
     });
   });
   return items;
-}
-
-function parseFiscalTotals(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  const result = { subtotal: null, discount: null, total: null };
-  for (const line of lines) {
-    const name = line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    const value = parseMoney(line);
-    if (value === null) continue;
-    if (result.subtotal === null && /SUB[ -]?TOTAL/.test(name)) result.subtotal = value;
-    if (result.discount === null && /\bDESCONTO\b/.test(name)) result.discount = value;
-    if (result.total === null && /VALOR A PAGAR|VALOR TOTAL|TOTAL DA NOTA/.test(name)) result.total = value;
-  }
-  return result;
 }
 
 async function fetchOfficial(url, signal) {
@@ -197,12 +184,14 @@ export default async function handler(req, res) {
     if (/par[aâ]metro incorreto|modelo de documento n[aã]o reconhecido|nota fiscal n[aã]o encontrada/i.test(text)) {
       throw new Error('O portal recusou a consulta. Confira a chave e o QR Code original.');
     }
+    const parsed = parseSvrsHtml(html);
     const items = parseOfficialItems(html);
+    if (parsed.accessKey !== key) throw new Error('A página fiscal não corresponde à chave consultada.');
     if (controller.signal.aborted) throw new Error('Tempo limite de consulta atingido.');
     if (!items.length) {
       return res.status(502).json({ error: 'A SEFAZ abriu a página, mas a lista de produtos não veio em um formato estruturado reconhecido. Confira manualmente.' });
     }
-    return res.status(200).json({ items, totals: parseFiscalTotals(text), source: 'SVRS', accessKey: key, url: sourceUrl });
+    return res.status(200).json({ ...parsed, items, source: 'SVRS', url: sourceUrl });
   } catch (e) {
     if (controller.signal.aborted || e.name === 'AbortError' || e.name === 'TimeoutError') {
       return res.status(504).json({ error: 'A consulta à SEFAZ demorou mais de 10 segundos. Confira a nota manualmente.' });

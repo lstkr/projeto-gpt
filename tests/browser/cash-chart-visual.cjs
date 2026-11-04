@@ -3,6 +3,7 @@
 // ESTOQUE_BROWSER_URL=http://127.0.0.1:3000 PLAYWRIGHT_MODULE=playwright node tests/browser/cash-chart-visual.cjs
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const { performance } = require('node:perf_hooks');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -21,6 +22,9 @@ const printCounts = [{id:'qa-count-1',completedAt:'2026-10-20T15:00:00Z',
   by:'QA',items:[{productId:'qa-milk',name:'Leite integral',expected:20,counted:19},
     {productId:'qa-beans',name:'Café em grãos',expected:2.5,counted:3}]}];
 
+let sessionRevokedForQA = false;
+let checksAfterRevocation = 0;
+let writesAfterRevocation = 0;
 const closings = [
   {id:'chart-10',day:'2026-10-10',register:'001',operator:'QA',cartaoCredito:569,movements:[]},
   {id:'chart-17',day:'2026-10-17',register:'001',operator:'QA',cartaoCredito:783,movements:[]},
@@ -31,7 +35,8 @@ const closings = [
 ];
 
 (async () => {
-  const launchOptions = { headless:true };
+  // Headed Chromium under Xvfb is required for real tab visibility/focus assertions.
+  const launchOptions = { headless:process.env.ESTOQUE_VISUAL_HEADED !== '1' };
   if (process.env.ESTOQUE_CHROME_PATH) launchOptions.executablePath = process.env.ESTOQUE_CHROME_PATH;
   const browser = await chromium.launch(launchOptions);
   try {
@@ -42,18 +47,38 @@ const closings = [
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
       if (url.origin === origin) return route.continue();
-      if (!url.hostname.endsWith('.supabase.co') || !url.pathname.startsWith('/rest/v1/rpc/')) return route.abort();
+      if ((!url.hostname.endsWith('.supabase.co') && !['127.0.0.1','localhost'].includes(url.hostname)) || !url.pathname.startsWith('/rest/v1/rpc/')) return route.abort();
       const name = url.pathname.split('/').at(-1);
       let data;
-      if (name === 'inventory_login') data = {ok:true,session_token:'visual-qa-session'};
+      if (name === 'inventory_validate_session') {
+        if (sessionRevokedForQA) {
+          checksAfterRevocation++;
+          return route.fulfill({status:401,contentType:'application/json',
+            headers:{'access-control-allow-origin':'*'},
+            body:JSON.stringify({code:'28000',message:'Sessão inválida'})});
+        }
+        data = {valid:true,user:{id:'qa',role:'admin'}};
+      }
+      else if (name === 'inventory_login') data = {ok:true,session_token:'visual-qa-session'};
       else if (name === 'inventory_tenants') data = {
         user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},
         role:'admin',tenants:[{id:'qa-unit',name:'Unidade QA'}],activeTenantId:'qa-unit',mustChangePassword:false
       };
+      else if (name === 'inventory_save') {
+        if (sessionRevokedForQA) {
+          writesAfterRevocation++;
+          return route.fulfill({status:401,contentType:'application/json',
+            headers:{'access-control-allow-origin':'*'},
+            body:JSON.stringify({code:'28000',message:'Sessão inválida'})});
+        }
+        data = {ok:true,revision:1};
+      }
       else if (name === 'inventory_get') data = {user:{id:'qa',username:'synthetic.qa',display_name:'QA',role:'admin'},revision:0,products:printProducts,movements:[],documents:[],stockCounts:printCounts};
       else if (name === 'inventory_directory') data = {establishments:[{id:'qa-unit',name:'Unidade QA'}],users:[]};
       else if (name === 'inventory_permissions_list') data = {self:{},users:[]};
+      else if (name === 'supplier_identity_links') data = []; // Synthetic fixture, no supplier mappings.
       else if (name === 'cash_closings_list') data = closings;
+      else if (name === 'cash_closing_audit_list') data = [];
       else if (name === 'pending_receipts_list') data = [];
       else if (name === 'inventory_logout') data = {ok:true};
       else throw new Error('Unmocked RPC: ' + name);
@@ -62,14 +87,14 @@ const closings = [
     await page.goto(origin);
     await page.getByLabel('Login', {exact:true}).fill('synthetic.qa');
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
-    await page.getByRole('button',{name:'Entrar no estoque',exact:true}).click();
-    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).click();
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
+    await page.getByRole('button',{name:'Relatórios',exact:true}).click();
     await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
 
-    const columns = page.locator('.cash-chart-month .cash-bar-column');
+    const columns = page.locator('.giro-revenue-bars .cash-bar-column');
     await columns.first().waitFor();
     assert.equal(await columns.count(),31,'outubro precisa exibir 31 dias');
-    assert.equal(await page.locator('.cash-chart-month .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
+    assert.equal(await page.locator('.giro-revenue-bars .cash-bar-column:not(:disabled)').count(),5,'mesmo dia com dois caixas deve ser uma só barra');
     const amountLabels = await columns.evaluateAll(items=>items.filter(item=>/R\$\s*[0-9]/.test(item.innerText)));
     assert.equal(amountLabels.length,0,'rótulos de moeda não podem ocupar o espaço estreito das colunas');
 
@@ -77,7 +102,7 @@ const closings = [
       await page.setViewportSize({width,height});
       const result = await page.evaluate(() => {
         const panel=document.querySelector('.cash-chart-inspector');
-        const chart=document.querySelector('.cash-chart');
+        const chart=document.querySelector('.giro-chart-scroll');
         const titles=Array.from(chart.querySelectorAll('.cash-bar-column small'));
         const rects=titles.map(el=>el.getBoundingClientRect());
         const overlaps=[];
@@ -89,11 +114,18 @@ const closings = [
       });
       assert.equal(result.panelBeforeChart,true,'painel de valor não deve sobrepor as barras');
       assert.deepEqual(result.overlaps,[],'rótulos dos dias não podem colidir em '+width+'px');
+      if(width<=620){
+        const visible=await page.locator('[data-last-recorded="true"]').evaluate(element=>{
+          const bar=element.getBoundingClientRect(),viewport=element.closest('.giro-chart-scroll').getBoundingClientRect();
+          return bar.left>=viewport.left-1&&bar.right<=viewport.right+1;
+        });
+        assert.equal(visible,true,'último registro deve começar visível no celular');
+      }
       assert.equal(result.pageOverflow,false,'a página não deve transbordar em '+width+'px; o próprio gráfico pode rolar');
       await page.screenshot({path:path.join(output,'cash-chart-'+width+'.png')});
     }
 
-    const bar20=page.locator('.cash-chart-month .cash-bar-column[aria-label*="20 de outubro"]');
+    const bar20=page.locator('.giro-revenue-bars .cash-bar-column[aria-label*="20 de outubro"]');
     await bar20.scrollIntoViewIfNeeded();
     await bar20.hover();
     assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/R\$\s*2\.175,50/,'o hover deve exibir a receita consolidada do dia');
@@ -101,14 +133,30 @@ const closings = [
     assert.match(await page.locator('[data-testid="cash-chart-inspector"]').innerText(),/2\.175,50/,'o foco por teclado deve informar o valor');
     await bar20.click();
     await page.getByRole('dialog').waitFor();
-    await page.getByRole('button',{name:'Fechar detalhamento do dia'}).click();
+    await page.getByRole('button',{name:'Revisar caixa 001',exact:true}).click();
+    await page.getByRole('heading',{name:'Corrigir fechamento',exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Motivo da correção *',{exact:true}).inputValue(),'');
+    await page.getByRole('button',{name:'Fechar formulário',exact:true}).click();
+    await page.locator('.giro-history-filters input[type=month]').fill('2026-10');
+    assert.equal(await page.locator('.cash-history tbody tr').count(),6);
+    await page.getByRole('button',{name:'Relatórios',exact:true}).click();
+    const controls=page.getByRole('group',{name:'Período do gráfico',exact:true});
+    const before=await controls.boundingBox();
+    await page.getByRole('button',{name:'Ano',exact:true}).click();
+    const after=await controls.boundingBox();
+    assert.ok(Math.abs(before.x-after.x)<1&&Math.abs(before.y-after.y)<1,'alternar mês/ano não move o controle');
+    assert.equal(await columns.count(),12,'ano deve conter doze meses');
+    await page.getByRole('heading',{name:'Faturamento mensal — 2026',exact:true}).waitFor();
+    await page.locator('.giro-revenue-bars button[aria-label^="outubro"]').click();
+    assert.equal(await columns.count(),31,'selecionar mês volta ao detalhe diário');
 
     await page.locator('.cash-chart-controls input[type=month]').fill('2028-02');
     assert.equal(await columns.count(),29,'fevereiro bissexto precisa mostrar 29 dias');
-    assert.equal(await columns.filter({has:page.locator('.cash-bar-fill')}).count(),29);
+    assert.equal(await columns.filter({has:page.locator('.giro-chart-track i')}).count(),29);
 
     // Stock count printing: previews must remain readable, modal and isolated.
     await page.getByRole('button',{name:'Contagem de estoque',exact:true}).click();
+    await page.getByText('Imprimir folha de contagem',{exact:true}).click();
     await page.getByRole('button',{name:'Abrir prévia de impressão'}).click();
     const printDialog=page.getByRole('dialog',{name:/Prévia de impressão/});
     await printDialog.waitFor();
@@ -158,6 +206,58 @@ const closings = [
     await page.keyboard.press('Escape');
     assert.equal(await page.getByRole('dialog',{name:/Prévia de impressão/}).count(),0,'Escape deve fechar a prévia');
     console.log('PASS print preview: blind/differences, role-aware sheet, keyboard and six viewports');
+
+    // Revocation from another client: no manual logout click is permitted.
+    // Measure from remote revocation to visible login; a 9 s timeout masked SLA misses.
+    // This measures an online localhost mock, not real network latency.
+    const revokedAt=performance.now();
+    sessionRevokedForQA=true;
+    // No user action, click or focus event: the periodic watcher must act alone.
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const logoutLatencyMs=performance.now()-revokedAt;
+    assert.ok(logoutLatencyMs<=2500,
+      'remote revocation must reach the visible login in ~2.5 s; observed '+logoutLatencyMs.toFixed(0)+' ms');
+    console.log('QA revocation heartbeat-to-login latency: '+logoutLatencyMs.toFixed(0)+' ms');
+    assert.ok(checksAfterRevocation>=1,'navegador deve verificar token expirado');
+    assert.equal(writesAfterRevocation,0,'nenhum salvamento pode ser iniciado depois da detecção');
+    const persisted=await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session'));
+    assert.equal(persisted,null,'token inativo deve ser removido do browser');
+    assert.equal(await page.getByRole('button',{name:'Contagem de estoque',exact:true}).count(),0,
+      'uma conta desconectada não deve manter ações de estoque');
+    assert.match(await page.locator('body').innerText(),/Sua sessão foi encerrada|conta foi desativada/);
+    console.log('PASS client revocation: forced logout, no token, no inventory actions');
+
+    // Focus should trigger immediate validation, without waiting for a timer tick.
+    // Reauthenticate only in this synthetic fixture; never use production tokens.
+    sessionRevokedForQA=false;
+    await page.getByLabel('Login',{exact:true}).fill('synthetic.qa');
+    await page.getByLabel('Senha',{exact:true}).fill('Visual-QA-only-password');
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
+    await page.getByRole('button',{name:'Fechamento de caixa',exact:true}).waitFor({state:'visible'});
+    // In Xvfb, separate Playwright pages can remain simultaneously visible.
+    // Minimize and restore the actual Chromium window via CDP instead of
+    // dispatching synthetic visibility/focus events or assuming a new page hides it.
+    const cdp=await context.newCDPSession(page);
+    const {windowId}=await cdp.send('Browser.getWindowForTarget');
+    await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'minimized'}});
+    // Xvfb can report document.visible even for a minimized Chromium window.
+    // Record this limitation explicitly: a true hidden-tab event still needs
+    // human QA on a desktop browser; do not claim it was proven by this runner.
+    await page.waitForTimeout(150);
+    const actuallyHidden=await page.evaluate(()=>document.hidden);
+    console.log('QA Xvfb minimized window document.hidden: '+actuallyHidden);
+    if(!actuallyHidden) console.warn('QA limitation: hidden-tab visibility was NOT reproduced in Xvfb; verify manually.');
+    sessionRevokedForQA=true;
+    const focusStartedAt=performance.now();
+    await cdp.send('Browser.setWindowBounds',{windowId,bounds:{windowState:'normal'}});
+    await page.bringToFront();
+    await page.getByLabel('Login',{exact:true}).waitFor({timeout:2500});
+    const focusLogoutLatencyMs=performance.now()-focusStartedAt;
+    assert.ok(focusLogoutLatencyMs<=2500,
+      'restoring a hidden browser window must force logout promptly: '+focusLogoutLatencyMs.toFixed(0)+' ms');
+    assert.equal(await page.evaluate(()=>sessionStorage.getItem('projeto-gpt-session')),null);
+    await cdp.detach();
+    console.log('QA real window-restore-to-login latency: '+focusLogoutLatencyMs.toFixed(0)+' ms');
 
     assert.deepEqual(errors,[],'não deve haver erros JavaScript no navegador');
     console.log('PASS visual QA: labels, consolidated totals, leap month, keyboard, hover and six viewports');

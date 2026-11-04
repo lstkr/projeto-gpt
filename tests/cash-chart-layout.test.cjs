@@ -1,32 +1,20 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-
-const jsx = fs.readFileSync(path.join(__dirname, '../pages/index.js'), 'utf8');
-const css = fs.readFileSync(path.join(__dirname, '../styles/globals.css'), 'utf8');
-const start = jsx.indexOf('<div className={\'cash-chart\'');
-const end = jsx.indexOf('</div>', start);
-const chart = jsx.slice(start, end);
-
-test('gráfico não exibe valores monetários sobre cada barra', () => {
-  assert.ok(start > -1, 'o gráfico precisa existir');
-  assert.doesNotMatch(chart, /<span>\{hasRevenue\s*\?\s*money\(/, 'rótulos monetários permanentes se sobrepõem em meses cheios');
-  assert.doesNotMatch(css, /\.cash-chart-month \.cash-bar-column>span\s*\{/);
-  assert.match(jsx, /className="cash-chart-inspector"/);
-  assert.match(chart, /aria-label=\{\x60\$\{accessibleDate\}, faturamento/);
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {readFileSync}=require('node:fs');
+const component=readFileSync('components/CashRevenueChart.js','utf8');
+const page=readFileSync('pages/index.js','utf8');
+const styles=readFileSync('styles/giro-review.css','utf8');
+test('escala começa em zero e extremos são legíveis sem valores sobrepostos nas barras',()=>{
+ assert.ok(component.includes('[series.ceiling,series.ceiling/2n,0n]'));
+ assert.ok(component.includes("['Maior',series.max],['Menor',series.min]"));
+ assert.doesNotMatch(component.slice(component.indexOf('className="giro-revenue-bars"')),/<(?:strong|b)>/);
+ assert.ok(component.includes('className="cash-chart-inspector"'));
 });
-
-test('gráfico conserva todos os dias, inclusive dias sem fechamento', () => {
-  assert.match(jsx, /Array\.from\(\{length:daysInMonth\}/);
-  assert.match(jsx, /revenueByDay\.get\(day\)\?\?0/);
-  assert.match(chart, /hasRevenue\?\(Math\.max\(3,/);
+test('rolagem móvel mostra o último registro e mantém dica e limpeza de eventos',()=>{
+ for(const text of ['series.lastKey','scrollLeft=Math.max',"media.addEventListener('change',position)","media.removeEventListener('change',position)",'Deslize para ver'])assert.ok(component.includes(text),text);
+ assert.ok(styles.includes('.giro-chart-scroll { overflow-x:auto'));
 });
-
-test('inspeção por mouse e foco sem mudar valores ou acesso ao detalhamento', () => {
-  assert.match(chart, /onMouseEnter=\{\(\)=>hasRevenue&&setCashHighlightedDay\(p\.day\)\}/);
-  assert.match(chart, /onFocus=\{\(\)=>hasRevenue&&setCashHighlightedDay\(p\.day\)\}/);
-  assert.match(chart, /onClick=\{\(\)=>hasRevenue&&setCashSelectedDay\(p\.day\)\}/);
-  assert.match(jsx, /cashHighlightedEntry\.revenue/);
-  assert.match(jsx, /cashChartData\.revenue/);
+test('teclado e mouse inspecionam; ano abre mês e mês abre detalhe diário',()=>{
+ for(const text of ['onFocus={()=>setHighlight(item.key)}','onMouseEnter={()=>setHighlight(item.key)}','onClick={()=>onSelect(item.key)}','disabled={!item.recorded}'])assert.ok(component.includes(text),text);
+ assert.ok(page.includes("if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key)"));
 });

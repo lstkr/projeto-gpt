@@ -2,6 +2,36 @@
 
 Aplicação web para o estoque da cafeteria, com contas individuais, leitura assistida de cupons e notas e controle de reposição.
 
+## Homologação
+
+Acesse [Estoque+ em homologação](https://estoque-homologacao-ashy.vercel.app/).
+O ambiente usa o projeto Vercel `estoque-homologacao`, Node.js 22 e o Supabase
+`Estoque+ DB`. A configuração efetiva do banco deve ser conferida por ambiente;
+o endereço da aplicação, isoladamente, não comprova o destino do banco.
+
+O workflow `production-smoke.yml` mantém o nome do arquivo por compatibilidade,
+mas executa **Homologation read-only smoke**. `ESTOQUE_SMOKE_URL` é obrigatória,
+definida uma única vez no workflow, sem fallback. Para executá-lo localmente:
+
+```powershell
+$env:ESTOQUE_SMOKE_URL = 'https://estoque-homologacao-ashy.vercel.app'
+node scripts/smoke-production.cjs
+```
+
+O smoke confere homepage, worker PDF e rejeição de chamadas sem sessão.
+Não valida login, OCR, provedor fiscal ou lançamentos de estoque.
+
+## Restrição do banco na Vercel
+
+Preview e Production exigem `ESTOQUE_SUPABASE_ALLOWED_REF` com a ref de 20 caracteres
+permitida e `NEXT_PUBLIC_SUPABASE_URL` igual a `https://<ref>.supabase.co`, além de
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` pública do mesmo projeto. Preview também exige
+`NEXT_PUBLIC_SUPABASE_PREVIEW_URL` igual à URL. Não há exceção por branch.
+Ausência, ref inválida ou destino divergente bloqueiam build e execução antes do cliente.
+Na homologação, usar somente Estoque+ DB; não configurar segredo/service role no cliente.
+Após o preview: Lucas deve entrar como Gestor e Funcionário, conferir acesso e sair.
+Sem migração ou alteração de contas; reverter o commit desfaz a política adicional.
+
 ## Funcionalidades
 
 - Consulta e alteração das quantidades em estoque.
@@ -62,14 +92,36 @@ O Supabase Security Advisor foi consultado após as mudanças de permissão e n�
 
 ## Aplicação Next.js
 
-Requisitos: Node.js 20.9 ou superior.
+Requisitos: Node.js 22, conforme `package.json` e CI.
 
 ```bash
 npm install
 npm run dev
 ```
 
-As variáveis `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` podem ser definidas no ambiente. O projeto usa uma publishable key pública no cliente. Nunca incluir uma chave `service_role` ou secret key em código de frontend.
+### Configuração obrigatória por ambiente
+
+Copie .env.example para .env.local e configure NEXT_PUBLIC_SUPABASE_URL e
+NEXT_PUBLIC_SUPABASE_ANON_KEY (somente chave pública publishable/anon). Não há
+fallback: configuração ausente interrompe a aplicação com erro em português.
+Nenhuma chave privilegiada deve receber prefixo NEXT_PUBLIC_.
+
+Em preview, configure também NEXT_PUBLIC_SUPABASE_PREVIEW_URL com exatamente a
+mesma URL autorizada para esse preview; ausência ou divergência bloqueia o acesso.
+Local, preview/homologação e produção devem usar bancos distintos. Nesta fase,
+o destino remoto autorizado para homologação é Estoque+ DB. Nunca reutilize o
+banco de produção no desenvolvimento. A configuração deve ser conferida pelo
+responsável em cada ambiente; igualdade entre variáveis não comprova separação.
+Valores NEXT_PUBLIC_* são públicos e incorporados no build; alterações exigem
+novo build. A prévia estática é preparada por node scripts/prepare-static-preview.mjs,
+com as mesmas variáveis obrigatórias; nunca publique docs/index.html isoladamente.
+O preparo rejeita chaves secret e JWTs com papel service_role antes de gerar arquivos;
+a inspeção do payload não verifica assinatura nem substitui autorização.
+No ambiente github-pages, o responsável deve selecionar o banco isolado nas vars
+NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY; o gate adicional de
+NEXT_PUBLIC_SUPABASE_PREVIEW_URL se aplica ao Preview Next.js/Vercel.
+
+Ambientes sem as variáveis obrigatórias falham de forma explícita.
 
 ## Cuidados operacionais
 
@@ -133,3 +185,12 @@ A visualização gráfica mostra faturamentos **diários** do mês ou ano escolh
 
 **Migrações necessárias:** em banco novo, aplicar os SQLs base na ordem descrita na seção de instalação. No projeto com acesso multinegócio, aplicar `supabase/migrations/20261022020602_cash_closing_integrity.sql` depois da migração de tenants antes de publicar a interface correspondente. A migração preserva os fechamentos existentes e não exige reset de dados ou usuários.
 
+
+### Rollback do isolamento Supabase
+
+Reverter a PR + ajustar variáveis de ambiente somente em alteração revisada.
+A versão resultante deve continuar exigindo configuração explícita: é proibido
+restaurar fallback, chave embutida ou referência ao projeto legado. Se a reversão
+trouxer esses trechos, removê-los na mesma alteração antes de qualquer publicação.
+Conferir o banco isolado nas variáveis de cada ambiente e refazer o build quando
+a publicação for autorizada; nenhuma escrita no banco ou reset faz parte do rollback.

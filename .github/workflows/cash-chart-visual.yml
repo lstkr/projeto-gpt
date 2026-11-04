@@ -6,6 +6,13 @@ on:
       - 'styles/globals.css'
       - 'tests/browser/cash-chart-visual.cjs'
       - 'tests/browser/count-print-visual.cjs'
+      - 'tests/browser/alerts-readability.cjs'
+      - 'tests/browser/discard-receipt-dialog.cjs'
+      - 'tests/browser/receipt-desktop.cjs'
+      - 'tests/browser/cnpj-reading.cjs'
+      - 'lib/receipt-keyboard.mjs'
+      - 'tests/browser/prepare-discard-fixture.cjs'
+      - 'components/DiscardReceiptDialog.js'
       - 'lib/count-print.mjs'
       - 'tests/count-print.test.cjs'
       - '.github/workflows/cash-chart-visual.yml'
@@ -14,17 +21,17 @@ permissions:
   contents: read
 jobs:
   chart-layout:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://visual-fixture.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: synthetic-ci-key-no-real-access
       ESTOQUE_BROWSER_URL: http://127.0.0.1:3000
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -33,19 +40,31 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
+      - name: Verify alert readability and notification semantics
+        run: node tests/browser/alerts-readability.cjs
+      - name: Prepare isolated discard dialog fixture
+        run: node tests/browser/prepare-discard-fixture.cjs
       - name: Build Next.js fixture
         run: npm run build
       - name: Start isolated local server
         run: |
           npm run start > /tmp/estoque-visual-server.log 2>&1 &
           node -e 'const http=require("http");let attempts=0;const check=()=>http.get("http://127.0.0.1:3000",r=>{r.resume();process.exit(0)}).on("error",()=>{if(++attempts>60)process.exit(1);setTimeout(check,1000)});check()'
-      - name: Verify layout across viewports
-        run: node tests/browser/cash-chart-visual.cjs
+      - name: Verify discard rules and real focus return
+        run: node tests/browser/discard-receipt-dialog.cjs
+      - name: Verify receipt keyboard safety and desktop review
+        run: node tests/browser/receipt-desktop.cjs
+      - name: Verify CNPJ source priority and pending status
+        run: node tests/browser/cnpj-reading.cjs
+      - name: Verify layout across viewports and real tab focus
+        run: |
+          command -v xvfb-run
+          xvfb-run -a env ESTOQUE_VISUAL_HEADED=1 node tests/browser/cash-chart-visual.cjs
       - name: Verify A4 and thermal stock-count layouts
         run: node tests/browser/count-print-visual.cjs
       - name: Preserve synthetic visual QA screenshots
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: visual-qa-evidence
           path: |

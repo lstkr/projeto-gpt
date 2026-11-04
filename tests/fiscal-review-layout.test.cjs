@@ -8,9 +8,19 @@ const view = readFileSync(join(__dirname, '../pages/index.js'), 'utf8');
 const start = view.indexOf("{view === 'documents' &&");
 assert.ok(start >= 0, 'documents module must be rendered');
 const documents = view.slice(start);
-const reviewStart = documents.indexOf('{draft && <section className="panel review-panel">');
+const reviewStart = documents.indexOf('{draft && <section className="panel review-panel"');
 assert.ok(reviewStart >= 0, 'fiscal review panel must be present');
 const review = documents.slice(reviewStart);
+
+test('conferência oferece navegação, pendências textuais e proteção contra Enter implícito', () => {
+  assert.match(review, /onKeyDown=\{preventReceiptImplicitSubmit\}/);
+  for (const id of ['receipt-review-items','receipt-review-totals','receipt-review-final']) {
+    assert.ok(review.includes('href="#'+id+'"'));
+    assert.ok(review.includes('id="'+id+'"'));
+  }
+  assert.match(review, /className="receipt-line-pending"><b>Pendente:/);
+  assert.match(review, /onClick=\{confirmDocument\} type="button"/);
+});
 
 test('importação de notas aparece antes da fila de conferência', () => {
   const importArea = documents.indexOf('Da nota fiscal para o estoque');
@@ -47,4 +57,13 @@ test('notas prontas ficam disponíveis para conferência durante OCR de outras n
   assert.match(documents, /onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
   assert.doesNotMatch(documents, /disabled=\{busy\} onClick=\{\(\)=>void openPendingReceipt\(row\)\}/);
   assert.ok(view.includes('await refreshPending();'), 'a fila é atualizada durante o processamento');
+});
+
+
+test('conversão de unidades usa fator explícito e pode ser salva por fornecedor e código', () => {
+  assert.ok(review.includes('Fator de conversão da linha'));
+  assert.ok(review.includes('Entrada calculada:'));
+  assert.ok(review.includes('o sistema não presume o conteúdo de caixas ou pacotes'));
+  assert.ok(review.includes('Salvar este fator para o mesmo código e fornecedor'));
+  assert.ok(view.includes('stockConversion'));
 });

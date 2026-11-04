@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Run tenant cutover acceptance against an empty loopback PostgreSQL only."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import re
-import selectors
 import time
+from process_barrier import wait_for_marker
 
 ROOT = Path(__file__).resolve().parents[2]
 if os.environ.get('PGHOST') not in ('127.0.0.1', 'localhost', '::1'):
@@ -14,18 +15,21 @@ if not os.environ.get('PGDATABASE', '').startswith('estoque_rpc_test'):
     raise SystemExit('PGDATABASE must begin estoque_rpc_test.')
 
 def sql(statement):
-    run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=statement,
+    command = json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]'))
+    run = subprocess.run(command + ['-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']],input=statement,
                          text=True,capture_output=True,timeout=90)
     if run.returncode:
         raise AssertionError(run.stderr)
     return run.stdout.strip()
 
 assert sql("select count(*) from pg_class where relnamespace='public'::regnamespace and relkind='r'") == '0', 'Database must be empty'
-sql('create role anon nologin; create role authenticated nologin; create schema extensions;')
-sql("create schema auth; create table auth.users(id uuid primary key); "
+sql("do $$ begin create role anon nologin; exception when duplicate_object then null; end $$; "
+    "do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$; "
+    "create schema if not exists extensions;")
+sql("create schema if not exists auth; create table if not exists auth.users(id uuid primary key); "
     "insert into auth.users values ('00000000-0000-4000-8000-0000000000a1'); "
-    "create schema storage; create table storage.buckets(id text primary key); "
-    "create table storage.objects(id uuid primary key); "
+    "create schema if not exists storage; create table if not exists storage.buckets(id text primary key); "
+    "create table if not exists storage.objects(id uuid primary key); "
     "insert into storage.buckets values ('fixture-bucket'); "
     "insert into storage.objects values ('00000000-0000-4000-8000-0000000000a2')")
 for file in ['db/schema.sql','db/access-permissions.sql','db/pending-receipts.sql','db/cash-closing.sql']:
@@ -35,13 +39,19 @@ for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
         sql("insert into private.app_users(username,password_hash,role,display_name) values ('recovery.fixture',extensions.crypt('synthetic-recovery-password',extensions.gen_salt('bf',4)),'admin','Recovery Fixture')")
         before = sql("select password_hash from private.app_users where username='recovery.fixture'")
         fault = re.sub(r'commit;\s*$', "do $$ begin raise exception 'injected cutover failure'; end $$; commit;", migration.read_text(encoding='utf8'), flags=re.I)
-        run = subprocess.run(['psql','-X','-qAt','-v','ON_ERROR_STOP=1'],input=fault,text=True,capture_output=True,timeout=90)
+        fault_command = json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) + [
+            '-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']]
+        run = subprocess.run(fault_command,input=fault,text=True,capture_output=True,timeout=90)
         assert run.returncode != 0 and 'injected cutover failure' in run.stderr
         assert sql("select password_hash from private.app_users where username='recovery.fixture'") == before
         assert sql("select to_regclass('private.establishments') is null") == 't'
         assert sql("select to_regclass('public.shared_inventory') is not null") == 't'
         print('PASS failed cutover rolls back schema and preserves credentials')
     sql(migration.read_text(encoding='utf8'))
+sql((ROOT/'tests/sql/cash-corrections.sql').read_text(encoding='utf8'))
+print('PASS B1 cash corrections, replay, revision, authorization and exact decimals')
+sql((ROOT/'tests/sql/fiscal-access-key-uniqueness.sql').read_text(encoding='utf8'))
+print('PASS E1 fiscal access key uniqueness, legacy, authorization and tenant isolation')
 sql((ROOT/'tests/sql/tenant-access.sql').read_text(encoding='utf8'))
 sql((ROOT/'tests/sql/user-directory-update.sql').read_text(encoding='utf8'))
 before = sql("select md5(string_agg(to_jsonb(r)::text,'' order by tenant_id)) from private.tenant_inventory r")
@@ -70,7 +80,8 @@ insert into private.app_sessions(token_hash,user_id,expires_at,tenant_id)
  from private.app_users u cross join (values ('c','{tenant_a}'),('d','{tenant_b}')) v(token,tenant_id)
  where u.username='sql.manager';
 """)
-psql = ['psql','-X','-qAt','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
+psql = json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) + [
+    '-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE'],'-v','VERBOSITY=verbose']
 
 def save_statement(token, revision, marker):
     return ("select public.inventory_save(repeat('%s',64),"
@@ -84,13 +95,8 @@ def open_writer(statement):
     process.stdin.write("begin; set statement_timeout='8s'; set local role anon;\n"
                         + statement + "\n\\echo TENANT_WRITER_READY\n")
     process.stdin.flush()
-    with selectors.DefaultSelector() as selector:
-        selector.register(process.stdout, selectors.EVENT_READ)
-        assert selector.select(timeout=8), 'Tenant writer barrier timed out'
-        for _ in range(8):
-            line = process.stdout.readline().strip()
-            if line == 'TENANT_WRITER_READY':
-                return process
+    wait_for_marker(process, 'TENANT_WRITER_READY', 8, 'Tenant writer barrier timed out')
+    return process
     process.kill()
     raise AssertionError('Tenant writer failed before barrier')
 
@@ -109,7 +115,7 @@ try:
     assert waiter.poll() is None, 'Same-tenant writer did not wait for the row lock'
     commit_writer(writer)
     _, stderr = waiter.communicate(timeout=10)
-    assert waiter.returncode != 0 and '40001' in stderr, 'Stale same-tenant revision was not rejected'
+    assert waiter.returncode != 0 and 'PT409' in stderr, 'Stale same-tenant revision was not rejected'
 finally:
     for process in (writer,waiter):
         if process.poll() is None:
@@ -135,7 +141,7 @@ print('PASS concurrent different-tenant saves with equal revisions finish indepe
 
 # The authorized environment reset keeps Supabase-managed schemas outside its scope
 # and leaves exactly one fresh DBA bootstrap path.
-sql((ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
+sql("set estoque.confirm_full_reset='APAGAR TODAS AS CONTAS E HISTORICO DA HOMOLOGACAO';" + (ROOT/'db/operations/reset-test-environment.sql').read_text(encoding='utf8'))
 for table in ['app_users','establishments','tenant_memberships','app_sessions','app_login_attempts',
               'tenant_inventory','cash_closings','pending_receipts','user_permissions',
               'permission_audit','external_fiscal_rate_limits']:
@@ -155,3 +161,12 @@ for old_snapshot in ['estq_backup_app_users_20261021','estq_backup_app_sessions_
 print('PASS full test reset clears app data, retains Supabase-managed schemas, and allows fresh DBA bootstrap')
 print('PASS tenant cutover, isolation, privileges, password gate, token rotation and fiscal/cash flows')
 
+
+from fiscal_access_key_concurrency import run as run_fiscal_access_keys
+run_fiscal_access_keys(sql, json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) +
+                       ['-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']], ROOT)
+
+# Executar após resets existentes: a auditoria passa a impedir exclusão de dados financeiros.
+from cash_corrections_concurrency import run as run_cash_corrections
+run_cash_corrections(sql, json.loads(os.environ.get('ESTOQUE_TEST_PSQL_PREFIX_JSON', '["psql"]')) +
+                     ['-X','-qAt','-v','ON_ERROR_STOP=1','-U','postgres','-d',os.environ['PGDATABASE']], ROOT)

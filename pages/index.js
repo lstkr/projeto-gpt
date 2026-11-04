@@ -1,20 +1,38 @@
+import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
+import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TenantAdministration from '../components/TenantAdministration';
+import GiroBrand from '../components/GiroBrand';
+import { receiptReviewerName, resetReceiptReviewer, receiptReviewerMatches, withLocalReceiptId } from '../lib/receipt-reviewer.mjs';
+import { listenForMenuDismiss } from '../lib/dismiss-menu.mjs';
+import PeriodControls from '../components/PeriodControls';
+import CashRevenueChart from '../components/CashRevenueChart';
+import {historyPeriod,documentHistory,historyDay} from '../lib/history-view.mjs';
+import GiroManagerInsights from '../components/GiroManagerInsights';
+import ReceiptOriginalPreview from '../components/ReceiptOriginalPreview';
 import CountPrintAction from '../components/CountPrintAction';
+import DiscardReceiptDialog from '../components/DiscardReceiptDialog';
 import { createPortal } from 'react-dom';
 import { printPurchasePlan } from '../lib/purchase-print.mjs';
-import { useAccessibleDialog } from '../components/useAccessibleDialog';
+import { useAccessibleDialog, useNavigationFocus } from '../components/useAccessibleDialog';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseConfig } from '../lib/supabase-config.mjs';
 import { previewDatabaseIsBlocked } from '../lib/preview-database-policy.mjs';
 import { sessionHealth, SESSION_CHECK_INTERVAL_MS } from '../lib/session-health.mjs';
 import { normalizeFiscalDraftReview } from '../lib/fiscal-line-review.mjs';
-import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
+import { cnpjDigits, fiscalCodeIdentity, validSupplierCnpj, extractIssuerCnpj, supplierAliasProduct, supplierAliasProducts, supplierAliasConversion, receiptUnitFactor, prepareFiscalIdentity } from '../lib/fiscal-identity.mjs';
 import { pendingConfirmationState } from '../lib/pending-confirmation.mjs';
 import { COUNT_DEFAULTS, countDay, countDateLabel, countDueDate } from '../lib/stock-count.mjs';
-import { CASH_CHANNELS,cashTotals,validateCashClosing,aggregateCashMonthly,aggregateCashYearly } from '../lib/cash-closing.mjs';
+import { CASH_CHANNELS,cashTotals } from '../lib/cash-closing.mjs';
+import { prepareCashClosing, cashCorrectionAttempt } from '../lib/cash-correction.mjs';
+import { boundedRpc, RPC_TIMEOUT_CODE } from '../lib/browser-rpc-timeout.mjs';
+import { inventorySaveMessage } from '../lib/inventory-save-message.mjs';
+import { preventReceiptImplicitSubmit } from '../lib/receipt-keyboard.mjs';
+import CashCorrectionHistory from '../components/CashCorrectionHistory';
 import { parseCashReport } from '../lib/cash-report-parser.mjs';
 import { detectCashFileType } from '../lib/cash-file-type.mjs';
 import { needsSecondOcrPass } from '../lib/receipt-ocr-strategy.mjs';
+import { prepareReceiptImageUpload } from '../lib/receipt-image-upload.mjs';
 import { normalizeProductCode, findPotentialDuplicates, findDuplicatesForCandidate, checkDuplicatePair } from '../lib/duplicate-products.mjs';
 import { attachPreviousPurchases, findHistoricalMatches, purchasePlan, purchaseHistoryBySupplier } from '../lib/purchasing.mjs';
 
@@ -36,13 +54,14 @@ const qty = (v) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).
 const norm = (v) => String(v || '').trim().toLocaleLowerCase('pt-BR');
 const uid = () => Math.random().toString(36).slice(2, 10);
 const isLow = (p) => Number(p.stock) <= Number(p.min);
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dpauqdihvhbbaellwjav.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_7YF3ypYXkL-7MVcwozMx7w_AnLDFju7';
-const PREVIEW_UNSAFE = previewDatabaseIsBlocked({
+const { url: SUPABASE_URL, publicKey: SUPABASE_ANON_KEY } = getSupabaseConfig();
+const PREVIEW_DEPLOY = process.env.ESTOQUE_DEPLOY_ENV === 'preview';
+// Preview só utiliza o destino explicitamente autorizado para homologação.
+const PREVIEW_UNSAFE = PREVIEW_DEPLOY && previewDatabaseIsBlocked({
   deploymentEnv: process.env.ESTOQUE_DEPLOY_ENV,
   databaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   publicKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  allowedRef: process.env.ESTOQUE_SUPABASE_ALLOWED_REF
+  previewUrl: process.env.NEXT_PUBLIC_SUPABASE_PREVIEW_URL
 });
 const HAS_SUPABASE_CONFIG = !PREVIEW_UNSAFE && Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -52,6 +71,8 @@ function Icon({ type, size = 20 }) {
     box: <><path d="m12 3 9 4.5v9L12 21l-9-4.5v-9L12 3Z"/><path d="m3.5 7.7 8.5 4.5 8.5-4.5M12 12.2V21"/></>,
     file: <><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></>,
     arrows: <><path d="M7 7h13l-3-3M17 17H4l3 3M20 7v5M4 12v5"/></>,
+    cart: <><path d="M3 4h2l2.5 12h11l2-9H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></>,
+    report: <><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 16v-3M12 16V8M16 16v-5"/></>,
     chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
     search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></>,
     plus: <><path d="M12 5v14M5 12h14"/></>,
@@ -192,8 +213,10 @@ function parseNfeXml(text) {
   const discount = xmlNumber('vDesc');
   const total = xmlNumber('vNF');
   return {
+    accessKey: (all.find(n => n.localName === 'infNFe')?.getAttribute('Id') || '').replace(/^NFe/, ''),
+    issuerCnpjRead: find(emit, 'CNPJ'),
     supplier: find(emit, 'xNome') || '',
-    supplierCnpj: find(emit, 'CNPJ') || '',
+    supplierCnpj: validatedSupplierCnpj(find(emit, 'CNPJ')),
     invoiceNumber: find(ide, 'nNF') || '',
     date: find(ide, 'dhEmi') || find(ide, 'dEmi') || '',
     source: 'XML de NF-e',
@@ -496,8 +519,8 @@ function findReceiptCodeConflicts(item, catalog, supplierCnpj) {
 function findReceiptCatalogProduct(item, catalog, supplierCnpj) {
   if (supplierAliasProducts(item, catalog, supplierCnpj).length > 1) return null;
   const bySupplier = findSupplierAliasProduct(item, catalog, supplierCnpj);
-  if (bySupplier && normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit))
-    return bySupplier;
+  if (bySupplier && (normalizeReceiptUnit(bySupplier.unit) === normalizeReceiptUnit(item.unit) ||
+      supplierAliasConversion(item, bySupplier, supplierCnpj))) return bySupplier;
   // Internal SKUs and descriptions are only review hints. Fiscal codes are
   // issuer-scoped text; padding is not proof of equivalence.
   return null;
@@ -574,19 +597,8 @@ function validateNfceAccessKey(raw) {
 }
 
 function extractAccessKeyFromText(text) {
-  const lines = String(text || '').split(/\r?\n/);
-  for (const line of lines) {
-    const digits = line.replace(/\D/g, '');
-    // A normal NFC-e key is printed in eleven groups of four. OCR may add one
-    // spurious digit; look for validated 44-digit windows instead of trusting
-    // the first 44 characters of a damaged line.
-    if (digits.length < 44 || digits.length > 65) continue;
-    for (let i = 0; i <= digits.length - 44; i++) {
-      const candidate = digits.slice(i, i + 44);
-      if (validateNfceAccessKey(candidate)) return candidate;
-    }
-  }
-  return '';
+  const keys = fiscalKeyCandidates(text).filter(readFiscalAccessKey);
+  return keys.length === 1 ? keys[0] : '';
 }
 
 function hasUncertainReceiptKey(text) {
@@ -611,18 +623,19 @@ function parseNfceQrPayload(raw) {
   if (parsed) {
     for (const key of ['chNFe', 'chave', 'key', 'accessKey']) {
       const digits = String(parsed.searchParams.get(key) || '').replace(/\D/g, '');
-      if (validateNfceAccessKey(digits)) { accessKey = digits; break; }
+      if (readFiscalAccessKey(digits)) { accessKey = digits; break; }
     }
     if (!accessKey) {
       const p = parsed.searchParams.get('p') || '';
       const first = p.split('|')[0].replace(/\D/g, '');
-      if (validateNfceAccessKey(first)) accessKey = first;
+      if (readFiscalAccessKey(first)) accessKey = first;
     }
   }
   if (!accessKey && !parsed) {
     accessKey = extractAccessKeyFromText(value);
   }
 
+  if (accessKey && !validateNfceAccessKey(accessKey)) return {accessKey, consultaUrl:'', qrRaw:value.slice(0,700), qrUrlPreserved:false};
   const host = parsed?.hostname?.toLowerCase() || '';
   const officialHost = host === 'dfe-portal.svrs.rs.gov.br' ||
     /(^|\.)sefaz\.rs\.gov\.br$/i.test(host) ||
@@ -664,7 +677,7 @@ async function decodeNfceQrWithZXing(canvas) {
   }
 
   const hints = new Map();
-  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE]);
+  hints.set(z.DecodeHintType.POSSIBLE_FORMATS, [z.BarcodeFormat.QR_CODE, z.BarcodeFormat.CODE_128]);
   hints.set(z.DecodeHintType.TRY_HARDER, true);
   for (const invert of [false, true]) {
     const luminance = invert ? Uint8ClampedArray.from(gray, (v) => 255 - v) : gray;
@@ -674,7 +687,7 @@ async function decodeNfceQrWithZXing(canvas) {
         const bitmap = new z.BinaryBitmap(new Binarizer(source));
         const reader = new z.MultiFormatReader();
         reader.setHints(hints);
-        const result = reader.decode(bitmap);
+        const result = reader.decodeWithState(bitmap);
         reader.reset();
         if (result?.getText) return result.getText();
       } catch (_) {}
@@ -683,8 +696,7 @@ async function decodeNfceQrWithZXing(canvas) {
   return '';
 }
 
-// Inspired by pcelias-ctrl/nfc-e: isolate the code from the footer and retry
-// with rotated, resized variants before requesting any external decoding service.
+// Recortes locais limitam o custo da leitura sem transmitir a imagem.
 function createQrFooterCrop(canvas, rotation = 0) {
   const fromY = Math.floor(canvas.height * 0.44);
   const cropWidth = canvas.width;
@@ -704,31 +716,17 @@ function createQrFooterCrop(canvas, rotation = 0) {
   return out;
 }
 
-async function decodeQrViaExternalApi(canvas, sessionToken) {
-  const crop = createQrFooterCrop(canvas);
-  const image = crop.toDataURL('image/jpeg', 0.82);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 7500);
-  try {
-    const response = await fetch('/api/qr-externo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-estoque-session': sessionToken },
-      body: JSON.stringify({ image_base64: image }),
-      signal: controller.signal
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Serviço externo indisponível.');
-    const parsed = parseNfceQrPayload(data.url);
-    if (!parsed.qrUrlPreserved || !validateNfceAccessKey(parsed.accessKey)) {
-      throw new Error('O leitor externo não encontrou um QR Code fiscal válido do RS.');
-    }
-    return { ...parsed, qrReader: 'API externa pcelias-ctrl/nfc-e' };
-  } finally {
-    clearTimeout(timer);
-  }
+/** Recorta o cabeçalho do DANFE para leitura local de CODE-128. */
+function createFiscalHeaderCrop(canvas) {
+  const crop = document.createElement('canvas');
+  const scale = Math.min(1, 1600 / canvas.width);
+  crop.width = Math.max(1, Math.round(canvas.width * scale));
+  crop.height = Math.max(1, Math.round(canvas.height * 0.42 * scale));
+  crop.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height * 0.42, 0, 0, crop.width, crop.height);
+  return crop;
 }
 
-async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
+async function detectNfceQrCodes(canvases, rawCanvases = []) {
   const empty = () => ({ accessKey: '', consultaUrl: '', qrRaw: '', qrUrlPreserved: false });
   if (typeof window === 'undefined') return canvases.map(empty);
   let decodeQR = null;
@@ -740,7 +738,8 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
   try {
     if ('BarcodeDetector' in window) {
       const formats = await window.BarcodeDetector.getSupportedFormats();
-      if (formats.includes('qr_code')) detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      const localFormats = ['qr_code','code_128'].filter(format => formats.includes(format));
+      if (localFormats.length) detector = new window.BarcodeDetector({ formats: localFormats });
     }
   } catch (_) {}
   const results = [];
@@ -750,12 +749,12 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
     // Small, capped footer crops are much faster than repeatedly scanning full photos.
     const footer = createQrFooterCrop(reference);
     const rotated = createQrFooterCrop(reference, 180);
-    for (const target of [footer, rotated]) {
+    for (const target of [createFiscalHeaderCrop(reference), footer, rotated]) {
       if (detector) {
         try {
           for (const hit of await detector.detect(target) || []) {
             const candidate = parseNfceQrPayload(hit.rawValue);
-            if (candidate.qrUrlPreserved) { found = candidate; break; }
+            if (candidate.accessKey) { found = candidate; break; }
           }
         } catch (_) {}
       }
@@ -773,25 +772,13 @@ async function detectNfceQrCodes(canvases, rawCanvases = [], sessionToken) {
       }
       if (found.qrUrlPreserved) break;
     }
-    // No opt-in button: request the generic external QR decoder automatically as
-    // a fallback. Only the footer crop is transmitted, not the full note.
-    if (!found.qrUrlPreserved) {
-      try {
-        found = await decodeQrViaExternalApi(reference, sessionToken);
-      } catch (error) {
-        const warning = error?.message || 'Leitor QR complementar indisponível.';
-        // Keep an offline recovery path when the external API times out.
-        for (const target of [footer, rotated]) {
-          try {
-            const result = await decodeNfceQrWithZXing(target);
-            if (result) {
-              const candidate = parseNfceQrPayload(result);
-              if (candidate.qrUrlPreserved) { found = candidate; break; }
-              if (candidate.accessKey && !found.accessKey) found = candidate;
-            }
-          } catch (_) {}
-        }
-        if (!found.qrUrlPreserved) found = { ...found, qrReaderWarning: warning };
+    // A imagem nunca sai do navegador para decodificar QR ou código de barras.
+    if (!found.accessKey) {
+      for (const target of [createFiscalHeaderCrop(reference), footer, rotated]) {
+        const raw = await decodeNfceQrWithZXing(target);
+        if (!raw) continue;
+        const candidate = parseNfceQrPayload(raw);
+        if (candidate.accessKey) { found = candidate; break; }
       }
     }
     results.push(found);
@@ -840,7 +827,7 @@ function detectReceiptSupplier(text) {
 }
 
 function detectSupplierCnpj(text) {
-  return extractIssuerCnpj(text);
+  return validatedSupplierCnpj(extractIssuerCnpj(text));
 }
 
 function detectReceiptMetadata(text) {
@@ -1169,11 +1156,11 @@ export default function Home() {
     if(!supabase||!accessCode||currentUser?.role!=='admin'||permissionBusy)return;
     setPermissionBusy(true);setPermissionError('');
     try {
-      const {data,error}=await supabase.rpc('inventory_permission_set',{
+      const {data,error}=await boundedRpc(supabase,'inventory_permission_set',{
         p_token:accessCode,p_user_id:user.id,p_key:key,p_allowed:allowed
       });
       if(error||!data?.ok)throw new Error(error?.message||'Permissão não foi salva.');
-      const result=await supabase.rpc('inventory_permissions_list',{p_token:accessCode});
+      const result=await boundedRpc(supabase,'inventory_permissions_list',{p_token:accessCode});
       if(result.error||!result.data)throw new Error('Salvo, mas não foi possível atualizar a lista.');
       setFiscalPermissions(result.data.self||{});
       setPermissionUsers(result.data.users||[]);
@@ -1184,6 +1171,11 @@ export default function Home() {
   const [menuOpen,setMenuOpen]=useState(false);
   const [navCollapsed,setNavCollapsed]=useState(false);
   const [accountOpen,setAccountOpen]=useState(false);
+  const accountMenuRef=useRef(null);
+  useEffect(() => {
+    if (!accountOpen || !accountMenuRef.current) return;
+    return listenForMenuDismiss(accountMenuRef.current, () => setAccountOpen(false));
+  }, [accountOpen]);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -1207,9 +1199,20 @@ export default function Home() {
   const pendingRevisions=useRef(new Map());
 
   const [closings,setClosings]=useState([]);
+  const [cashDataStatus,setCashDataStatus]=useState('loading');
+  const requestReceiptOriginal = useCallback(async (receiptId) => {
+    if (!supabase || !accessCode) throw new Error('Entre novamente para abrir o original.');
+    const {data,error} = await boundedRpc(supabase,'pending_receipt_file',{p_token:accessCode,p_id:receiptId});
+    if (error || !data?.base64) throw new Error('Não foi possível carregar o original.');
+    return data;
+  },[supabase,accessCode]);
   const [cashEditId,setCashEditId]=useState('');
+  const [cashConflict,setCashConflict]=useState(false);
+  const [cashSaveTimedOut,setCashSaveTimedOut]=useState(false);
+  const [cashAudit,setCashAudit]=useState({closingId:'',entries:[],loading:false,error:''});
   const [cashSaving,setCashSaving]=useState(false);
   const cashSavingRef=useRef(false);
+  const cashAttemptRef=useRef(null);
   const [cashEntryMode,setCashEntryMode]=useState(''); // '', upload, manual, edit
   const [cashImporting,setCashImporting]=useState(false);
   const [cashImportText,setCashImportText]=useState('');
@@ -1217,11 +1220,13 @@ export default function Home() {
   const cashFileRef=useRef(null);
   const [cashError,setCashError]=useState('');
   const [cashMonth,setCashMonth]=useState(new Date().toISOString().slice(0,7));
+  const [cashHistoryPeriod,setCashHistoryPeriod]=useState({month:new Date().toISOString().slice(0,7),scope:'month'});
+  const [documentMonth,setDocumentMonth]=useState(new Date().toISOString().slice(0,7));
+  const [documentDay,setDocumentDay]=useState('');
   const [cashChartScope,setCashChartScope]=useState('month');
   const [cashSelectedDay,setCashSelectedDay]=useState('');
-  const [cashHighlightedDay,setCashHighlightedDay]=useState('');
   const [cashForm,setCashForm]=useState({
-    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',operator:'',
+    day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'',operator:'',
     cartaoCredito:'0',cartaoDebito:'0',credito:'0',debito:'0',outras:'0',
     dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]
   });
@@ -1246,12 +1251,16 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(typeof updater === 'function' ? updater(previous) : updater, previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(withLocalReceiptId(typeof updater === 'function' ? updater(previous) : updater, previous)), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
     )
   );
+  const reviewerName=receiptReviewerName(currentUser);
+  useEffect(() => {
+    setDraft(previous => resetReceiptReviewer(previous,currentUser));
+  }, [currentUser?.id, currentUser?.username, reviewerName, draft?.localReceiptId]);
   const [manualMode, setManualMode] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
   const [manualChosenId, setManualChosenId] = useState('');
@@ -1260,6 +1269,7 @@ export default function Home() {
     name:'', sku:'', category:'Mercearia', unit:'un', min:'0',
     quantity:'1', cost:'0', supplier:'', preferredSupplier:'', reason:'Entrada manual'
   });
+  const [discardReceiptOpen, setDiscardReceiptOpen] = useState(false);
   const [draftQueue, setDraftQueue] = useState([]);
   const [draftBatch, setDraftBatch] = useState(null);
   const [detailDoc, setDetailDoc] = useState(null);
@@ -1277,6 +1287,7 @@ export default function Home() {
   const [deleteError, setDeleteError] = useState('');
   const revisionRef = useRef(0);
   const saveQueueRef = useRef(Promise.resolve());
+  const sessionRevokedRef = useRef(false);
   const skipNextSyncRef = useRef(false);
   const receiptOcrWorkerRef = useRef(null);
   const receiptOcrProgressRef = useRef({ index: 0, count: 1, pass: 0 });
@@ -1284,24 +1295,48 @@ export default function Home() {
 
   // Reconcile the accessibility changes from PR #24 without changing fiscal
   // business rules. Closing is blocked across all controls during a delete.
-  const activeDialog = mergePair ? 'merge' : detailDoc ? 'details' :
-    view === 'cash' && cashSelectedDay ? 'cash-day' :
+  const activeDialog = discardReceiptOpen ? 'discard-receipt' : mergePair ? 'merge' : detailDoc ? 'details' :
+    (view === 'cash' || view === 'reports') && cashSelectedDay ? 'cash-day' :
     (modal === 'product' || modal === 'adjust' ? modal : '');
+  useNavigationFocus([accessGranted, dataReady, view, manualMode, cashEntryMode, cashEditId,
+    Boolean(draft), draft?.pendingId || draft?.fileName || ''].join('|'));
   useAccessibleDialog(activeDialog, () => {
-    if (mergePair) {
+    if (discardReceiptOpen) {
+      setDiscardReceiptOpen(false);
+    } else if (mergePair) {
       if (!mergeBusy) setMergePair(null);
     } else if (detailDoc) {
       if (!deletingDocId) { setDetailDoc(null); setDeleteError(''); }
-    } else if (view === 'cash' && cashSelectedDay) {
+    } else if ((view === 'cash' || view === 'reports') && cashSelectedDay) {
       setCashSelectedDay('');
     } else {
       setModal('');
     }
   });
 
+  /** Preserva o descarte local do X, incluindo a limpeza do seletor de arquivos. */
+  function discardReceiptReview() {
+    setDiscardReceiptOpen(false);
+    setDraft(null);
+    setDraftQueue([]);
+    setDraftBatch(null);
+    setError('');
+    if (uploadRef.current) uploadRef.current.value = '';
+  }
+
+  /** O X confirma apenas quando há outras notas na fila, como na janela nativa. */
+  function requestDiscardReceiptReview() {
+    if (draftQueue.length) {
+      setDiscardReceiptOpen(true);
+      return;
+    }
+    discardReceiptReview();
+  }
+
   async function loadSharedInventory(token) {
+    setCashDataStatus('loading');
     if (!supabase || !token) return false;
-    const membership = await supabase.rpc('inventory_tenants', { p_token: token });
+    const membership = await boundedRpc(supabase,'inventory_tenants', { p_token: token });
     if (membership.error || !membership.data?.user) {
       setAccessGranted(false); setDataReady(false); setAccessCode(''); setCurrentUser(null);
       setAccessMessage('Não foi possível validar os acessos da conta. Entre novamente.');
@@ -1320,7 +1355,7 @@ export default function Home() {
       try { sessionStorage.setItem('projeto-gpt-session', token); } catch (_) {}
       return true;
     }
-    const { data, error: loadError } = await supabase.rpc('inventory_get', { p_session_token: token });
+    const { data, error: loadError } = await boundedRpc(supabase,'inventory_get', { p_session_token: token });
     if (loadError || !data) {
       setAccessMessage('Sua sessão expirou ou não é válida. Entre novamente com seu login e senha.');
       setAccessGranted(false);
@@ -1339,16 +1374,17 @@ export default function Home() {
     setMovements(Array.isArray(state.movements) ? state.movements : []);
     setDocuments(Array.isArray(state.documents) ? state.documents : []);
     setSuppliers(Array.isArray(state.suppliers) ? state.suppliers : []);
-    const {data:pending,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:token});
+    const {data:pending,error:pendingError}=await boundedRpc(supabase,'pending_receipts_list',{p_token:token});
     if(!pendingError&&Array.isArray(pending))setPendingReceipts(pending);
 
-    const {data:cashList,error:cashLoadError}=await supabase.rpc('cash_closings_list',{p_token:token});
-    if(!cashLoadError && Array.isArray(cashList)) setClosings(cashList);
+    const {data:cashList,error:cashLoadError}=await boundedRpc(supabase,'cash_closings_list',{p_token:token});
+    if(!cashLoadError && Array.isArray(cashList)) { setClosings(cashList); setCashDataStatus('ready'); }
+    else setCashDataStatus('error');
     setStockCounts(Array.isArray(state.stockCounts)?state.stockCounts:[]);
     const schedule={...COUNT_DEFAULTS,...(state.countSettings||{})};
     setCountSettings(schedule);setSettingsForm(schedule);
     setCurrentUser(state.user || null);
-    const permissionsResult=await supabase.rpc('inventory_permissions_list',{p_token:token});
+    const permissionsResult=await boundedRpc(supabase,'inventory_permissions_list',{p_token:token});
     if(!permissionsResult.error && permissionsResult.data?.self) {
       setFiscalPermissions(permissionsResult.data.self);
       setPermissionUsers(permissionsResult.data.users||[]);
@@ -1375,7 +1411,7 @@ export default function Home() {
     setLoginBusy(true);
     setAccessMessage('');
     try {
-      const { data, error: loginError } = await supabase.rpc('inventory_login', {
+      const { data, error: loginError } = await boundedRpc(supabase,'inventory_login', {
         p_username: loginUsername.trim().toLowerCase(),
         p_password: loginPassword
       });
@@ -1405,7 +1441,12 @@ export default function Home() {
       setAccessLoaded(true);
       if (token) loadSharedInventory(token);
       else {
-        setAccessMessage('');
+        let logoutNotice='';
+        try {
+          logoutNotice=sessionStorage.getItem('projeto-gpt-session-message')||'';
+          sessionStorage.removeItem('projeto-gpt-session-message');
+        } catch (_) {}
+        setAccessMessage(logoutNotice);
         setAccessGranted(false);
         setDataReady(false);
       }
@@ -1427,13 +1468,67 @@ export default function Home() {
     setDataReady(true);
   }, [supabase]);
 
+  // Session revocation is enforced on every RPC by the database. This
+  // watcher only changes the UI state and clears the local token promptly.
+  // No Realtime grants and no private tables are exposed to the browser.
+  useEffect(() => {
+    if (!supabase || !accessCode || !accessGranted || currentUser?.role==='superadmin') return;
+    let live=true;
+    let pending=false;
+    sessionRevokedRef.current=false;
+    async function verifySession() {
+      if (!live || pending || sessionRevokedRef.current || document.hidden) return;
+      pending=true;
+      try {
+        const {data,error}=await boundedRpc(supabase,'inventory_validate_session',{
+          p_session_token:accessCode
+        });
+        if (!live || sessionRevokedRef.current) return;
+        if (sessionHealth({data,error}) === 'revoked') {
+          // Mark synchronously before triggering any state changes/re-render.
+          sessionRevokedRef.current=true;
+          try {
+            sessionStorage.removeItem('projeto-gpt-session');
+            sessionStorage.removeItem('projeto-gpt-access');
+            sessionStorage.setItem('projeto-gpt-session-message',
+              'Sua sessão foi encerrada ou sua conta foi desativada. Entre novamente.');
+          } catch (_) {}
+          setAccessGranted(false);
+          setDataReady(false);
+          setAccessCode('');
+          setCurrentUser(null);
+          setDraft(null);
+          setDraftQueue([]);
+          setSaveStatus('');
+          // A full reload destroys stale timers and in-flight component state.
+          window.location.replace(window.location.pathname + window.location.search);
+        }
+      } catch (_) {
+        // Offline is not proof of deactivation. The server independently
+        // rejects all mutations with an inactive/revoked token.
+      } finally { pending=false; }
+    }
+    const timer=window.setInterval(verifySession,SESSION_CHECK_INTERVAL_MS);
+    const onFocus=()=>{void verifySession();};
+    const onVisible=()=>{if (!document.hidden) void verifySession();};
+    window.addEventListener('focus',onFocus);
+    document.addEventListener('visibilitychange',onVisible);
+    void verifySession();
+    return ()=>{
+      live=false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus',onFocus);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
+  },[supabase,accessCode,accessGranted,currentUser?.role]);
+
   useEffect(() => {
     if (!loaded || supabase) return;
     try { localStorage.setItem('projeto-gpt-stock-v1', JSON.stringify({ products, movements, documents, suppliers, stockCounts, countSettings })); } catch (_) {}
   }, [loaded, products, movements, documents, suppliers, stockCounts, countSettings, supabase]);
 
   useEffect(() => {
-    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin') return;
+    if (!supabase || !accessGranted || !dataReady || !accessCode || mustChangePassword || currentUser?.role === 'superadmin' || sessionRevokedRef.current) return;
     if (skipNextSyncRef.current) {
       skipNextSyncRef.current = false;
       return;
@@ -1443,15 +1538,14 @@ export default function Home() {
       // Serialize snapshots: each save uses the revision acknowledged by Supabase.
       // A stale browser cannot silently resurrect an invoice deleted by the Gestor.
       saveQueueRef.current = saveQueueRef.current.catch(() => undefined).then(async () => {
-        const { data: saved, error: saveError } = await supabase.rpc('inventory_save', {
+        if (sessionRevokedRef.current) return;
+        const { data: saved, error: saveError } = await boundedRpc(supabase,'inventory_save', {
           p_session_token: accessCode,
           p_state: { products, movements, documents, suppliers, revision: revisionRef.current }
         });
         if (saveError || !saved?.ok) {
           setSaveStatus('Falha ao salvar');
-          setToast(saveError?.message?.includes('outra sessão')
-            ? 'O estoque mudou em outra sessão. Atualize a página para evitar sobrescrever dados.'
-            : 'Não foi possível salvar no estoque compartilhado. Confira sua sessão e a conexão.');
+          setToast(inventorySaveMessage(saveError));
         } else {
           revisionRef.current = Number(saved.revision ?? revisionRef.current + 1);
           setSaveStatus('Sincronizado');
@@ -1459,7 +1553,7 @@ export default function Home() {
           for(const completed of documents.filter(d=>d.pendingReceiptId)){
             if(pendingMarking.current.has(completed.pendingReceiptId))continue;
             pendingMarking.current.add(completed.pendingReceiptId);
-            const {data:marked,error:markError}=await supabase.rpc('pending_receipt_mark_posted',{
+            const {data:marked,error:markError}=await boundedRpc(supabase,'pending_receipt_mark_posted',{
               p_token:accessCode,p_id:completed.pendingReceiptId
             });
             if(markError||!marked?.ok)setPendingSaveError(markError?.message||'Falha ao arquivar a conferência concluída.');
@@ -1475,7 +1569,7 @@ export default function Home() {
   const administrationGuardRef = useRef(null);
   administrationGuardRef.current = { saveStatus, busy, cashSaving, cashImporting, countBusy, mergeBusy, deletingDocId, pendingBusy, draft, draftQueueLength: draftQueue.length, manualMode, modal };
   const invokeAdministration = useCallback(async (name, args) => {
-    if (!supabase || !accessCode) throw new Error('Sessão necessária.');
+    if (!supabase || !accessCode || sessionRevokedRef.current) throw new Error('Sessão necessária.');
     if (name === 'inventory_select_tenant') {
       // Only a stable view can switch. Token rotation at the database prevents
       // delayed requests from the previous unit from crossing this boundary.
@@ -1488,8 +1582,8 @@ export default function Home() {
       catch { setDataReady(true); throw new Error('Falha ao concluir gravações pendentes.'); }
     }
     try {
-      const { data, error: rpcError } = await supabase.rpc(name, { ...args, p_token: accessCode });
-      if (rpcError || !data || data.ok === false) throw new Error('Operação recusada.');
+      const { data, error: rpcError } = await boundedRpc(supabase,name, { ...args, p_token: accessCode });
+      if (rpcError || !data || data.ok === false) throw new Error(rpcError?.code===RPC_TIMEOUT_CODE?rpcError.message:'Operação recusada.');
       if (name === 'inventory_select_tenant') {
         if (!data.session_token || data.session_token === accessCode) throw new Error('Rotação de sessão necessária.');
         // Never put a token for the new tenant into state containing old stock.
@@ -1516,7 +1610,7 @@ export default function Home() {
   }, []);
 
   const finishPasswordChange = useCallback(async () => {
-    if (supabase && accessCode) await supabase.rpc('inventory_logout', { p_session_token: accessCode });
+    if (supabase && accessCode) await boundedRpc(supabase,'inventory_logout', { p_session_token: accessCode });
     try { sessionStorage.removeItem('projeto-gpt-session'); } catch (_) {}
     window.location.replace(window.location.pathname + window.location.search);
   }, [supabase, accessCode]);
@@ -1524,7 +1618,7 @@ export default function Home() {
   function handleLock() {
     const token = accessCode;
     if (supabase && token) {
-      void supabase.rpc('inventory_logout', { p_session_token: token });
+      void boundedRpc(supabase,'inventory_logout', { p_session_token: token });
     }
     try {
       sessionStorage.removeItem('projeto-gpt-session');
@@ -1555,7 +1649,6 @@ export default function Home() {
 
   const low = products.filter(isLow);
   const value = products.reduce((sum, p) => sum + Number(p.stock || 0) * Number(p.cost || 0), 0);
-  const units = products.reduce((sum, p) => sum + Number(p.stock || 0), 0);
   const categories = ['Todas', ...new Set(products.map((p) => p.category).filter(Boolean))];
   // Re-run automatically whenever the shared catalog changes, without mutating it.
   const duplicatePairs = useMemo(() => findPotentialDuplicates(products), [products]);
@@ -1574,7 +1667,7 @@ export default function Home() {
   const uncounted=countDraft?products.filter((p)=>countDraft[p.id]===undefined||countDraft[p.id]==='').length:0;
   const countDifferences=countDraft?products.filter((p)=>countDraft[p.id]!==undefined&&countDraft[p.id]!==''&&Number(String(countDraft[p.id]).replace(',','.'))!==Number(p.stock)).length:0;
   const dateNow = () => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
-  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Faturamento, sangrias, suprimentos e evolução mensal.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
+  const page = view === 'settings' ? ['MINHA CONTA','Configurações','Atualize sua senha e gerencie os acessos da equipe.'] : view === 'administration' ? ['GESTÃO DE ACESSOS','Estabelecimentos e equipe','Cadastre unidades e funcionários dentro da sua gestão.'] : view === 'permissions' ? ['SEGURANÇA','Permissões de usuários','Configure o acesso de cada colaborador por módulo e operação.'] : view === 'reports' ? ['VISÃO GERENCIAL','Relatórios','Vendas, comparação de períodos, compras e estoque.'] : view === 'cash' ? ['CONTROLE FINANCEIRO','Fechamento de caixa','Registre e revise os fechamentos de cada caixa.'] : view === 'suppliers' ? ['HISTÓRICO DE COMPRAS','Fornecedores','Consulte notas e compras anteriores agrupadas pelo estabelecimento.'] : view === 'duplicates' ? ['AUDITORIA DO CADASTRO', 'Possíveis duplicatas', 'Compare códigos e descrições antes de corrigir produtos do estoque.'] : view === 'count' ? ['CONFERÊNCIA FÍSICA','Contagem de estoque','Confira o saldo real de cada produto e identifique divergências.'] : view === 'stock' ? ['VISÃO GERAL', 'Controle de estoque', 'Acompanhe produtos, quantidades e níveis mínimos.'] : view === 'documents' ? ['COMPRAS & ENTRADAS', 'Documentos fiscais', 'Importe documentos, leia o QR Code e confira os itens antes de atualizar o estoque.'] : view === 'purchases' ? ['PLANEJAMENTO', 'Lista de compras', 'Sugestão de reposição com base no estoque mínimo de cada produto.'] : ['RASTREABILIDADE', 'Movimentações', 'Consulte entradas, saídas e ajustes registrados.'];
 
   const draftItemsSubtotal = draft ? Math.round(draft.items.reduce((sum, item) => sum + receiptItemTotal(item), 0) * 100) / 100 : 0;
   const draftSubtotal = draft?.manualInvoice ? draftItemsSubtotal : draft && Number.isFinite(Number(draft.subtotal)) ? Number(draft.subtotal) : draftItemsSubtotal;
@@ -1627,13 +1720,15 @@ export default function Home() {
         normalizeReceiptName(aliasProduct.name) !== normalizeReceiptName(it.originalName ?? it.name))
       issues.push('Código de fornecedor equivalente ao produto "' + aliasProduct.name +
         '", mas a descrição mudou. Confirme se realmente é o mesmo item.');
-    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit))
+    if (aliasProduct && !it.productId && normalizeReceiptUnit(aliasProduct.unit) !== normalizeReceiptUnit(it.unit) && !supplierAliasConversion(it, aliasProduct, draft.supplierCnpj))
       issues.push('Código fiscal cadastrado em outra unidade. Selecione o produto interno e informe a quantidade convertida.');
     if (targetProduct && normalizeReceiptName(targetProduct.name) !== normalizeReceiptName(it.name))
       issues.push('Produto da nota associado a cadastro de outro nome: confira o vínculo.');
     const stockMismatch = targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit);
-    if (stockMismatch && !(Number(it.stockQuantity) > 0)) issues.push('Informe a quantidade na unidade cadastrada no estoque.');
-    if (stockMismatch && Number(it.stockQuantity) > 0) issues.push('Conversão de unidade para estoque: confira a quantidade informada.');
+    const unitFactor = stockMismatch ? (Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, targetProduct.unit)) : 1;
+    const convertedQuantity = unitFactor ? Number(it.quantity) * unitFactor : 0;
+    if (stockMismatch && !(Number.isFinite(convertedQuantity) && convertedQuantity > 0 && convertedQuantity <= 1000000000)) issues.push('Informe um fator de conversão válido para a unidade cadastrada no estoque.');
+    if (stockMismatch && unitFactor) issues.push('Conversão de unidade aplicada: confira o fator e a quantidade calculada.');
 
     const row = officialComparison.find((r) => r.ocrIndex === index);
     if (row && row.issues.length) issues.push(...row.issues);
@@ -1661,24 +1756,9 @@ export default function Home() {
   const readyForFinalReview = Boolean(draft?.items?.length &&
     receiptReviewRows.every((row) => row.done) &&
     (!totalsRequireReview || draft.totalsReviewed));
-  const cashMonthly=useMemo(()=>{
-    const [year,month]=cashMonth.split('-').map(Number);
-    return aggregateCashMonthly(closings,year,month);
-  },[closings,cashMonth]);
-  const cashYearly=useMemo(()=>aggregateCashYearly(closings,Number(cashMonth.slice(0,4))),[closings,cashMonth]);
-  const cashChartData=cashChartScope==='year'?cashYearly:cashMonthly;
-  const cashChartDays=useMemo(()=>{
-    if(cashChartScope==='year') return cashYearly.daily;
-    const [year,month]=cashMonth.split('-').map(Number);
-    const daysInMonth=new Date(year,month,0).getDate();
-    const revenueByDay=new Map(cashMonthly.daily.map(item=>[item.day,item.revenue]));
-    return Array.from({length:daysInMonth},(_,index)=>{
-      const day=`${cashMonth}-${String(index+1).padStart(2,'0')}`;
-      return {day,revenue:revenueByDay.get(day)??0};
-    });
-  },[cashChartScope,cashYearly,cashMonthly,cashMonth]);
-  const cashChartMaxRevenue=Math.max(1,...cashChartDays.map(entry=>entry.revenue));
-  const cashHighlightedEntry=cashChartDays.find(entry=>entry.day===cashHighlightedDay);
+  const cashHistoryEntries=useMemo(()=>historyPeriod(closings,cashHistoryPeriod.month,cashHistoryPeriod.scope),[closings,cashHistoryPeriod]);
+  const documentView=useMemo(()=>documentHistory(documents,documentMonth,documentDay),[documents,documentMonth,documentDay]);
+  const cashYears=[...new Set([new Date().getFullYear(),...closings.map(entry=>historyDay(entry.day).slice(0,4)).filter(Boolean)])];
   const cashChartEntries=useMemo(()=>cashSelectedDay?closings.filter(e=>e.day===cashSelectedDay):[],[closings,cashSelectedDay]);
   const cashPreview=useMemo(()=>cashTotals(cashForm),[cashForm]);
   const purchaseData = useMemo(() => purchasePlan(products, documents), [products, documents]);
@@ -1771,6 +1851,7 @@ export default function Home() {
     const file=event.target.files?.[0];
     if(!file)return;
     event.target.value='';
+    if(cashSavingRef.current || cashEditId)return;
     if(file.size>4000000){setCashError('Arquivo acima de 4 MB.');return;}
     if(!supabase||!accessCode){setCashError('Entre no sistema para importar o fechamento.');return;}
     newCashClosing('upload');
@@ -1832,48 +1913,76 @@ export default function Home() {
   function newCashClosing(mode='manual'){
     setCashEntryMode(mode);
     setCashImportText('');setCashImportWarnings([]);
-    setCashEditId('');
-    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'003',
+    setCashEditId('');setCashConflict(false);setCashSaveTimedOut(false);
+    setCashForm({day:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),register:'',
       operator:currentUser?.display_name||'',cartaoCredito:'0',cartaoDebito:'0',
       credito:'0',debito:'0',outras:'0',dinheiroVendas:'0',cashCounted:'',cashReviewed:false,movements:[]});
     setCashError('');
   }
   function editCashClosing(entry){
+    if (currentUser?.role !== 'admin') return;
+    setCashSelectedDay('');
     setCashImportText(entry.sourceText||'');setCashImportWarnings([]);
-    setCashEntryMode('edit');
+    setCashEntryMode('edit');setCashConflict(false);setCashSaveTimedOut(false);
     setCashEditId(entry.id);
-    setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,
+    void loadCashAudit(entry.id);
+    setCashForm({...entry,day:String(entry.day).slice(0,10),cashReviewed:false,correctionReason:'',
       movements:entry.movements||[]});
     setCashError('');setView('cash');
   }
+  async function loadCashAudit(closingId){
+    setCashAudit({closingId,entries:[],loading:true,error:''});
+    try{
+      const {data,error}=await boundedRpc(supabase,'cash_closing_audit_list',{p_token:accessCode,p_closing_id:closingId});
+      if(error || !Array.isArray(data))throw new Error('Não foi possível carregar o histórico de correções.');
+      setCashAudit(current=>current.closingId===closingId?{...current,entries:data,loading:false}:current);
+    }catch(error){
+      setCashAudit(current=>current.closingId===closingId?{...current,loading:false,error:error.message}:current);
+    }
+  }
+  async function reloadCashCorrection(){
+    if(cashSavingRef.current || !window.confirm('Recarregar substituirá seus campos pela versão salva. Deseja continuar?'))return;
+    cashSavingRef.current=true;setCashSaving(true);
+    try{
+      const {data,error}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
+      const latest=Array.isArray(data)?data.find(entry=>entry.id===cashEditId):null;
+      if(error || !latest)throw new Error('Não foi possível recarregar. Seus campos foram preservados.');
+      setClosings(data);setCashDataStatus('ready');editCashClosing(latest);
+    }catch(error){setCashError(error.message);}
+    finally{cashSavingRef.current=false;setCashSaving(false);}
+  }
+  // Mantém confirmação, tentativa e recuperação juntas (até 50 linhas), preservando campos em qualquer erro.
   async function saveCashClosing(event){
     event.preventDefault();
-    if(cashSavingRef.current)return;
-    const snapshot=JSON.parse(JSON.stringify(cashForm));
-    const invalid=validateCashClosing(snapshot);
-    if(!snapshot.cashReviewed)invalid.push('Marque a conferência ao lado do botão salvar.');
-    if(invalid.length){setCashError(invalid.join(' · '));return;}
-    if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
-    cashSavingRef.current=true;setCashSaving(true);setCashError('');
+    if(cashSavingRef.current || cashConflict)return;
+    let clean;
     try{
-      const {cashReviewed,...entrySnapshot}=snapshot;
-      const clean={...entrySnapshot,day:snapshot.day,register:snapshot.register.trim(),
-        operator:snapshot.operator.trim(),
-        ...Object.fromEntries(CASH_CHANNELS.map(([key])=>[key,Number(snapshot[key]||0).toFixed(2)])),
-        cashCounted:Number(snapshot.cashCounted).toFixed(2),
-        movements:snapshot.movements.map(m=>({
-          type:m.type,reason:m.reason.trim(),amount:Number(m.amount).toFixed(2)
-        }))};
-      const {data,error:saveError}=await supabase.rpc('cash_closing_save',{p_token:accessCode,p_entry:clean});
-      if(saveError || !data?.ok)throw new Error(saveError?.message||'Não foi possível salvar');
-      const {data:updated,error:listError}=await supabase.rpc('cash_closings_list',{p_token:accessCode});
-      if(!listError&&Array.isArray(updated))setClosings(updated);
-      else setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);
-      setCashMonth(snapshot.day.slice(0,7));setCashSelectedDay('');
-      setCashEditId('');setCashEntryMode('');
+      clean=prepareCashClosing(cashForm);
+      if(clean.id){
+        cashAttemptRef.current=cashCorrectionAttempt(clean,cashAttemptRef.current,()=>crypto.randomUUID());
+        clean.requestId=cashAttemptRef.current.requestId;
+      }
+    }
+    catch(error){setCashError(error.message);return;}
+    if(!supabase || !accessCode){setCashError('Necessário entrar na conta para salvar os fechamentos compartilhados.');return;}
+    cashSavingRef.current=true;setCashSaving(true);setCashError('');setCashSaveTimedOut(false);
+    try{
+      const {data,error:saveError}=await boundedRpc(supabase,'cash_closing_save',{p_token:accessCode,p_entry:clean});
+      if(saveError)throw saveError;
+      if(!data?.ok)throw new Error('Não foi possível salvar o fechamento.');
+      const {data:updated,error:listError}=await boundedRpc(supabase,'cash_closings_list',{p_token:accessCode});
+      if(!listError&&Array.isArray(updated)){setClosings(updated);setCashDataStatus('ready');}
+      else {setCashDataStatus('error');setClosings(current=>[{...clean,...data},...current.filter(entry=>entry.id!==data.id&&!(entry.day===clean.day&&entry.register===clean.register))]);}
+      setCashMonth(clean.day.slice(0,7));setCashSelectedDay('');
+      setCashEditId('');setCashEntryMode('');setCashConflict(false);
       setToast(listError||!Array.isArray(updated)?'Fechamento salvo. Exibindo o registro salvo; atualize a tela para sincronizar o histórico.':'Fechamento de caixa registrado com sucesso.');
-    }catch(e){setCashError(e?.message||'Falha ao salvar fechamento');}
-    finally{cashSavingRef.current=false;setCashSaving(false);}
+    }catch(error){
+      setCashSaveTimedOut(error.code===RPC_TIMEOUT_CODE);
+      if(['40001','PT409','23505'].includes(error.code))setCashConflict(true);
+      setCashError(['40001','PT409'].includes(error.code)?'Este fechamento foi alterado em outra aba. Recarregue para ver a versão atual. Seus campos foram mantidos.':
+        error.code==='23505'?'Já existe fechamento nesta data e caixa. Seus campos foram preservados. Confira o registro no histórico antes de continuar.':
+        error.message||'Falha ao salvar fechamento. Seus campos foram preservados.');
+    }finally{cashSavingRef.current=false;setCashSaving(false);}
   }
   function openManualEntry() {
     if (draft || draftQueue.length) {
@@ -1989,7 +2098,7 @@ export default function Home() {
     try{
       await saveQueueRef.current;
       if(supabase){
-        const {data,error:rpcError}=await supabase.rpc('inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
+        const {data,error:rpcError}=await boundedRpc(supabase,'inventory_count_settings',{p_token:accessCode,p_config:settingsForm,p_rev:revisionRef.current});
         if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Erro ao salvar configuração.');
         if(!(await loadSharedInventory(accessCode)))throw new Error('Configuração salva, mas não foi possível recarregar.');
       }else setCountSettings({...settingsForm,configuredAt:countDay()});
@@ -2007,7 +2116,7 @@ export default function Home() {
     setCountBusy(true);setCountError('');
     try{
       await saveQueueRef.current;
-      const {data,error:rpcError}=await supabase.rpc('inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
+      const {data,error:rpcError}=await boundedRpc(supabase,'inventory_count_complete',{p_token:accessCode,p_lines:lines,p_rev:countBasis});
       if(rpcError||!data?.ok)throw new Error(rpcError?.message||'Falha ao registrar.');
       if(!(await loadSharedInventory(accessCode)))throw new Error('Registro concluído, mas falhou a atualização da tela.');
       setCountDraft(null);setCountBasis(null);
@@ -2039,7 +2148,7 @@ export default function Home() {
         try {
           const prepared = await prepareReceiptCanvases(file);
           const canvases = prepared.canvases.length ? prepared.canvases : [file];
-          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases, accessCode).catch(() => []);
+          const qrResultsPromise = detectNfceQrCodes(canvases, prepared.qrCanvases).catch(() => []);
           const { createWorker } = await import('tesseract.js');
           // A batch shares one initialized WASM worker; it is terminated in uploadFiles.finally.
           if (!receiptOcrWorkerRef.current) {
@@ -2093,10 +2202,10 @@ export default function Home() {
             const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
             const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
-            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(validateNfceAccessKey) || '';
-            const consultaUrl = accessKey ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
+            const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(readFiscalAccessKey) || '';
+            const consultaUrl = validateNfceAccessKey(accessKey) ? (qr.qrUrlPreserved ? qr.consultaUrl : PUBLIC_NFCE_CONSULTA_URL) : '';
             const keyWarning = !accessKey && (hasUncertainReceiptKey(primaryText) || hasUncertainReceiptKey(alternateText))
-              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
+              ? 'A chave lida pelo OCR foi rejeitada: modelo diferente de 55/65, tamanho incorreto ou dígito verificador inválido. Confira a chave impressa e tente uma foto mais nítida do QR Code.'
               : '';
             const multiple = prepared.split && canvases.length > 1;
             receipts.push({
@@ -2189,13 +2298,13 @@ export default function Home() {
 
   const cleanPendingDraft=(value)=>{
     if(!value) return {};
-    const {pendingId,pendingRevision, ...clean}=value;
-    return {...clean,ocrText:String(clean.ocrText||'').slice(0,100000),
+    const {pendingId,pendingRevision,localReceiptId, ...clean}=value;
+    return {...clean,supplierCnpj:validatedSupplierCnpj(clean.supplierCnpj),ocrText:String(clean.ocrText||'').slice(0,100000),
       officialText:String(clean.officialText||'').slice(0,30000)};
   };
   async function refreshPending(){
     if(!supabase||!accessCode)return;
-    const {data,error:pendingError}=await supabase.rpc('pending_receipts_list',{p_token:accessCode});
+    const {data,error:pendingError}=await boundedRpc(supabase,'pending_receipts_list',{p_token:accessCode});
     if(pendingError)throw new Error(pendingError.message);
     setPendingReceipts(Array.isArray(data)?data:[]);
   }
@@ -2206,7 +2315,7 @@ export default function Home() {
     let encoded='';
     for(let i=0;i<bytes.length;i+=8192)encoded+=String.fromCharCode(...bytes.subarray(i,i+8192));
     const base64=btoa(encoded);
-    const {data,error:uploadError}=await supabase.rpc('pending_receipt_create',{
+    const {data,error:uploadError}=await boundedRpc(supabase,'pending_receipt_create',{
       p_token:accessCode,p_file_name:file.name,p_mime:file.type||'',
       p_base64:base64,p_draft:cleanPendingDraft(receipt)
     });
@@ -2223,7 +2332,7 @@ export default function Home() {
       (row.draft?.supplier || row.fileName) +
       '"? Ela sairá da lista de conferência sem movimentar o estoque.')) return;
     try {
-      const {data,error:cancelError}=await supabase.rpc('pending_receipt_cancel',{
+      const {data,error:cancelError}=await boundedRpc(supabase,'pending_receipt_cancel',{
         p_token:accessCode,p_id:row.id
       });
       if(cancelError||!data?.ok)throw new Error(cancelError?.message||'Falha ao cancelar.');
@@ -2240,13 +2349,13 @@ export default function Home() {
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
-    setDraft({...row.draft,pendingId:row.id,pendingRevision:row.revision});
+    setDraft({...row.draft,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision});
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
   async function viewPendingOriginal(row){
     if(!supabase||!accessCode)return;
     try{
-      const {data,error:fileError}=await supabase.rpc('pending_receipt_file',{p_token:accessCode,p_id:row.id});
+      const {data,error:fileError}=await boundedRpc(supabase,'pending_receipt_file',{p_token:accessCode,p_id:row.id});
       if(fileError||!data?.base64)throw new Error(fileError?.message||'Arquivo original não disponível.');
       const binary=atob(data.base64);
       const dataBytes=new Uint8Array(binary.length);
@@ -2279,14 +2388,16 @@ export default function Home() {
         const file = files[i];
         setUploadBatchProgress(prev=>prev&&({...prev,current:i+1,fileName:file.name,
           files:prev.files.map((item,j)=>j===i?{...item,status:'Lendo'}:item)}));
+        let archiveFile = file;
         let fileStatus='Concluído';
         setProcessingType(/\.xml$/i.test(file.name) ? 'xml' : 'ocr');
         setOcrProgress(0);
         try {
+          archiveFile = await prepareReceiptImageUpload(file);
           const receipts = await parseUploadedFile(file);
           for(const receipt of receipts){
             const mapped=attachPreviousPurchases(receipt,[...parsed,...documents],products);
-            parsed.push(await storePendingReceipt(file,mapped));
+            parsed.push(await storePendingReceipt(archiveFile,mapped));
             try { await refreshPending(); } catch (refreshError) {
               issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
             }
@@ -2300,7 +2411,7 @@ export default function Home() {
             importWarning:e?.message||'Não foi possível interpretar automaticamente.',
             items:[{name:'',code:'',quantity:1,unit:'un',unitPrice:0}]};
           try{
-            parsed.push(await storePendingReceipt(file,fallback));
+            parsed.push(await storePendingReceipt(archiveFile,fallback));
             try { await refreshPending(); } catch(refreshError) {
               issues.push('Nota salva; atualize a lista de conferência: '+refreshError.message);
             }
@@ -2343,7 +2454,7 @@ export default function Home() {
       pendingSaveSerial.current=pendingSaveSerial.current.catch(()=>{}).then(async()=>{
         setPendingBusy(true);setPendingSaveError('');
         setPendingSaveErrorById(previous=>({...previous,[id]:''}));
-        const {data,error:pendingError}=await supabase.rpc('pending_receipt_save',{
+        const {data,error:pendingError}=await boundedRpc(supabase,'pending_receipt_save',{
           p_token:accessCode,p_id:id,p_draft:snapshot,p_rev:pendingRevisions.current.get(id)
         });
         if(pendingError||!data?.ok)throw new Error(pendingError?.message||'Falha ao salvar conferência.');
@@ -2391,16 +2502,16 @@ export default function Home() {
     const key = String(value || '').replace(/[^0-9]/g, '').slice(0, 44);
     setDraft((previous) => {
       if (!previous) return previous;
-      const valid = validateNfceAccessKey(key);
+      const valid = Boolean(readFiscalAccessKey(key));
       return {
         ...previous,
         accessKey: valid ? key : '',
         accessKeyInput: key,
-        consultaUrl: valid ? PUBLIC_NFCE_CONSULTA_URL : '',
+        consultaUrl: valid && validateNfceAccessKey(key) ? PUBLIC_NFCE_CONSULTA_URL : '',
         qrUrlPreserved: false,
         officialCompared: false, officialItems: [], officialVerified: false,
         officialOrigin: '', officialStatus: '', officialApplied: false,
-        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 65 e dígito verificador correto.'
+        keyWarning: valid ? '' : 'A chave exige 44 dígitos, modelo 55/65 e dígito verificador correto.'
       };
     });
   }
@@ -2418,7 +2529,7 @@ export default function Home() {
       officialVerified: false,
       items: d.items.map((it, i) => {
         if (i !== index) return it;
-        const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity'].includes(key);
+        const isNumeric = ['quantity', 'unitPrice', 'lineTotal', 'stockQuantity', 'conversionFactor'].includes(key);
         const next = { ...it, [key]: isNumeric ? (value === '' ? 0 : Number(value)) : value };
         if (key === 'name') next.manualName = true;
         // Printed fiscal line totals are independent facts: do not overwrite them
@@ -2481,6 +2592,7 @@ export default function Home() {
         const totals = data.totals || {};
         setDraft((d) => d && d.consultaUrl === url && d.accessKey === expectedKey
           ? { ...d, officialItems, officialCompared: true, officialOrigin: 'sefaz',
+              ...svrsDraftFields(data, d),
               officialSubtotal: totals.subtotal, officialDiscount: totals.discount,
               officialTotal: totals.total, reviewedItems: {}, totalsReviewed: false,
               officialStatus: 'Consulta automática concluída. Itens oficiais adotados para conferência.',
@@ -2546,14 +2658,16 @@ export default function Home() {
       discount: d.officialDiscount ?? d.discount,
       total: d.officialTotal ?? d.total,
       officialVerified: d.officialOrigin === 'sefaz',
-      totalsWarning: d.officialOrigin === 'sefaz' && d.officialTotal != null && d.officialSubtotal != null ? '' : d.totalsWarning,
+      totalsWarning: d.officialOrigin === 'sefaz' ? (d.officialWarnings || []).join(' ') : d.totalsWarning,
       source: String(d.source || '').includes('consulta pública') ? d.source : (String(d.source || '') + ' + consulta pública'),
       totalsSource: d.officialOrigin === 'sefaz' ? 'SEFAZ (consulta automática)' : 'Texto de consulta (não autenticado)'
     }));
     setError('');
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
+  const localKeyReview = reviewLocalFiscalKey(draft);
   function confirmDocument() {
+    if (localKeyReview.pending) { setError(localKeyReview.message); return; }
     if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
       setError(/[A-Za-z]/.test(draft.supplierCnpj)
         ? 'CNPJ alfanumérico preservado. Esta versão ainda não valida esse formato; solicite a atualização antes de lançar esta nota.'
@@ -2580,8 +2694,12 @@ export default function Home() {
       return;
     }
     if (draftTotal < -0.01) {setError('O total líquido não pode ser negativo.');return;}
-    if (!readyForFinalReview || !draft?.finalReviewed || !draft?.checkedBy?.trim()) {
-      setError('Conclua a conferência e informe o responsável no quadro de confirmação final.'); return;
+    if (!receiptReviewerMatches(draft,currentUser)) {
+      setDraft(previous => resetReceiptReviewer(previous,currentUser));
+      setError('A conta da conferência mudou ou não está disponível. Confira novamente antes de confirmar.'); return;
+    }
+    if (!readyForFinalReview || !draft?.finalReviewed) {
+      setError('Conclua a conferência no quadro de confirmação final.'); return;
     }
     if (draft.manualInvoice) {
       if (!draft.supplier?.trim() || !draft.invoiceNumber?.trim() || !draft.date?.trim()) {
@@ -2617,11 +2735,12 @@ export default function Home() {
     }
     if (draft?.items?.filter(shouldPostReceiptItem).some((it) => {
       const mapped = findSupplierAliasProduct(it, products, draft.supplierCnpj);
-      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit)) return true;
+      if (!it.productId && mapped && normalizeReceiptUnit(mapped.unit) !== normalizeReceiptUnit(it.unit) && !supplierAliasConversion(it, mapped, draft.supplierCnpj)) return true;
       const target = products.find((p) => p.id === it.productId);
-      return Boolean(target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit) &&
-        !(Number(it.stockQuantity) > 0));
-    })) { setError('Selecione o produto interno e informe sua quantidade quando a unidade fiscal for diferente.'); return; }
+      if (!target || normalizeReceiptUnit(target.unit) === normalizeReceiptUnit(it.unit)) return false;
+      const factor = Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, target.unit);
+      return !(Number.isFinite(factor) && factor > 0 && factor <= 1000000 && Number(it.quantity) * factor <= 1000000000);
+    })) { setError('Selecione o insumo e informe ou confira o fator de conversão para a unidade do estoque.'); return; }
     if (!draft || !draft.items.length || draft.items.some((it) =>
       !it.name?.trim() || !Number.isFinite(Number(it.quantity)) || Number(it.quantity) <= 0 ||
       !Number.isFinite(Number(it.unitPrice)) || Number(it.unitPrice) < 0 ||
@@ -2681,16 +2800,23 @@ export default function Home() {
       const automaticProduct = findReceiptCatalogProduct(it, nextProducts, issuer);
       const index = nextProducts.findIndex((p) => it.productId
         ? p.id === it.productId : p.id === automaticProduct?.id);
-      const stockQuantity = index >= 0 && normalizeReceiptUnit(nextProducts[index].unit) !== normalizeReceiptUnit(it.unit)
-        ? Number(it.stockQuantity) : Number(it.quantity);
+      const targetProduct = index >= 0 ? nextProducts[index] : null;
+      const hasUnitMismatch = Boolean(targetProduct && normalizeReceiptUnit(targetProduct.unit) !== normalizeReceiptUnit(it.unit));
+      const conversionFactor = hasUnitMismatch ? (Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : receiptUnitFactor(it.unit, targetProduct.unit)) : 1;
+      const stockQuantity = Number(it.quantity) * conversionFactor;
       const netUnitCost = Math.round(netLine / stockQuantity * 10000) / 10000;
       let productId;
       if (index >= 0) {
         const old = nextProducts[index];
         productId = old.id;
         const supplierCodes = [...(old.supplierCodes || [])];
-        if (issuer && fiscalCode && !supplierCodes.some((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode))
+        let aliasIndex = supplierCodes.findIndex((alias) => cnpjDigits(alias.cnpj) === issuer && fiscalCodeIdentity(alias.code) === fiscalCode);
+        if (issuer && fiscalCode && aliasIndex < 0) {
           supplierCodes.push({ cnpj: issuer, code: it.code });
+          aliasIndex = supplierCodes.length - 1;
+        }
+        if (issuer && fiscalCode && hasUnitMismatch && it.saveUnitConversion && aliasIndex >= 0)
+          supplierCodes[aliasIndex] = { ...supplierCodes[aliasIndex], unitConversion: { invoiceUnit: it.unit, stockUnit: old.unit, factor: conversionFactor } };
         nextProducts[index] = { ...old, supplierCodes,
           stock: Math.round((Number(old.stock) + stockQuantity) * 1000) / 1000,
           cost: Number.isFinite(netUnitCost) ? netUnitCost : old.cost,
@@ -2701,9 +2827,10 @@ export default function Home() {
       }
       // Even when the reviewer explicitly selected "novo cadastro", never
       // persist the sentinel; an invoice must reference the real product ID.
-      items[itemIndex] = { ...it, productId };
+      items[itemIndex] = { ...it, productId, ...(hasUnitMismatch ? { stockConversion: { invoiceQuantity: Number(it.quantity), invoiceUnit: it.unit, stockQuantity, stockUnit: targetProduct.unit, factor: conversionFactor } } : {}) };
       const movementId = uid();
-      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost });
+      stockEntries.push({ productId, movementId, quantity: stockQuantity, netUnitCost,
+        ...(hasUnitMismatch ? { invoiceQuantity: Number(it.quantity), invoiceUnit: it.unit, stockUnit: targetProduct.unit, conversionFactor } : {}) });
       nextMovements.unshift({ id: movementId, documentId, productId, product: nextProducts.find((p) => p.id === productId)?.name || it.name.trim(), type: 'Entrada', quantity: stockQuantity, reason: 'Documento ' + (draft.invoiceNumber ? '#' + draft.invoiceNumber : 'importado'), date: dateNow(), by: draft.checkedBy.trim() });
     });
     setProducts(nextProducts);
@@ -2711,7 +2838,7 @@ export default function Home() {
     if (validSupplierCnpj(draft.supplierCnpj)) setSuppliers((registered) =>
       registered.some((supplier) => cnpjDigits(supplier.cnpj) === cnpjDigits(draft.supplierCnpj))
         ? registered : [...registered, { id: uid(), cnpj: cnpjDigits(draft.supplierCnpj), name: draft.supplier.trim() }]);
-    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, ...documentToSave } = draft;
+    const { ocrText, officialText, officialItems, officialSubtotal, officialDiscount, officialTotal, officialCompared, reviewedItems, totalsReviewed, finalReviewed, localReceiptId, ...documentToSave } = draft;
     setDocuments((old) => [{ ...documentToSave,
       subtotal:draftSubtotal,discount:draftDiscount,total:draftTotal,additionalCharges:draftExtras,
       checkedBy: draft.checkedBy.trim(), id: documentId, stockEntries,
@@ -2762,7 +2889,7 @@ export default function Home() {
     try {
       await saveQueueRef.current;
       const removeId = mergePair.left.id === mergeKeepId ? mergePair.right.id : mergePair.left.id;
-      const { data, error: rpcError } = await supabase.rpc('inventory_merge_products', {
+      const { data, error: rpcError } = await boundedRpc(supabase,'inventory_merge_products', {
         p_token: accessCode, p_keep_id: mergeKeepId, p_remove_id: removeId, p_rev: revisionRef.current
       });
       if (rpcError || !data?.ok) throw new Error(rpcError?.message || 'Não foi possível consolidar os produtos.');
@@ -2800,7 +2927,7 @@ export default function Home() {
     setDeleteError('');
     try {
       await saveQueueRef.current;
-      const { data, error: removalError } = await supabase.rpc('inventory_delete_document', {
+      const { data, error: removalError } = await boundedRpc(supabase,'inventory_delete_document', {
         p_session_token: accessCode,
         p_document_id: document.id
       });
@@ -2825,52 +2952,56 @@ export default function Home() {
 
   if (PREVIEW_UNSAFE) {
     return <div className="auth-screen"><section className="auth-card" role="alert">
-      <h1>Ambiente bloqueado</h1>
-      <p>A conexão com o banco deste ambiente não está autorizada.</p>
-      <p>Entre em contato com o responsável técnico para verificar a configuração.</p>
+      <h1>Ambiente de homologação bloqueado</h1>
+      <p>Esta prévia não possui autorização explícita para acessar o banco configurado.
+        Por segurança, o acesso ao estoque está bloqueado.</p>
+      <p>Para homologar com o banco existente, configure as variáveis Preview na Vercel,
+        inclusive a liberação controlada da branch de integração, e gere uma nova implantação.
+        Os logins e permissões continuam sendo verificados pelo banco.</p>
     </section></div>;
   }
   if (supabase && !accessLoaded) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><GiroBrand/></div><div className="auth-loading"><span className="spinner"/><b>Preparando o estoque compartilhado…</b></div></div></div>;
   }
   if (supabase && !accessGranted) {
     return <div className="auth-screen"><section className="auth-card">
-      <div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div>
+      <div className="auth-brand"><GiroBrand/></div>
       <div className="auth-eyebrow">ACESSO INDIVIDUAL</div>
-      <h1>Entrar no estoque</h1>
+      <h1>Entrar no Giro</h1>
       <p className="auth-intro">Use sua conta da cafeteria para consultar e atualizar o estoque compartilhado.</p>
       <form className="auth-form" onSubmit={handleLogin}>
         <label className="field"><span>Login</span><input type="text" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} required value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="Seu login"/></label>
         <label className="field"><span>Senha</span><input type="password" name="password" autoComplete="current-password" required value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Sua senha"/></label>
-        <button className="btn primary auth-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando acesso…' : 'Entrar no estoque'}</button>
+        <button className="btn primary auth-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Verificando acesso…' : 'Entrar no Giro'}</button>
       </form>
       {accessMessage && <div className="auth-message" role="status" style={{marginTop: 14}}>{accessMessage}</div>}
       <div className="auth-security"><Icon type="check" size={16}/> Sessão individual protegida, com validade de até 12 horas.</div>
     </section></div>;
   }
   if (supabase && accessGranted && !dataReady) {
-    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><span className="brand-icon"><Icon type="box" size={24}/></span><div><b>estoque<span>+</span></b><small>CAFETERIA</small></div></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
+    return <div className="auth-screen"><div className="auth-card"><div className="auth-brand"><GiroBrand/></div><div className="auth-loading"><span className="spinner"/><b>Carregando o estoque…</b><p>Buscando os dados compartilhados.</p></div></div></div>;
   }
 
   if (supabase && accessGranted && (mustChangePassword || currentUser?.role === 'superadmin')) {
-    return <main className="tenant-admin-screen"><header><h1>Estoque+ · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
+    return <main className="tenant-admin-screen"><header><h1>Giro · {mustChangePassword ? 'Segurança da conta' : 'Administração DBA'}</h1><button className="btn secondary" type="button" onClick={handleLock}>Sair da conta</button></header><TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={mustChangePassword} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/></main>;
   }
 
   return <div className={'shell'+(navCollapsed?' nav-collapsed':'')+(menuOpen?' nav-open':'')}>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Fechar menu" type="button" onClick={()=>setMenuOpen(false)}/>}
     <aside className="sidebar" id="primary-navigation">
-      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}}><span className="brand-icon"><Icon type="box" size={24}/></span><span><b>estoque<span>+</span></b><small>PROJETO GPT</small></span></button>
+      <button className="brand" onClick={() => {setView('stock');setMenuOpen(false);}} type="button"><GiroBrand/></button>
       <button className="sidebar-close" type="button" aria-label="Fechar menu" onClick={()=>setMenuOpen(false)}>×</button>
-      <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>Meu estoque</b><small>Ambiente de demonstração</small></span><Icon type="down" size={15}/></div>
+      <div className="side-caption">ESPAÇO DE TRABALHO</div><div className="workspace"><span className="workspace-avatar">E</span><span><b>{activeTenantName || 'Estabelecimento ativo'}</b><small>Unidade autorizada</small></span><Icon type="down" size={15}/></div>
       <div className="side-caption menu-caption">MENU PRINCIPAL</div><nav className="navigation" aria-label="Menu principal" onClick={e=>{if(e.target.closest(".nav-link"))setMenuOpen(false);}}>
-        <button aria-label="Estoque" aria-current={view === 'stock' ? 'page' : undefined} className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')}><Icon type="grid"/><span>Estoque</span></button>
-        <button aria-label="Contagem de estoque" aria-current={view === 'count' ? 'page' : undefined} className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')}><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
-        {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')}><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
-        {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')}><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
-        <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')}><Icon type="arrows"/><span>Movimentações</span></button>
-        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')}><Icon type="chart"/><span>Fechamento de caixa</span></button>
-        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')}><Icon type="file"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
-        {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')}><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
+        <button aria-label="Estoque" aria-current={view === 'stock' ? 'page' : undefined} className={view === 'stock' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('stock')} type="button"><Icon type="grid"/><span>Estoque</span></button>
+        <button aria-label="Contagem de estoque" aria-current={view === 'count' ? 'page' : undefined} className={view === 'count' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('count')} type="button"><Icon type="check"/><span>Contagem de estoque</span>{countDue&&<i>!</i>}</button>
+        {currentUser?.role === 'admin' && <button aria-label="Possíveis duplicatas" aria-current={view === 'duplicates' ? 'page' : undefined} className={view === 'duplicates' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('duplicates')} type="button"><Icon type="search"/><span>Possíveis duplicatas</span>{duplicatePairs.length > 0 && <i>{duplicatePairs.length}</i>}</button>}
+        {canFiscal('fiscal.pending.read')&&<button aria-label="Notas fiscais" aria-current={view === 'documents' ? 'page' : undefined} className={view === 'documents' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('documents')} type="button"><Icon type="file"/><span>Notas fiscais</span><i>{documents.length + (draft ? 1 : 0) + draftQueue.length}</i></button>}
+        <button aria-label="Movimentações" aria-current={view === 'movements' ? 'page' : undefined} className={view === 'movements' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('movements')} type="button"><Icon type="arrows"/><span>Movimentações</span></button>
+        <button aria-label="Fechamento de caixa" aria-current={view === 'cash' ? 'page' : undefined} className={view === 'cash' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('cash')} type="button"><Icon type="chart"/><span>Fechamento de caixa</span></button>
+        {currentUser?.role === 'admin' && <button aria-label="Relatórios" aria-current={view === 'reports' ? 'page' : undefined} className={view === 'reports' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('reports')} type="button"><Icon type="report"/><span>Relatórios</span></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Lista de compras" aria-current={view === 'purchases' ? 'page' : undefined} className={view === 'purchases' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('purchases')} type="button"><Icon type="cart"/><span>Lista de compras</span><i>{purchaseList.length}</i></button>}
+        {currentUser?.role === 'admin' && <button aria-label="Fornecedores" aria-current={view === 'suppliers' ? 'page' : undefined} className={view === 'suppliers' ? 'nav-link selected' : 'nav-link'} onClick={() => setView('suppliers')} type="button"><Icon type="box"/><span>Fornecedores</span><i>{supplierGroups.length}</i></button>}
       </nav>
 
     </aside>
@@ -2881,19 +3012,17 @@ export default function Home() {
         <div className="topbar-start">
           <button type="button" className="hamburger" aria-label={menuOpen?'Fechar menu':'Abrir menu principal'} aria-controls="primary-navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(o=>!o)}><span/><span/><span/></button>
           <button type="button" className="nav-collapse-button" aria-label={navCollapsed?'Expandir menu lateral':'Recolher menu lateral'} title={navCollapsed?'Expandir menu':'Recolher menu'} aria-pressed={navCollapsed} onClick={()=>setNavCollapsed(o=>!o)}><Icon type="grid" size={17}/></button>
-          <div className="crumb">Workspace <Icon type="chevron" size={14}/><b>{page[1]}</b></div>
+          <div className="crumb"><span>{activeTenantName || 'Giro'}</span><Icon type="chevron" size={14}/><b>{page[1]}</b></div>
         </div>
         <div className="top-right">
-          <span className="local-pill"><i/>{supabase ? "Estoque compartilhado" : "Protótipo local"}</span>
-          <button className="bell" aria-label="Ver itens com estoque baixo" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}}><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
-          <div className="account-menu">
+          <button className="bell" aria-label="Ver itens com estoque baixo" title="Ver itens com estoque baixo" onClick={() => {setView('stock');setFilter('Estoque baixo');}} type="button"><Icon type="alert" size={18}/>{low.length > 0 && <em/>}</button>
+          <div className="account-menu" ref={accountMenuRef}>
             <button type="button" className="account-trigger" aria-haspopup="menu" aria-expanded={accountOpen} onClick={()=>setAccountOpen(o=>!o)}>
               <span className="user-avatar">{currentUser?.role==='admin'?'GE':'EQ'}</span>
               <span className="account-identity"><b>{currentUser?.display_name || 'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'}</small></span>
               <Icon type="down" size={14}/>
             </button>
-            {accountOpen&&<><button className="account-menu-dismiss" type="button" aria-label="Fechar menu do usuário" onClick={()=>setAccountOpen(false)}/>
-              <div className="account-dropdown" role="menu">
+            {accountOpen&&<><div className="account-dropdown" role="menu">
                 <p><b>{currentUser?.display_name||'Equipe'}</b><small>{currentUser?.role==='admin'?'Gestor':'Funcionário'} · {saveStatus||'Sessão ativa'}</small></p>
                 <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('settings');}}>Configurações</button>
                 {currentUser?.role === 'admin' && <button type="button" role="menuitem" onClick={()=>{setAccountOpen(false);setMenuOpen(false);setView('permissions');}}>Permissões</button>}
@@ -2904,18 +3033,17 @@ export default function Home() {
         </div>
       </header>
       <div className="content">
-        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')}><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList}><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)}><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
+        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
-        {view === 'count' && <section className="panel" style={{padding:20}}>
-          <h2>Contagem física do estoque</h2>
-          <p>Registre as quantidades reais para identificar diferenças no estoque.</p>
-          <p>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'A configurar'}</p>
+        {view === 'count' && <section className="panel giro-count-panel">
+          <div className="giro-count-start"><div><h2>Conferir quantidades</h2><p>Conte os produtos e revise as diferenças antes de ajustar o estoque.</p></div>
+          {!countDraft && <button className="btn primary" disabled={!products.length} onClick={beginCount} type="button"><Icon type="check" size={17}/>Iniciar contagem</button>}</div>
+          <div className="giro-count-status"><span>{products.length} produtos para conferir</span><span>Próxima contagem: {countSettings.enabled ? countDateLabel(nextCount) : 'Sem periodicidade definida'}</span></div>
           {countSettings.enabled && <p style={{color:countDue?'#a33':'#356b54'}}>{countDue ? 'Prazo vencido: conferência obrigatória pendente.' : 'A contagem está em dia.'}</p>}
           {stockCounts[0]&&<p>Última conferência: {new Date(stockCounts[0].completedAt).toLocaleString('pt-BR')} · {stockCounts[0].by}</p>}
           {countError&&<div className="error" role="alert">{countError}</div>}
-          {currentUser?.role==='admin'&&<div className="panel" style={{padding:15,marginTop:16}}>
-            <h3>Periodicidade obrigatória · Gestor</h3>
+          {currentUser?.role==='admin'&&<details className="giro-count-setting"><summary>Configurar periodicidade · Gestor</summary>
             <label style={{display:'flex',gap:9,alignItems:'center',margin:'12px 0'}}><input type="checkbox" checked={Boolean(settingsForm.enabled)} onChange={(e)=>setSettingsForm({...settingsForm,enabled:e.target.checked})}/> Exigir contagem periódica</label>
             <div className="meta-fields">
               <label><span>Periodicidade</span><select value={settingsForm.mode} onChange={(e)=>setSettingsForm({...settingsForm,mode:e.target.value})}><option value="interval">A cada X dias</option><option value="weekly">Dia fixo da semana</option><option value="monthly">Dia fixo do mês</option></select></label>
@@ -2923,12 +3051,11 @@ export default function Home() {
               {settingsForm.mode==='weekly'&&<label><span>Dia da semana</span><select value={settingsForm.weekday} onChange={(e)=>setSettingsForm({...settingsForm,weekday:Number(e.target.value)})}>{['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'].map((d,i)=><option value={i+1} key={d}>{d}</option>)}</select></label>}
               {settingsForm.mode==='monthly'&&<label><span>Dia do mês (1 a 31)</span><input type="number" min="1" max="31" value={settingsForm.monthDay} onChange={(e)=>setSettingsForm({...settingsForm,monthDay:Number(e.target.value)})}/></label>}
             </div>
-            <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()}>Salvar periodicidade</button>
-          </div>}<CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/>
-          {!countDraft && <button className="btn primary" onClick={beginCount}>Iniciar contagem</button>}
-          {countDraft && <div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td>{p.name}</td><td>{qty(p.stock)} {p.unit}</td><td><input type="number" min="0" step="0.001" value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td>{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
-          {countDraft && <div className="modal-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}}>Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()}>{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 style={{marginTop:22}}>Histórico de contagens</h3>
-          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<p>Nenhuma contagem registrada.</p>}
+            <button className="btn primary" disabled={countBusy} onClick={()=>void saveCountSettings()} type="button">Salvar periodicidade</button>
+          </details>}<details className="giro-count-print"><summary>Imprimir folha de contagem</summary><CountPrintAction products={products} latestCount={stockCounts[0]} user={currentUser} unitName={activeTenantName}/></details>
+          {countDraft && <div className="table-wrap giro-count-editor"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{products.map((p)=><tr key={p.id}><td data-label="Produto">{p.name}</td><td data-label="Sistema">{qty(p.stock)} {p.unit}</td><td data-label="Contado"><input type="number" min="0" step="0.001" aria-label={'Quantidade contada de '+p.name+' em '+p.unit} value={countDraft[p.id]??''} onChange={(e)=>setCountDraft({...countDraft,[p.id]:e.target.value})}/></td><td data-label="Diferença">{countDraft[p.id]==='' ? 'Pendente' : qty(Number(countDraft[p.id])-Number(p.stock))+' '+p.unit}</td></tr>)}</tbody></table></div>}
+          {countDraft && <div className="modal-actions giro-count-actions" style={{marginTop:12}}><span>{products.length-uncounted}/{products.length} contados · {countDifferences} divergências</span><button className="btn secondary" disabled={countBusy} onClick={()=>{setCountDraft(null);setCountBasis(null);setCountError('');}} type="button">Cancelar</button><button className="btn primary" disabled={countBusy||uncounted>0} onClick={()=>void completePhysicalCount()} type="button">{countBusy?'Registrando…':'Concluir e ajustar estoque'}</button></div>}<h3 className="giro-count-history-title">Histórico de contagens</h3>
+          {stockCounts.length?stockCounts.slice(0,12).map((entry)=><details key={entry.id} style={{padding:'10px 0',borderBottom:'1px solid #e5e9e4'}}><summary>{new Date(entry.completedAt).toLocaleString('pt-BR')} · {entry.by} · {(entry.items||[]).filter((x)=>Number(x.difference)!==0).length} divergências</summary><div className="table-wrap"><table><thead><tr><th>Produto</th><th>Sistema</th><th>Contado</th><th>Diferença</th></tr></thead><tbody>{(entry.items||[]).map((x)=><tr key={x.productId}><td>{x.name}</td><td>{qty(x.expected)}</td><td>{qty(x.counted)}</td><td>{qty(x.difference)}</td></tr>)}</tbody></table></div></details>):<div className="giro-count-empty"><Icon type="check" size={24}/><div><b>Nenhuma contagem concluída</b><p>As conferências salvas aparecerão aqui com as diferenças e o responsável.</p></div></div>}
           {/* COUNT HISTORY */}
         </section>}
         {(view === 'settings' || (view === 'administration' && currentUser?.role === 'admin')) && <TenantAdministration invoke={invokeAdministration} user={currentUser} mustChangePassword={false} onPasswordChanged={finishPasswordChange} onTenantSelected={reloadSelectedTenant}/>}
@@ -2949,22 +3076,20 @@ export default function Home() {
           </div>)}</div>
           : <div className="empty-docs"><span className="empty-file"><Icon type="check" size={28}/></span><b>Nenhuma possível duplicata encontrada</b><p>A rotina seguirá conferindo o catálogo ao entrar ou lançar notas fiscais.</p></div>}
         </section>}
-        {view === 'stock' && currentUser?.role === 'admin' && duplicatePairs.length > 0 && <section className="alert-strip" role="status"><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>{duplicatePairs.length} possível(is) duplicata(s) no catálogo</b><p>Compare códigos e descrições; confira antes de corrigir os cadastros.</p></div><button onClick={() => setView('duplicates')}>Revisar <Icon type="chevron" size={15}/></button></section>}
+        {view === 'stock' && currentUser?.role === 'admin' && duplicatePairs.length > 0 && <section className="alert-strip" role="status"><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>{duplicatePairs.length} possível(is) duplicata(s) no catálogo</b><p>Compare códigos e descrições; confira antes de corrigir os cadastros.</p></div><button onClick={() => setView('duplicates')} type="button">Revisar <Icon type="chevron" size={15}/></button></section>}
         {view === 'stock' && <>
-          <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(3,minmax(0,1fr))'}}>
+          <section className="stats" style={{gridTemplateColumns: currentUser?.role === 'admin' ? undefined : 'repeat(2,minmax(0,1fr))'}}>
             <article className="stat"><div className="stat-top"><span>Produtos cadastrados</span><i className="stat-symbol green"><Icon type="box" size={19}/></i></div><strong className="stat-value">{products.length}</strong><div className="stat-foot"><span className="green-dot"/>Itens no catálogo</div></article>
             {currentUser?.role === 'admin' && <article className="stat"><div className="stat-top"><span>Valor em estoque</span><i className="stat-symbol beige"><Icon type="chart" size={19}/></i></div><strong className="stat-value money-value">{money(value)}</strong><div className="stat-foot subtle">Custo estimado dos itens disponíveis</div></article>}
-            <article className="stat"><div className="stat-top"><span>Estoque baixo</span><i className="stat-symbol yellow"><Icon type="alert" size={19}/></i></div><strong className="stat-value">{low.length}</strong><div className="stat-foot">{low.length ? <span className="warn-text">Precisam de reposição</span> : <span className="green-text">Tudo em dia</span>}</div></article>
-            <article className="stat"><div className="stat-top"><span>Quantidade total</span><i className="stat-symbol blue"><Icon type="arrows" size={19}/></i></div><strong className="stat-value">{qty(units)}</strong><div className="stat-foot subtle">Soma das quantidades cadastradas</div></article>
+            <article className="stat"><div className="stat-top"><span>Estoque baixo</span><i className="stat-symbol yellow"><Icon type="alert" size={19}/></i></div><button className="stat-value giro-stat-button" type="button" aria-label="Filtrar produtos que precisam de reposição" onClick={() => setFilter('Estoque baixo')}>{low.length}</button><div className="stat-foot">{low.length ? <span className="warn-text">Precisam de reposição</span> : <span className="green-text">Tudo em dia</span>}</div></article>
           </section>
-          {low.length > 0 && <section className="alert-strip"><span className="alert-icon"><Icon type="alert" size={19}/></span><div><b>{low.length} {low.length === 1 ? 'produto precisa' : 'produtos precisam'} de reposição</b><p>{low.slice(0, 3).map((p) => p.name).join(', ')}{low.length > 3 ? ' e mais ' + (low.length - 3) : ''} estão no mínimo ou abaixo dele.</p></div><button onClick={() => setFilter('Estoque baixo')}>Ver produtos <Icon type="chevron" size={15}/></button></section>}
-          <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}}><Icon type="sliders" size={16}/>Limpar filtros</button></div>
+          <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}} type="button"><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
-            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)}><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'}><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
+            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
             <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
-          <section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')}>Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)}><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
-          <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')}>Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section>
+          <details className="giro-stock-details"><summary>Atividade recente e reposição</summary><section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')} type="button">Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)} type="button"><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
+          <div className="panel lower-panel"><div className="panel-head"><div><h2>Últimas movimentações</h2><p>Entradas e saídas recentes.</p></div><button className="text-btn" onClick={() => setView('movements')} type="button">Ver histórico <Icon type="chevron" size={14}/></button></div>{movements.slice(0, 4).map((m) => <div className="recent-row" key={m.id}><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span className="recent-name"><b>{m.product}</b><small>{m.reason}</small></span><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type === 'Saída' ? '−' : '+'}{qty(m.quantity)}</span></div>)}</div></section></details>
         </>}
 
         {view === 'purchases' && currentUser?.role === 'admin' && <section className="panel purchases-panel">
@@ -3024,10 +3149,12 @@ export default function Home() {
           </div>)}
         </section>}
         {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()}><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
+          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
           <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Privacidade do QR Code:</b> o sistema tenta ler o código localmente. Se não conseguir, <b>envia automaticamente um recorte da região inferior da nota a um serviço de terceiros</b> (<a href="https://nfc.kopilot.food/" target="_blank" rel="noopener noreferrer">nfc.kopilot.food ↗</a>). Esse recorte pode incluir dados fiscais e pessoais próximos ao QR. A conferência permanece obrigatória antes do lançamento.
+            <b>Leitura local:</b> OCR, QR e código de barras são lidos no navegador, sem enviar a imagem a leitores de terceiros. O original continua arquivado no sistema. A consulta oficial da NFC-e permanece disponível; confira os dados antes do lançamento.
           </div>
+          </details>
           {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
               <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
@@ -3037,9 +3164,9 @@ export default function Home() {
             <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
             <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
           </section>}
-          <section className="panel pending-documents-panel">
+          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
+          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
             <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
-            {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
             {pendingBusy&&<small>Salvando conferência no servidor…</small>}
             {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
               <span className="history-file"><Icon type="file" size={18}/></span>
@@ -3049,8 +3176,8 @@ export default function Home() {
               {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
                 style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
             </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
-          </section>
-          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')}><Icon type="close" size={16}/></button></div>}
+          </details>
+          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
           {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
           {manualMode && <section className="panel manual-entry-panel">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
@@ -3094,7 +3221,13 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" onClick={() => {if (draftQueue.length && !window.confirm('Descartar esta nota e os ' + draftQueue.length + ' documentos aguardando revisão?')) return;setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');if (uploadRef.current) uploadRef.current.value = '';}}><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+            <nav className="receipt-review-guide" aria-label="Etapas da conferência">
+              <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
+                <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
+              <div className="receipt-review-links"><a href="#receipt-review-items">Ir aos itens</a><a href="#receipt-review-totals">Ir aos totais</a><a href="#receipt-review-final">Ir à confirmação</a></div>
+              <small>Use Tab para avançar e Shift + Tab para voltar. Enter nos campos não lança a nota. Para lançar, vá até o botão “Confirmar entrada no estoque”, após a conferência final.</small>
+            </nav>
             {draftBatch && <div className="notice" style={{marginTop:14}}>Cupom {draftBatch.current} de {draftBatch.total}. Confirme esta entrada para revisar o próximo documento da seleção.</div>}
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
@@ -3129,16 +3262,30 @@ export default function Home() {
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
+            <section className="invoice-document-details" aria-label="Identificação local pela chave">
+              <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
+              <p id="local-key-status" role="status">{localKeyReview.message}</p>
+              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              {localKeyReview.canConfirmKey && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, keyReadAcknowledged:localKeyReview.evidence, finalReviewed:false}))}>Conferi a chave digitada com a nota e confirmo esta leitura</button>}
+              {localKeyReview.canConfirmIssuer && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, supplierCnpj:localKeyReview.fields.cnpj, issuerKeyAcknowledged:localKeyReview.issuerEvidence, finalReviewed:false}))}>Conferi o emitente na nota e confirmo o CNPJ da chave</button>}
+            </section>
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
-            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente (opcional)</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos"/></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
+            {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
+              {draft.contingency && <strong>EMITIDA EM CONTINGÊNCIA · </strong>}
+              Série: {draft.series || '—'} · Endereço: {draft.address || '—'}
+              <br/>Pagamento: {(draft.payments || []).map((payment) => payment.method + ': ' + money(payment.amount)).join(' · ') || '—'}
+              {' · Troco: ' + money(draft.change || 0) + ' · Tributos: ' + money(draft.taxes || 0)}
+            </div>}
+            <div className="meta-fields"><label><span>Fornecedor</span><input value={draft.supplier} onChange={(e) => changeDraft('supplier', e.target.value)} placeholder="Nome do fornecedor"/></label><label><span>CNPJ do emitente</span><input value={draft.supplierCnpj||''} onChange={(e)=>changeDraft('supplierCnpj',e.target.value.replace(/[^a-zA-Z0-9.\/-]/g,'').slice(0,18))} placeholder="14 dígitos" aria-invalid={Boolean(draft.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj))} aria-describedby="supplier-cnpj-status"/><small id="supplier-cnpj-status" role="status">{validSupplierCnpj(draft.supplierCnpj) ? 'Dígitos verificadores válidos. Confira o emitente com a nota.' : 'Pendente: CNPJ ausente ou inválido. Confira na nota; o sistema não grava um CNPJ inválido neste campo.'}</small></label><label><span>Número do documento</span><input value={draft.invoiceNumber} onChange={(e) => changeDraft('invoiceNumber', e.target.value)} placeholder="Ex.: 000123"/></label><label><span>Data de emissão</span><input value={draft.date} onChange={(e) => changeDraft('date', e.target.value)} placeholder="Data, se disponível"/></label></div>
             </section>
 
+          </div></div><div className="giro-review-items">
             <div className="notice" style={{marginTop:12,background:'#fffbeb',borderLeft:'4px solid #c58a24'}}>
               <b>Conferência do encarregado</b> — campos em amarelo precisam ser confrontados com a nota antes do lançamento.
               {officialMissing > 0 && <span style={{display:'block',marginTop:6,color:'#9a3412'}}>A consulta contém {officialMissing} produto(s) ainda ausente(s) na tabela. Revise-os: o lançamento exigirá confirmação adicional.</span>}
             </div>
-            <div className="table-wrap review-table">
+            <div className="table-wrap review-table receipt-items-table" id="receipt-review-items" tabIndex={0} role="region" aria-label="Itens da nota para conferência">
               <table>
                 <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>PRODUTO NO ESTOQUE</th><th>CONFERÊNCIA</th><th></th></tr></thead>
                 <tbody>{draft.items.map((it, i) => {
@@ -3149,7 +3296,7 @@ export default function Home() {
                     background: attention ? '#fffbeb' : undefined
                   });
                   return <tr key={it.lineId || i} style={{background: attention ? '#fffbeb' : undefined, borderLeft: attention ? '3px solid #c58a24' : undefined}}>
-                    <td>{draft.manualInvoice ? <div className="manual-invoice-product">
+                    <td data-label="Produto">{draft.manualInvoice ? <div className="manual-invoice-product">
                       <input className="inline-input name-field" aria-label={'Buscar produto da linha '+(i+1)} value={it.search ?? ''} placeholder="Buscar produto por nome ou código"
                         onChange={(e)=>changeItem(i,'search',e.target.value)}/>
                       <select className="inline-input" aria-label={'Selecionar produto da linha '+(i+1)} value={it.productId||''}
@@ -3159,12 +3306,12 @@ export default function Home() {
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
-                    </div> : <><input className="inline-input name-field" style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
-                    <td><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
-                    <td><input className="inline-input unit-field" style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
-                    <td><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
-                    <td style={{minWidth:225}}>
+                    </div> : <><input className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
+                    <td data-label="Quantidade"><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
+                    <td data-label="Unidade"><input className="inline-input unit-field" aria-label={'Unidade da linha '+(i+1)} style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
+                    <td data-label="Custo unitário"><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
+                    <td data-label="Total da linha"><input className="inline-input small-field review-money" style={fieldStyle('total')} type="number" min="0" step="0.01" aria-label={'Total da linha: ' + it.name} value={receiptItemTotal(it)} onChange={(e) => changeItem(i, 'lineTotal', e.target.value)}/>{Number(it.itemDiscount || 0) > 0 && <small style={{display:'block',fontSize:11}}>Desconto da linha: {money(it.itemDiscount)}</small>}</td>
+                    <td data-label="Classificação e vínculo">
                       <label style={{display:'block',fontSize:11,marginBottom:6}}>
                         Classificação fiscal
                         <select className="inline-input" style={{width:'100%',marginTop:3}}
@@ -3190,17 +3337,18 @@ export default function Home() {
                       </div>}
                       {(() => {
                         const target = products.find((p) => p.id === it.productId);
-                        return target && normalizeReceiptUnit(target.unit) !== normalizeReceiptUnit(it.unit)
-                          ? <label style={{display:'block',marginTop:6,fontSize:12,color:'#92400e'}}>
-                            ⚠ Quantidade real no estoque ({target.unit}) *
-                            <input className="inline-input small-field" type="number" min="0.001" step="any"
-                              value={it.stockQuantity || ''} onChange={(e) => changeItem(i,'stockQuantity',e.target.value)}
-                              placeholder={'Quantidade em ' + target.unit}/>
-                            </label>
-                          : null;
+                        if (!target || normalizeReceiptUnit(target.unit) === normalizeReceiptUnit(it.unit)) return null;
+                        const automaticFactor = receiptUnitFactor(it.unit, target.unit);
+                        const factor = Number(it.conversionFactor) > 0 ? Number(it.conversionFactor) : automaticFactor;
+                        const converted = factor ? Number(it.quantity) * factor : null;
+                        return <div style={{display:'grid',gap:5,marginTop:7,fontSize:12,color:'#92400e'}}>
+                          <label>Conversão: 1 {it.unit} = <input className="inline-input small-field" aria-label={'Fator de conversão da linha '+(i+1)} type="number" min="0.000001" max="1000000" step="any" value={factor || ''} readOnly={automaticFactor !== null} onChange={(e) => changeItem(i,'conversionFactor',e.target.value)} placeholder={'quantos '+target.unit}/> {target.unit}</label>
+                          <span>{converted && Number.isFinite(converted) ? 'Entrada calculada: '+qty(converted)+' '+target.unit : 'Informe o fator; o sistema não presume o conteúdo de caixas ou pacotes.'}</span>
+                          {!automaticFactor && it.code && validSupplierCnpj(draft.supplierCnpj) && <label style={{display:'flex',gap:6,alignItems:'flex-start'}}><input type="checkbox" checked={Boolean(it.saveUnitConversion)} onChange={(e)=>changeItem(i,'saveUnitConversion',e.target.checked)}/><span>Salvar este fator para o mesmo código e fornecedor após o lançamento revisado</span></label>}
+                        </div>;
                       })()}
                     </td>
-                    <td className="review-check-cell">
+                    <td className="review-check-cell" data-label="Conferência">
                       {review.requiresReview ? <div className="review-check-row">
                         <label className="review-check-label">
                           <input type="checkbox" checked={Boolean(draft.reviewedItems?.[it.lineId])}
@@ -3209,16 +3357,17 @@ export default function Home() {
                         </label>
                         <ReviewIssuePopover issues={review.issues} productName={it.name} index={i} reviewed={review.done}/>
                       </div> : <span className="review-okay">✓ Dados consistentes</span>}
+                      {attention && <p className="receipt-line-pending"><b>Pendente:</b> {review.issues.join(' · ')}</p>}
                     </td>
                     <td><button className="delete-line" aria-label={'Remover ' + (it.name || 'item') + ' da nota'} title="Remover item" onClick={() => setDraft((d) => ({
                       ...d, items: d.items.filter((_, j) => j !== i), reviewedItems: d.reviewedItems,
                       totalsReviewed: false, finalReviewed: false, officialVerified: false
-                    }))}><Icon type="close" size={15}/></button></td>
+                    }))} type="button"><Icon type="close" size={15}/></button></td>
                   </tr>;
                 })}</tbody>
               </table>
             </div>
-            <div className="meta-fields" style={{marginTop:16}}>
+            <div className="meta-fields" id="receipt-review-totals" tabIndex={-1} style={{marginTop:16}}>
               <label><span>Subtotal fiscal (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftSubtotal} onChange={(e) => changeInvoiceAmount('subtotal', e.target.value)}/></label>
               <label><span>Desconto total (R$) {totalsRequireReview ? '⚠ Conferir' : ''}</span><input style={{background: totalsRequireReview && !draft.totalsReviewed ? '#fffbeb' : undefined}} type="number" min="0" step="0.01" value={draftDiscount} onChange={(e) => changeInvoiceAmount('discount', e.target.value)}/></label>
               <label><span>Acréscimos / frete (R$)</span><input type="number" min="0" step="0.01" value={draftExtras} onChange={(e) => changeInvoiceAmount('additionalCharges', e.target.value)}/></label>
@@ -3240,46 +3389,51 @@ export default function Home() {
               </label>
               <small style={{display:'block',marginTop:8}}>Ao marcar a conferência, você confirma os valores exibidos. Não é necessário informar um motivo.</small>
             </div>}
-            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))}><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
-            <section className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
-              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Identifique quem realizou a verificação.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
+            <div className="review-bottom"><button className="btn secondary" onClick={() => setDraft((d) => ({ ...d, reviewedItems:{}, totalsReviewed:false, finalReviewed:false, officialVerified:false, items: [...d.items, { name: '', code: '', quantity: 1, unit: 'un', unitPrice: 0, lineTotal: 0, search:'' }] }))} type="button"><Icon type="plus" size={16}/>Adicionar item</button><div className="review-sum"><span>Total da nota</span><b>{money(draftTotal)}</b></div></div>
+            <section id="receipt-review-final" tabIndex={-1} className={'review-final-confirmation' + (readyForFinalReview ? ' is-ready' : ' is-pending')}>
+              <div className="review-final-heading"><Icon type={readyForFinalReview ? 'check' : 'alert'} size={19}/><div><b>Conferência final</b><p>{readyForFinalReview ? 'Itens e totais conferidos. Confirme a entrada no estoque.' : 'Conclua a revisão dos itens e valores destacados para habilitar a confirmação final.'}</p></div></div>
               <div className="review-final-fields">
                 <label className="review-final-checkbox"><input type="checkbox" disabled={!readyForFinalReview} checked={Boolean(draft.finalReviewed && readyForFinalReview)} onChange={(e) => setDraft((d) => ({ ...d, finalReviewed:e.target.checked }))}/><span>Conferi todo o documento e autorizo a entrada no estoque.</span></label>
-                <label className="field review-final-person"><span>Quem conferiu todos os itens *</span><input required value={draft.checkedBy || ''} disabled={!readyForFinalReview} onChange={(e) => changeDraft('checkedBy', e.target.value)} placeholder="Nome do responsável pela conferência"/></label>
+                <p className="giro-reviewer">Conferência por <b>{reviewerName || 'Conta indisponível'}</b><small>Preenchido pela conta conectada.</small></p>
               </div>
             </section>
             <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
-            <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}}>Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument}><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
-          </section>}
-          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documents.length} documentos</span></div>{documents.length ? documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}}><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento importado</b><p>Envie o XML de uma NF-e ou selecione uma foto/PDF e cadastre os itens manualmente.</p></div>}</section>
-          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: o OCR de imagens é executado no navegador. Quando a leitura local do QR falha, o fallback envia automaticamente um recorte da nota a um serviço externo; esse recorte pode conter informações fiscais. Notas pendentes e seus arquivos podem ficar armazenados no servidor até o lançamento ou cancelamento.</span></div>
+            <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
+          </div></section>}
+          <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
+          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}>{!documentView.days.length&&<option value="">Sem documentos no mês</option>}{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
+          {documentView.documents.length ? documentView.documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento neste período</b><p>Escolha outro mês ou dia para consultar os documentos registrados.</p></div>}</section>
+          <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}
 
         {view === 'cash' && <>
           {!cashEntryMode && <section className="panel cash-entry cash-entry-collapsed">
+            <button className="btn secondary" type="button" disabled={cashImporting} onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>
             <button className="btn primary" type="button" disabled={cashImporting}
               onClick={()=>{setCashError('');cashFileRef.current?.click();}}><Icon type="plus" size={17}/> Enviar faturamento</button>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
           </section>}
           {(cashEntryMode === 'upload' || cashEntryMode === 'manual' || cashEntryMode === 'edit') && <section className="panel cash-entry">
-            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
+            <div className="panel-head"><div><h2>{cashEntryMode==='edit'?'Corrigir fechamento':'Conferir novo fechamento'}</h2><p>Revise o faturamento e as movimentações antes de salvar.</p></div><button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>{setCashEntryMode('');setCashError('');}}>Fechar formulário</button></div>
             {cashError&&<div className="error" role="alert">{cashError}</div>}
             <div className="cash-file-import">
               <div><b>Preencher automaticamente pelo fechamento</b><p>Envie o PDF gerado pelo sistema ou uma foto do cupom térmico. O OCR identifica faturamento, caixa e movimentações; revise tudo antes de registrar.</p></div>
-              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
+              <button className="btn secondary" type="button" disabled={cashImporting||cashSaving||Boolean(cashEditId)} onClick={()=>cashFileRef.current?.click()}>{cashImporting?'Lendo arquivo…':'Enviar PDF ou foto'}</button>
             </div>
-            {!cashForm.sourceFileName&&<button className="text-btn" type="button" onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
+            {!cashForm.sourceFileName&&!cashEditId&&<button className="text-btn" type="button" disabled={cashSaving} onClick={()=>newCashClosing('manual')}>Preencher manualmente</button>}
             {!!cashForm.sourceFileName&&<div className="cash-import-review">
               <b>Arquivo importado: {cashForm.sourceFileName}</b>
               {cashImportWarnings.map((w,i)=><p key={i}>⚠ {w}</p>)}
               <p>Confira os valores no comprovante, especialmente sangrias e suprimentos, e confirme a revisão ao salvar.</p>
               {cashImportText&&<details><summary>Visualizar texto extraído</summary><pre>{cashImportText.slice(0,20000)}</pre></details>}
             </div>}
+            {cashConflict&&cashEditId&&<button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>void reloadCashCorrection()}>Recarregar versão salva</button>}
             <form onSubmit={saveCashClosing}>
               <fieldset disabled={cashSaving} className="cash-form-fields">
+            {cashEditId&&<label className="field"><span>Motivo da correção *</span><textarea required maxLength={300} disabled={cashSaving} value={cashForm.correctionReason||''} onChange={e=>changeCashField('correctionReason',e.target.value)}/></label>}
               <div className="meta-fields">
-                <label><span>Data</span><input required type="date" value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
-                <label><span>Nº do caixa</span><input required value={cashForm.register} onChange={e=>changeCashField('register',e.target.value)}/></label>
+                <label><span>Data</span><input required type="date" readOnly={Boolean(cashEditId)} value={cashForm.day} onChange={e=>changeCashField('day',e.target.value)}/></label>
+                <label><span>Nº do caixa</span><input required readOnly={Boolean(cashEditId)} value={cashForm.register} onChange={e=>changeCashField('register',e.target.value)}/></label>
                 <label><span>Operador</span><input required value={cashForm.operator} onChange={e=>changeCashField('operator',e.target.value)}/></label>
               </div>
               <h3>Faturamento por modalidade</h3>
@@ -3296,43 +3450,31 @@ export default function Home() {
               <div className="cash-overview"><span>Suprimentos: {money(cashPreview.inflow)}</span><span>Sangrias: {money(cashPreview.outflow)}</span><b>Dinheiro previsto após movimentações: {money(cashPreview.cashExpected)}</b></div>
               <label className="field cash-counted"><span>Dinheiro contado no fechamento *</span><input required type="number" min="0" step="0.01" value={cashForm.cashCounted} onChange={e=>changeCashField('cashCounted',e.target.value)}/></label>
               {cashForm.cashCounted!==''&&<p className="cash-count-difference">Diferença do caixa físico: <b>{money(Number(cashForm.cashCounted)-cashPreview.cashExpected)}</b></p>}
-              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashSaving||!accessCode}>{cashSaving?'Salvando…':'Salvar fechamento'}</button></div>
+              <div className="cash-save-row"><label><input type="checkbox" checked={Boolean(cashForm.cashReviewed)} onChange={e=>changeCashField('cashReviewed',e.target.checked)}/> Conferi faturamento, caixa, data e movimentações.</label><button className="btn primary" disabled={cashConflict||cashSaving||!accessCode} type="submit">{cashSaving?'Salvando…':cashSaveTimedOut?'Tentar novamente':'Salvar fechamento'}</button></div>
               </fieldset>
             </form>
+            {cashEditId&&<CashCorrectionHistory history={cashAudit} onReload={()=>void loadCashAudit(cashEditId)}/>}
           </section>}
-          <section className="panel cash-summary">
-            <div className="panel-head"><div><h2>Faturamento {cashChartScope==='year'?'do ano':'do mês'}</h2><p>O total de vendas exclui sangrias e suprimentos do fechamento.</p></div>
-              <div className="cash-chart-controls"><div className="cash-scope-toggle" role="group" aria-label="Período do gráfico"><button type="button" className={cashChartScope==='month'?'is-active':''} onClick={()=>{setCashChartScope('month');setCashSelectedDay('');}}>Mês</button><button type="button" className={cashChartScope==='year'?'is-active':''} onClick={()=>{setCashChartScope('year');setCashSelectedDay('');}}>Ano</button></div>
-              {cashChartScope==='month'?<label className="field"><span>Mês de referência</span><input type="month" value={cashMonth} onChange={e=>{setCashMonth(e.target.value);setCashSelectedDay('');}}/></label>:<label className="field"><span>Ano de referência</span><select value={cashMonth.slice(0,4)} onChange={e=>{setCashMonth(e.target.value+'-01');setCashSelectedDay('');}}>{[...new Set([new Date().getFullYear(),...closings.map(e=>Number(String(e.day).slice(0,4)))])].sort((a,b)=>b-a).map(year=><option key={year} value={year}>{year}</option>)}</select></label>}</div>
-            </div>
-            <div className="cash-stats">
-              <div><small>Faturamento {cashChartScope==='year'?'anual':'mensal'}</small><strong>{money(cashChartData.revenue)}</strong></div>
-              <div><small>Fechamentos</small><strong>{cashChartData.count}</strong></div>
-              <div><small>Média por fechamento</small><strong>{money(cashChartData.count?cashChartData.revenue/cashChartData.count:0)}</strong></div>
-            </div>
-            <h3>Faturamento diário — {cashChartScope==='year'?cashMonth.slice(0,4):new Date(cashMonth+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</h3>
-            <div className="cash-chart-inspector" role="status" aria-live="polite" aria-atomic="true" data-testid="cash-chart-inspector">
-              {cashHighlightedEntry ? <>
-                <span>{new Date(cashHighlightedEntry.day+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</span>
-                <strong>{money(cashHighlightedEntry.revenue)}</strong>
-              </> : <span>{cashChartData.count ? 'Passe o mouse ou use Tab nas barras para consultar valores; clique para detalhar.' : 'Nenhum fechamento neste período. Os dias sem vendas permanecem zerados.'}</span>}
-            </div>
-            <div className={'cash-chart'+(cashChartScope==='month'?' cash-chart-month':'')} aria-label="Gráfico interativo de faturamento por dia">
-              {cashChartDays.map(p=>{const date=new Date(p.day+'T12:00:00');const weekday=date.toLocaleDateString('pt-BR',{weekday:'short'});const axisDate=cashChartScope==='year'?`${p.day.slice(8,10)}/${p.day.slice(5,7)}`:p.day.slice(-2);const accessibleDate=date.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});const hasRevenue=p.revenue>0;return <button type="button" className={'cash-bar-column'+(cashSelectedDay===p.day?' is-selected':'')+(!hasRevenue?' is-empty':'')} key={p.day} aria-label={`${accessibleDate}, faturamento ${money(p.revenue)}`} aria-pressed={cashSelectedDay===p.day} title={hasRevenue?`${accessibleDate}: ${money(p.revenue)}`:undefined} disabled={!hasRevenue} onMouseEnter={()=>hasRevenue&&setCashHighlightedDay(p.day)} onMouseLeave={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onFocus={()=>hasRevenue&&setCashHighlightedDay(p.day)} onBlur={()=>setCashHighlightedDay(day=>day===p.day?'':day)} onClick={()=>hasRevenue&&setCashSelectedDay(p.day)}>
-                <div className="cash-bar-track"><div className="cash-bar-fill" style={{height:hasRevenue?(Math.max(3,p.revenue/cashChartMaxRevenue*100))+'%':'0%'}}/></div>
-                <small>{axisDate}</small><small>{weekday}</small>
-              </button>})}
-            </div>
-          </section>
-          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{closings.length} registros</span></div>
+          <section className="panel cash-history"><div className="panel-head"><div><h2>Histórico de fechamentos</h2><p>Registros individuais por data e número do caixa.</p></div><span className="history-count">{cashHistoryEntries.length} de {closings.length} registros</span></div>
+            <div className="giro-history-filters"><PeriodControls month={cashHistoryPeriod.month} scope={cashHistoryPeriod.scope} years={cashYears} onChange={setCashHistoryPeriod} label="Período do histórico"/></div>
             <div className="table-wrap"><table><thead><tr><th>DATA</th><th>CAIXA</th><th>OPERADOR</th><th>FATURAMENTO</th><th>TOTAL DO DIA</th><th>FECHADO POR</th><th></th></tr></thead><tbody>
-            {closings.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td>{currentUser?.role==='admin'&&<button className="text-btn" onClick={()=>editCashClosing(entry)}>Revisar</button>}</td></tr>})}
-            {!closings.length&&<tr><td colSpan={7}>Ainda não há fechamentos registrados.</td></tr>}
+            {cashHistoryEntries.map(entry=>{const totals=cashTotals(entry);const dayTotal=closings.filter(e=>e.day===entry.day).reduce((sum,e)=>sum+cashTotals(e).revenue,0);return <tr key={entry.id}><td>{entry.day}</td><td>{entry.register}</td><td>{entry.operator}</td><td><b>{money(totals.revenue)}</b></td><td><b>{money(dayTotal)}</b></td><td>{entry.createdBy?.displayName||'Autoria anterior não registrada'}</td><td><button className="text-btn" type="button" onClick={()=>setCashSelectedDay(entry.day)}>Detalhes</button>{currentUser?.role==='admin'&&<button className="text-btn" disabled={cashSaving} onClick={()=>editCashClosing(entry)} type="button">Revisar</button>}</td></tr>})}
+            {!cashHistoryEntries.length&&<tr><td colSpan={7}>Nenhum fechamento neste período.</td></tr>}
             </tbody></table></div>
           </section>
         </>}
 
-        {view==='cash'&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
+        {view === 'reports' && currentUser?.role === 'admin' && <>
+          <section className="panel cash-summary">
+            <div className="panel-head"><div><h2>Período</h2><p>Vendas registradas, sem sangrias ou suprimentos.</p></div>
+              <PeriodControls month={cashMonth} scope={cashChartScope} years={cashYears} label="Período do gráfico" onChange={period=>{setCashMonth(period.month);setCashChartScope(period.scope);setCashSelectedDay('');}}/>
+            </div>
+          </section>
+          <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
+          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
+        </>}
+
+        {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
   <div className="cash-day-summary">
     <span>Total de faturamento do dia</span>
     <strong>{money(cashChartEntries.reduce((sum,entry)=>sum+cashTotals(entry).revenue,0))}</strong>
@@ -3343,7 +3485,7 @@ export default function Home() {
       const totals=cashTotals(entry);
       return <article className="cash-day-register-card" key={entry.id}>
         <div className="cash-day-register-head">
-          <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>
+          <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>{currentUser?.role==='admin'&&<button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Revisar caixa {entry.register}</button>}
         </div>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
@@ -3353,11 +3495,11 @@ export default function Home() {
 </div><div className="modal-actions"><button type="button" className="btn primary" onClick={()=>setCashSelectedDay('')}>Fechar</button></div></section></div>,document.body)}
 
         {view === 'movements' && <section className="panel movement-panel"><div className="panel-head"><div><h2>Histórico de movimentações</h2><p>Entradas, saídas, cadastros e ajustes deste navegador.</p></div><span className="history-count">{movements.length} registros</span></div>{movements.length ? <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>TIPO</th><th>QUANTIDADE</th><th>MOTIVO</th><th>DATA</th></tr></thead><tbody>{movements.map((m) => <tr key={m.id}><td><div className="product-cell"><span className={m.type === 'Saída' ? 'move-symbol move-out' : 'move-symbol move-in'}><Icon type={m.type === 'Saída' ? 'arrows' : 'plus'} size={16}/></span><span><b>{m.product}</b><small>Movimentação de estoque</small></span></div></td><td><span className={m.type === 'Saída' ? 'move-negative' : 'move-positive'}>{m.type}</span></td><td><b>{qty(m.quantity)}</b></td><td>{m.reason}</td><td>{m.date}</td></tr>)}</tbody></table></div> : <div className="empty-docs">Ainda não há movimentações.</div>}</section>}
-        <footer className="footer"><span><b>estoque+</b><i>/</i> Projeto GPT</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
+        <footer className="footer"><span><b>giro</b><i>/</i> Seu negócio em movimento.</span><span>Protótipo em desenvolvimento <i>•</i> {supabase ? (saveStatus || 'Banco compartilhado') : (loaded ? 'Dados salvos localmente' : 'Carregando dados')}</span></footer>
       </div>
     </main>
 
-    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2 id="product-dialog-title">{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" aria-label="Fechar cadastro de produto" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label><label className="field"><span>Fornecedor habitual (opcional)</span><input list="estq-known-suppliers" value={productForm.preferredSupplier || ''} onChange={(e) => setProductForm({ ...productForm, preferredSupplier: e.target.value })} placeholder="Ex.: Atacadista Centro"/><datalist id="estq-known-suppliers">{knownSuppliers.map((name) => <option key={name} value={name}/>)}</datalist><small>Se não escolher, usamos o fornecedor mais frequente das notas fiscais.</small></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
+    {modal === 'product' && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title"><div className="modal-heading"><div><div className="eyebrow">{editing ? 'ATUALIZAÇÃO DE CADASTRO' : 'NOVO CADASTRO'}</div><h2 id="product-dialog-title">{editing ? 'Editar produto' : 'Adicionar produto'}</h2><p>Defina os dados básicos para acompanhar o estoque.</p></div><button className="close-btn" aria-label="Fechar cadastro de produto" onClick={() => setModal('')} type="button"><Icon type="close"/></button></div><form onSubmit={saveProduct}><label className="field full"><span>Nome do produto *</span><input required autoFocus value={productForm.name} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} placeholder="Ex.: Farinha de trigo"/></label><div className="form-grid"><label className="field"><span>Código / SKU</span><input value={productForm.sku} readOnly={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })} placeholder="Opcional"/></label><label className="field"><span>Categoria</span><select value={productForm.category} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}>{['Mercearia','Cafés','Laticínios','Confeitaria','Embalagens','Bebidas','Limpeza','Outros'].map((c) => <option key={c}>{c}</option>)}</select></label><label className="field"><span>Unidade</span><select value={productForm.unit} disabled={currentUser?.role !== 'admin'} onChange={(e) => setProductForm({ ...productForm, unit: e.target.value })}>{['un','kg','g','L','ml','cx','pct','fardo'].map((u) => <option key={u}>{u}</option>)}</select></label><label className="field"><span>Quantidade atual</span><input type="number" min="0" step="any" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: e.target.value })}/></label>{currentUser?.role === 'admin' && <><label className="field"><span>Estoque mínimo</span><input type="number" min="0" step="any" value={productForm.min} onChange={(e) => setProductForm({ ...productForm, min: e.target.value })}/></label><label className="field"><span>Custo unitário (R$)</span><input type="number" min="0" step="any" value={productForm.cost} onChange={(e) => setProductForm({ ...productForm, cost: e.target.value })}/></label><label className="field"><span>Fornecedor habitual (opcional)</span><input list="estq-known-suppliers" value={productForm.preferredSupplier || ''} onChange={(e) => setProductForm({ ...productForm, preferredSupplier: e.target.value })} placeholder="Ex.: Atacadista Centro"/><datalist id="estq-known-suppliers">{knownSuppliers.map((name) => <option key={name} value={name}/>)}</datalist><small>Se não escolher, usamos o fornecedor mais frequente das notas fiscais.</small></label></>}</div>{!editing && registrationDuplicateHints.length > 0 && <div className="duplicate-inline" role="alert"><b>⚠ Possível cadastro duplicado — confira com o gestor</b><p>{registrationDuplicateHints.map((match) => match.left.name + ' (' + (match.left.sku || 'sem código') + ')').join(' · ')}. Se for o mesmo produto, edite o cadastro existente.</p></div>}<div className="modal-actions"><button type="button" className="btn secondary" onClick={() => setModal('')}>Cancelar</button><button type="submit" className="btn primary"><Icon type="check" size={17}/>{editing ? 'Salvar alterações' : 'Cadastrar produto'}</button></div></form></section></div>}
     {mergePair && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !mergeBusy) setMergePair(null); }}>
       <section className="modal duplicate-merge-modal" role="dialog" aria-modal="true" aria-labelledby="merge-dialog-title">
         <div className="modal-heading"><div><div className="eyebrow">AÇÃO EXCLUSIVA DO GESTOR</div><h2 id="merge-dialog-title">Consolidar produtos</h2><p>Escolha o cadastro principal e confira as quantidades.</p></div><button type="button" className="close-btn" aria-label="Fechar consolidação de produtos" disabled={mergeBusy} onClick={() => setMergePair(null)}><Icon type="close"/></button></div>
@@ -3371,9 +3513,11 @@ export default function Home() {
         <div className="modal-actions"><button className="btn secondary" type="button" disabled={mergeBusy} onClick={() => setMergePair(null)}>Cancelar</button><button className="btn primary" type="button" disabled={!mergeAcknowledged || mergeBusy || !mergePair.sameUnit} onClick={() => void confirmProductMerge()}>{mergeBusy ? 'Consolidando…' : 'Confirmar consolidação'}</button></div>
       </section>
     </div>}
-    {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')}><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
-    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
-    {toast && <div className="toast"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
+    {modal === 'adjust' && editing && <div className="overlay" onMouseDown={(e) => {if (e.target === e.currentTarget) setModal('');}}><section className="modal compact" role="dialog" aria-modal="true" aria-labelledby="adjust-dialog-title"><div className="modal-heading"><div><div className="eyebrow">MOVIMENTAÇÃO MANUAL</div><h2 id="adjust-dialog-title">Ajustar estoque</h2><p>{editing.name} · saldo atual: {qty(editing.stock)} {editing.unit}</p></div><button className="close-btn" aria-label="Fechar ajuste de estoque" onClick={() => setModal('')} type="button"><Icon type="close"/></button></div><form onSubmit={saveAdjustment}><label className="field"><span>Tipo de movimentação</span><select value={adjust.type} onChange={(e) => setAdjust({ ...adjust, type: e.target.value, reason: e.target.value === 'Saída' ? 'Consumo interno' : 'Compra/recebimento' })}><option>Entrada</option><option>Saída</option></select></label><label className="field"><span>Quantidade ({editing.unit})</span><input type="number" required min="0.001" step="any" value={adjust.quantity} onChange={(e) => setAdjust({ ...adjust, quantity: e.target.value })}/></label><label className="field"><span>Motivo</span><input value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })}/></label><div className="modal-actions"><button className="btn secondary" type="button" onClick={() => setModal('')}>Cancelar</button><button className="btn primary" type="submit"><Icon type="check" size={17}/>Registrar {adjust.type.toLowerCase()}</button></div></form></section></div>}
+    {detailDoc && <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !deletingDocId) {setDetailDoc(null);setDeleteError('');} }}><section className="modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title"><div className="modal-heading"><div><div className="eyebrow">DOCUMENTO JÁ PROCESSADO</div><h2 id="details-dialog-title">{detailDoc.supplier || detailDoc.fileName || 'Documento fiscal'}</h2><p>{detailDoc.fileName}{detailDoc.invoiceNumber ? ' · Nº ' + detailDoc.invoiceNumber : ''}{detailDoc.officialVerified ? ' · Conferido com consulta pública' : ''}</p></div><button className="close-btn" aria-label="Fechar detalhes do documento" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}} type="button"><Icon type="close"/></button></div><div className="detail-summary"><span><small>Status</small><b>{detailDoc.status}</b></span><span><small>Fornecedor</small><b>{detailDoc.supplier || 'Não informado'}</b></span><span><small>Registrado em</small><b>{detailDoc.importedAt || detailDoc.date || 'Não informado'}</b></span><span><small>Quem conferiu</small><b>{detailDoc.checkedBy || 'Não informado'}</b></span></div><div className="detail-summary" style={{marginTop:12}}><span><small>Subtotal</small><b>{money(detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0))}</b></span><span><small>Desconto</small><b>{money(detailDoc.discount || 0)}</b></span><span><small>Total final</small><b>{money(detailDoc.total ?? ((detailDoc.subtotal ?? detailDoc.items.reduce((sum, item) => sum + receiptItemTotal(item), 0)) - Number(detailDoc.discount || 0)))}</b></span></div><div className="detail-items"><div className="detail-items-head"><b>Itens do documento</b><span>{detailDoc.items.length} itens</span></div>{detailDoc.items.map((it, i) => <div className="detail-item" key={i}><span><b>{it.name}</b><small>{qty(it.quantity)} {it.unit} × {money(it.unitPrice)}</small></span><strong>{money(receiptItemTotal(it))}</strong></div>)}</div>{deleteError && <div className="error" role="alert" style={{marginTop:12}}><Icon type="alert" size={18}/><span>{deleteError}</span></div>}<div className="modal-actions">{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{color:'#a33'}} disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(detailDoc)}>{deletingDocId === detailDoc.id ? 'Excluindo…' : 'Excluir NF e estornar estoque'}</button>}<button type="button" className="btn primary" disabled={Boolean(deletingDocId)} onClick={() => {setDetailDoc(null);setDeleteError('');}}>Fechar detalhes</button></div></section></div>}
+    {discardReceiptOpen && <DiscardReceiptDialog queuedCount={draftQueue.length}
+      onCancel={() => setDiscardReceiptOpen(false)} onConfirm={discardReceiptReview}/>}
+    {toast && <div className="toast" role="status" aria-live="polite" aria-atomic="true"><span><Icon type="check" size={17}/></span>{toast}<button type="button" aria-label="Dispensar notificação" onClick={() => setToast('')}><Icon type="close" size={15}/></button></div>}
   </div>;
 }
 

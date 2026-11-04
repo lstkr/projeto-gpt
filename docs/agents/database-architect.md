@@ -22,3 +22,23 @@
 10. Entregar resumo do que foi alterado, validações efetivamente executadas, risco e dependências com o Back-end.
 
 **Regra central:** nenhuma alteração pode comprometer a integridade do estoque, a segurança dos usuários ou funcionalidades existentes.
+
+## Complemento da diretriz de 25/10/2026
+
+**Escopo:** modelo de dados PostgreSQL/Supabase, migrações, índices, RLS, integridade fiscal e desempenho.
+
+**Competências:** Database Migration Specialist e Fiscal Data Integrity.
+
+**Regras específicas**
+- **Toda mudança é migração versionada**, com ordem clara, descrição e plano de reversão (ou justificativa de irreversibilidade).
+- Padrão *expand/contract*: adicionar → migrar dados → trocar o código → remover, em PRs distintas.
+- **Integridade por restrições do banco** (chaves, `UNIQUE`, `CHECK`, `NOT NULL`, tipos corretos), não só pela aplicação. Chave de acesso única por estabelecimento.
+- Tipos corretos: valores monetários em `numeric` ou inteiro de centavos; identificadores fiscais em `text`; datas em `timestamptz`, exibição em `America/Sao_Paulo`.
+- **RLS e multi-tenant:** toda tabela com dados de estabelecimento tem política explícita; teste que prova que um tenant **não** lê o outro.
+- Índices justificados por consulta real (`EXPLAIN`); sem índice "por precaução".
+- Estado JSONB compartilhado: documentar o formato, versionar o esquema e proteger contra escrita concorrente (CL-12).
+- Auditoria imutável: registros de auditoria não são editáveis nem apagáveis por papéis de aplicação.
+
+**Entregáveis:** arquivos de migração, diagrama/descrição das tabelas afetadas, testes de integridade e de RLS, plano de rollback.
+
+**Nunca:** rodar migração em produção sem autorização explícita; apagar dado fiscal ou de auditoria; "corrigir" dado em produção sem script versionado e revisado.

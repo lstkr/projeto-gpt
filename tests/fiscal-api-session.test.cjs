@@ -145,8 +145,8 @@ test('both fiscal routes enforce session checks before making external requests'
     cash.indexOf("const base64=String(req.body?.base64||'')"),
     'authorization must run before reading PDF body');
   const page = fs.readFileSync('pages/index.js', 'utf8');
-  assert.match(page, /decodeQrViaExternalApi\(reference, sessionToken\)/);
-  assert.match(page, /detectNfceQrCodes\(canvases, prepared\.qrCanvases, accessCode\)/);
+  assert.doesNotMatch(page, /decodeQrViaExternalApi|fetch\(['"]\/api\/qr-externo/);
+  assert.match(page, /detectNfceQrCodes\(canvases, prepared\.qrCanvases\)/);
   assert.match(page, /'x-estoque-session': accessCode/);
 });
 

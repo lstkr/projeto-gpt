@@ -45,3 +45,22 @@ test('draft uses existing supplier and standard name while preserving source and
   assert.equal(prepareFiscalIdentity(differentUnit,null,[product],[]).items[0].name,'OVO BR');
   assert.equal(prepareFiscalIdentity(draft,null,[product],[],[{id:'s',cnpj:issuer,name:'Cadastro permanente'}]).supplier,'Cadastro permanente');
 });
+
+
+test('conversion supports equivalent physical units and requires an explicit factor for packages', async()=>{
+  const {receiptUnitFactor,supplierAliasConversion,prepareFiscalIdentity} = await api;
+  assert.equal(receiptUnitFactor('g','kg'),0.001);
+  assert.equal(receiptUnitFactor('ml','L'),0.001);
+  assert.equal(receiptUnitFactor('un','pc'),1);
+  assert.equal(receiptUnitFactor('cx','L'),null);
+  const milk = {id:'milk',name:'Leite integral',unit:'L',supplierCodes:[{cnpj:issuer,code:'LEITE-1',unitConversion:{invoiceUnit:'cx',stockUnit:'L',factor:12}}]};
+  const item = {lineId:'line-milk',name:'Leite UHT caixa 12x1L',code:'LEITE-1',unit:'cx'};
+  assert.deepEqual(supplierAliasConversion(item,milk,issuer),{factor:12,invoiceUnit:'cx',stockUnit:'L',saved:true});
+  const draft = prepareFiscalIdentity({supplierCnpj:issuer,items:[item]},null,[milk],[]);
+  assert.equal(draft.items[0].name,'Leite integral');
+  assert.equal(draft.items[0].productId,'milk');
+  assert.equal(draft.items[0].conversionFactor,12);
+  const unsafe = {...milk,supplierCodes:[{cnpj:issuer,code:'LEITE-1'}]};
+  assert.equal(supplierAliasConversion(item,unsafe,issuer),null);
+  assert.equal(prepareFiscalIdentity({supplierCnpj:issuer,items:[item]},null,[unsafe],[]).items[0].name,item.name);
+});

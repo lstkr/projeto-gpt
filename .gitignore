@@ -7,8 +7,12 @@ out/
 .DS_Store
 npm-debug.log*
 public/vendor/pdf.worker-*.min.js
+public/vendor/pdf.worker-*.min.mjs
 tests/browser/artifacts/
 
 
 # Real fiscal/cash receipts are private manual OCR fixtures, never source-control artifacts.
 tests/fixtures/private-images/
+
+# Prévia estática gerada com configuração pública do ambiente.
+_pages/

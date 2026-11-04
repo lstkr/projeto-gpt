@@ -63,7 +63,7 @@ test('editing code, unit, quantities, costs or associations invalidates review',
   const flagged = normalizeFiscalDraftReview(draft(initial.items, { [id]: true }), initial, f);
   for (const change of [{code:'0000123'}, {unit:'kg'}, {quantity:2},
     {unitPrice:11}, {lineTotal:11}, {itemDiscount:1}, {productId:'catalog-a'},
-    {stockQuantity:1.5}, {stockDisposition:'expense'}, {name:'Different'}]) {
+    {stockQuantity:1.5}, {conversionFactor:12}, {saveUnitConversion:true}, {stockDisposition:'expense'}, {name:'Different'}]) {
     const changed = normalizeFiscalDraftReview(draft([{...flagged.items[0],...change}],
       flagged.reviewedItems, { finalReviewed: true, totalsReviewed: true }), flagged, f);
     assert.notEqual(changed.reviewedItems[id], true, JSON.stringify(change));
