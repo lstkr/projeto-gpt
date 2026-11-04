@@ -30,7 +30,8 @@ declare definition text; source text;
 begin
  select pg_get_functiondef(oid),prosrc into definition,source from pg_proc
  where oid=to_regprocedure('private.inventory_save_impl(text,jsonb)');
- if source is null or md5(replace(source,E'\r\n',E'\n'))<>expected_source_md5 then
+ if source is null or md5(replace(source,E'\r\n',E'\n'))<>expected_source_md5
+ or position(anchor in definition)=0 then
   raise exception 'Definição de estoque inesperada; migração interrompida para revisão' using errcode='55000';
  end if;
  -- A sessão/unidade, revisão e permissão já passaram; o lock do estoque continua na mesma transação.
