@@ -31,3 +31,12 @@ test('Pedido Número não vira nNF e preserva referência comercial como texto',
   assert.equal(result.orderNumber,'000042');assert.equal(result.invoiceNumber,'');assert.equal(result.date,'04/11/2026');
  }
 });
+
+test('pedido salvo pode ser reaberto sem OCR, preservando identidade e zerando conferências',async()=>{
+ const {rebuildSavedOrder}=await import('../lib/receipt-ocr-cleanup.mjs');
+ const original={ocrText:text,pendingId:'synthetic.note',pendingRevision:7,localReceiptId:'local',checkedBy:'Nome antigo',finalReviewed:true,reviewedItems:{0:true}};
+ const result=rebuildSavedOrder(original,{reconcileTotals:()=>({total:10,subtotal:10,discount:0})});
+ assert.equal(result.pendingId,original.pendingId);assert.equal(result.pendingRevision,7);assert.equal(result.localReceiptId,'local');
+ assert.equal(result.finalReviewed,false);assert.equal(result.checkedBy,'');assert.deepEqual(result.reviewedItems,{});assert.equal(result.items[0].code,'00017');
+ assert.equal(original.finalReviewed,true);assert.equal(rebuildSavedOrder({...original,ocrText:'ilegível'},{reconcileTotals:()=>{throw Error('Não calcular');}}),null);
+});
