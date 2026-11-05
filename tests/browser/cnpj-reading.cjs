@@ -30,7 +30,7 @@ async function mockReading(page, scenario, official) {
       inventory_tenants:{user,tenants:[{id:'fixture.unit',name:'Unidade sintética'}],activeTenantId:'fixture.unit'},
       inventory_get:{user,revision:0,products:[],documents:[],movements:[]},
       inventory_permissions_list:{self:{'fiscal.pending.read':true,'fiscal.pending.review':true},users:[]},
-      pending_receipts_list:[{id:'fixture.note',revision:0,fileName:draft.fileName,draft}],cash_closings_list:[],
+      pending_receipts_list:[{id:'fixture.note',revision:0,fileName:draft.fileName,draft}],cash_closings_list:[{id:'synthetic.closing',day:'2026-10-10',register:'001',operator:'Operador sintético',dinheiroVendas:100,cashCounted:105,movements:[{type:'suprimento',reason:'Fundo sintético',amount:10},{type:'sangria',reason:'Retirada sintética',amount:5}]}],
       inventory_validate_session:{ok:true,valid:true},pending_receipt_save:{ok:true,revision:1},
       pending_receipt_file:{mime:'application/xml',fileName:'original-sintetico.xml',
         base64:Buffer.from('<?xml version="1.0"?><exemplo>Original sintético, sem validade fiscal</exemplo>').toString('base64')}};
@@ -64,8 +64,8 @@ async function verifyReading(browser,scenario,official){
     assert.equal(await page.getByRole('region',{name:'Identificação fiscal da nota',exact:true}).count(),0);
     assert.equal(await page.getByLabel('Chave de acesso NF-e/NFC-e (44 dígitos)',{exact:true}).count(),1);
     if(scenario==='danfe'){
-      assert.match(await page.locator('#local-key-status').innerText(),/validados localmente/);
-      assert.match(await page.getByRole('region',{name:'Identificação local pela chave'}).innerText(),/UF: RS.*Série: 001/);
+      assert.match(await page.locator('#local-key-status').innerText(),/não comprova consulta à SEFAZ/);
+      assert.match(await page.getByRole('region',{name:'Dados do fornecedor e da nota'}).innerText(),/UF: RS.*Série: 001/);
       const input=page.getByLabel('Chave de acesso NF-e/NFC-e (44 dígitos)',{exact:true});
       await input.fill('123');
       await page.getByRole('button',{name:'Confirmar entrada no estoque',exact:true}).click();
@@ -75,9 +75,36 @@ async function verifyReading(browser,scenario,official){
   }finally{await page.close();}
 }
 
+/** Verifica filtros e detalhes com lançamentos sintéticos, sem salvar caixa. */
+async function verifyCashFeedback(browser,official) {
+  const page=await browser.newPage({viewport:{width:1254,height:884}});
+  try {
+    await mockReading(page,'danfe',official);await page.goto(origin);
+    await page.getByLabel('Login',{exact:true}).fill('synthetic.manager');
+    await page.getByLabel('Senha',{exact:true}).fill('Synthetic-only-123');
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
+    await page.getByRole('button',{name:'Relatórios',exact:true}).click();
+    const controls=page.locator('.cash-chart-controls');
+    const year=controls.getByLabel('Ano de referência',{exact:true});await year.waitFor();
+    assert.equal(await year.locator('option').count(),11);
+    await year.selectOption('2026');
+    await controls.getByLabel('Mês de referência',{exact:true}).selectOption('10');
+    await year.focus();await year.hover();await page.mouse.wheel(0,100);
+    await page.waitForFunction(()=>document.querySelector('select[aria-label="Ano de referência"]').value==='2025');
+    assert.equal(await year.inputValue(),'2025');await year.selectOption('2026');
+    await page.locator('.giro-revenue-bars button').first().click();
+    const details=page.locator('.cash-movement-details');
+    assert.match(await details.innerText(),/Fundo sintético/);assert.match(await details.innerText(),/Retirada sintética/);
+    assert.match(await details.innerText(),/10,00/);assert.match(await details.innerText(),/5,00/);
+    assert.match(await page.locator('.cash-day-register-total').innerText(),/100,00/);
+    console.log('PASS período: listas, roda e movimentos completos sem alterar vendas ou gravar caixa');
+  } finally {await page.close();}
+}
+
 (async()=>{
   const {parseSvrsHtml}=await import('../../lib/svrs-parser.mjs');
   const official=parseSvrsHtml(fs.readFileSync('tests/fixtures/nfce/nfce-svrs-sintetica.html','utf8'));
   const browser=await chromium.launch({headless:true,...(process.env.ESTOQUE_CHROME_PATH?{executablePath:process.env.ESTOQUE_CHROME_PATH}:{})});
-  try{for(const scenario of ['svrs','ocr','invalid','danfe'])await verifyReading(browser,scenario,official);}finally{await browser.close();}
+  try{for(const scenario of ['svrs','ocr','invalid','danfe'])await verifyReading(browser,scenario,official);
+    await verifyCashFeedback(browser,official);}finally{await browser.close();}
 })().catch(error=>{console.error(error.message);process.exitCode=1;});
