@@ -132,3 +132,6 @@
 .giro-period-lists { display:flex; gap:10px; min-width:0; }
 .giro-period-lists .field { width:auto; flex:1; }
 @media(max-width:620px) { .giro-period-controls { flex-basis:100%; } }
+
+.manual-entry-panel .modal-actions { flex-wrap:wrap; padding-inline:0; }
+.manual-entry-panel .modal-actions .btn { flex:1 1 150px; white-space:normal; }
