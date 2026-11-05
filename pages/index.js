@@ -3165,6 +3165,7 @@ export default function Home() {
           </div>)}
         </section>}
           {view === 'stock' && manualMode && <section className="panel manual-entry-panel">
+            {error && <div className="error" role="alert"><Icon type="alert" size={18}/><span>{error}</span></div>}
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
             <form onSubmit={saveManualEntry}>
               <label className="field full"><span>Buscar produto existente por nome ou código</span><input value={manualSearch} autoFocus onChange={(e)=>{setManualSearch(e.target.value);setManualChosenId('');setManualNew(false);setError('');}} placeholder="Ex.: Café em grãos, leite, 00123..."/></label>

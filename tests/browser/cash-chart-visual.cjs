@@ -138,7 +138,8 @@ const closings = [
     await page.getByRole('heading',{name:'Corrigir fechamento',exact:true}).waitFor();
     assert.equal(await page.getByLabel('Motivo da correção *',{exact:true}).inputValue(),'');
     await page.getByRole('button',{name:'Fechar formulário',exact:true}).click();
-    await page.locator('.giro-history-filters input[type=month]').fill('2026-10');
+    await page.locator('.giro-history-filters').getByLabel('Ano de referência',{exact:true}).selectOption('2026');
+    await page.locator('.giro-history-filters').getByLabel('Mês de referência',{exact:true}).selectOption('10');
     assert.equal(await page.locator('.cash-history tbody tr').count(),6);
     await page.getByRole('button',{name:'Relatórios',exact:true}).click();
     const controls=page.getByRole('group',{name:'Período do gráfico',exact:true});
