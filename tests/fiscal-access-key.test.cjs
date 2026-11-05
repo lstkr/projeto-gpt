@@ -98,3 +98,12 @@ test('leitor real decodifica CODE-128 sintético sem câmera, rede ou imagem fis
   const decode=new Function('require','return ('+source.slice(0,source.lastIndexOf('}')+1)+');')(require);
   assert.equal(await decode({width,height,getContext:()=>({getImageData:()=>({data,width,height})})}),key());
 });
+
+test('chave preenche número e série ausentes sem sobrescrever edição divergente',async()=>{
+ const {applyLocalFiscalKey,reviewLocalFiscalKey}=await api;
+ const empty=applyLocalFiscalKey({accessKey:key(),invoiceNumber:''});
+ assert.equal(empty.invoiceNumber,'000000123');assert.equal(empty.series,'001');assert.equal(empty.supplierCnpj,'11222333000181');
+ const edited=applyLocalFiscalKey({...empty,invoiceNumber:'00999'});
+ assert.equal(edited.invoiceNumber,'00999');assert.equal(reviewLocalFiscalKey(edited).numberConflict,true);
+ assert.equal(reviewLocalFiscalKey({...edited,invoiceNumber:'123'}).numberConflict,false);
+});
