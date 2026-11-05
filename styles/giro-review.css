@@ -82,7 +82,6 @@
   .giro-count-editor td:first-child::before { display:none; }
   .giro-count-editor td:nth-child(2) { text-align:right; }
   .giro-count-editor td::before { content:attr(data-label); display:block; color:var(--muted); font-size:12px; margin-bottom:5px; }
-  .giro-count-editor input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; border:1px solid #afbec4; border-radius:8px; padding:8px; font:inherit; }
   .giro-count-actions>span { flex-basis:100%; margin:0; }
   .giro-count-actions .btn { flex:1 1 130px; white-space:normal; }
   .giro-chart-layout { grid-template-columns:86px minmax(0,1fr); }
@@ -91,3 +90,48 @@
   .giro-revenue-bars .cash-bar-column { flex-basis:34px; }
   .giro-revenue-chart { padding:16px; }
 }
+
+.giro-count-editor input { width:100%; min-width:0; box-sizing:border-box; min-height:42px; border:1px solid #afbec4; border-radius:8px; padding:8px; font:inherit; }
+
+.giro-partial { display:block; font-size:9px; line-height:1.3; }
+
+.qr-detection-ok { color:var(--text-positive); font-weight:600; }
+
+/* Ajustes do teste parcial: ações visíveis e descrições sem truncamento. */
+.stock-catalog-table table { table-layout:fixed; }
+.stock-catalog-table :is(th,td) { padding:10px 8px; white-space:normal; }
+.stock-catalog-table th { font-size:11px; letter-spacing:.2px; }
+.stock-catalog-table th:first-child { width:27%; }
+.stock-catalog-table th:last-child { width:160px; }
+.stock-catalog-table .product-cell { min-width:0; gap:6px; }
+.stock-catalog-table .product-cell b { overflow-wrap:anywhere; }
+.stock-catalog-table .product-box { display:none; }
+.stock-catalog-table .row-actions { justify-content:flex-end; }
+.stock-catalog-table .row-actions button { min-height:44px; min-width:44px; flex-shrink:0; }
+.stock-catalog-table .row-actions button:first-child { display:flex; width:auto; gap:5px; padding:5px; font-size:12px; }
+.stock-catalog-table .status { padding:4px 6px; font-size:11px; }
+.field textarea { width:100%; min-height:76px; padding:10px 11px; border:1px solid #e1e8df; border-radius:8px; background:white; color:#435349; font:inherit; resize:vertical; }
+.field textarea:focus-visible { outline:3px solid rgba(47,117,78,.19); outline-offset:2px; }
+.giro-review-items .receipt-items-table th { white-space:normal; overflow-wrap:normal; line-height:1.4; }
+.giro-review-items .receipt-items-table textarea.name-field { display:block; width:100%; min-width:0; min-height:80px; padding:8px; resize:vertical; font:inherit; line-height:1.5; border:1px solid #e5eae3; border-radius:6px; }
+.cash-movement-details { margin-block:12px; padding:12px; background:var(--green-soft); border-radius:8px; }
+.cash-movement-details ul { list-style:none; padding:0; margin:8px 0; }
+.cash-movement-details li { display:flex; gap:10px; justify-content:space-between; margin-block:8px; overflow-wrap:anywhere; }
+.cash-movement-details strong { white-space:nowrap; }
+@media(max-width:800px) {
+ .stock-catalog-table :is(table,tbody) { display:block; }
+ .stock-catalog-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .stock-catalog-table tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:12px; gap:10px; border-bottom:1px solid var(--line); }
+ .stock-catalog-table td { min-width:0; padding:0; border:0; }
+ .stock-catalog-table td:first-child,.stock-catalog-table td:last-child { grid-column:1/-1; }
+ .stock-catalog-table td::before { display:block; content:attr(data-label); font-size:11px; color:var(--muted); }
+ .stock-catalog-table td:last-child { justify-self:end; }
+}
+
+.giro-period-controls { grid-template-columns:110px minmax(0,1fr); flex-basis:420px; }
+.giro-period-lists { display:flex; gap:10px; min-width:0; }
+.giro-period-lists .field { width:auto; flex:1; }
+@media(max-width:620px) { .giro-period-controls { flex-basis:100%; } }
+
+.manual-entry-panel .modal-actions { flex-wrap:wrap; padding-inline:0; }
+.manual-entry-panel .modal-actions .btn { flex:1 1 150px; white-space:normal; }

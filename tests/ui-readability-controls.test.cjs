@@ -38,7 +38,7 @@ test('buttons declare their behavior and cash saving remains a submit action', (
 });
 
 test('count and invoice name, unit and product controls have accessible names', () => {
-  const controls = [...source.matchAll(/<input\b[\s\S]*?\/>|<select\b[\s\S]*?<\/select>/g)].map(match => match[0]);
+  const controls = [...source.matchAll(/<(?:input|textarea)\b[\s\S]*?\/>|<select\b[\s\S]*?<\/select>/g)].map(match => match[0]);
   const targets = ['countDraft[p.id]', "fieldStyle('produto')", "fieldStyle('unidade')", "value={it.productId || ''}"];
   targets.forEach(target => {
     const matching = controls.filter(control => control.includes(target));

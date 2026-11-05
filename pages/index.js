@@ -1,3 +1,5 @@
+import CashMovementDetails from '../components/CashMovementDetails';
+import { receiptItemsFromOcr, rebuildSavedDanfe, rebuildSavedOrder } from '../lib/receipt-ocr-cleanup.mjs';
 import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -835,7 +837,8 @@ function detectReceiptMetadata(text) {
   const invoice = raw.match(/NFC-?e\s*(?:n[ºo°.]?\s*)?([\d.]{5,})/i) ||
     raw.match(/N[úu]mero\s*:\s*([\d.]{4,})/i);
   const date = raw.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
-  return { invoiceNumber: invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
+  const order = raw.match(/\bPEDIDO\s*(?:N[ºo°.]?|N[ÚU]MERO)?\s*[:.#-]?\s*(\d{3,})\b/i);
+  return { orderNumber: order?.[1] || '', invoiceNumber: order && /SEM\s+VALOR\s+FISCAL/i.test(raw) ? '' : invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
 }
 
 function receiptItemTotal(item) {
@@ -1251,7 +1254,7 @@ export default function Home() {
   const [draft, setDraftState] = useState(null);
   const setDraft = (updater) => setDraftState((previous) =>
     normalizeFiscalDraftReview(
-      prepareFiscalIdentity(applyLocalFiscalKey(withLocalReceiptId(typeof updater === 'function' ? updater(previous) : updater, previous)), previous, products, documents, suppliers),
+      prepareFiscalIdentity(applyLocalFiscalKey(typeof updater === 'function' ? updater(previous) : updater), previous, products, documents, suppliers),
       previous,
       () => typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID() : 'line-' + uid()
@@ -1795,7 +1798,7 @@ export default function Home() {
       setError('Conclua a entrada ou conferência atual antes de iniciar outra nota.');
       return;
     }
-    setDraft({
+    setDraft(withLocalReceiptId({
       source:'Nota cadastrada manualmente (sem validação SEFAZ)',
       fileName:'Nota digitada manualmente',
       supplier:'', supplierCnpj:'', invoiceNumber:'',
@@ -1803,7 +1806,7 @@ export default function Home() {
       checkedBy:'', finalReviewed:false, totalsReviewed:false, reviewedItems:{},
       items:[{name:'',code:'',productId:'',search:'',quantity:1,unit:'un',unitPrice:0,lineTotal:0}], subtotal:0, discount:0, total:0, additionalCharges:0,
       status:'Aguardando conferência', manualInvoice:true
-    });
+    }));
     setError('');setView('documents');
   }
   function selectManualInvoiceProduct(index, id) {
@@ -1993,7 +1996,7 @@ export default function Home() {
     setManualMode(true); setManualNew(false); setManualChosenId(''); setManualSearch('');
     setManualForm({name:'',sku:'',category:'Mercearia',unit:'un',min:'0',
       quantity:'1',cost:'0',supplier:'',preferredSupplier:'',reason:'Entrada manual'});
-    setError('');setView('documents');
+    setError('');setView('stock');
   }
   function saveManualEntry(event) {
     event.preventDefault();
@@ -2168,9 +2171,9 @@ export default function Home() {
           for (let index = 0; index < canvases.length; index++) {
             receiptOcrProgressRef.current = { index, count: canvases.length, pass: 0 };
             await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-            const primaryResult = await worker.recognize(canvases[index]);
+            const primaryResult = await worker.recognize(canvases[index], {}, { text: true, blocks: true });
             const primaryText = primaryResult.data.text || '';
-            const primaryItems = parseReceiptOcr(primaryText);
+            const primaryItems = receiptItemsFromOcr(primaryResult.data, parseReceiptOcr);
 
             const printedTotal = parseReceiptTotals(primaryText).total;
             const primaryTotals = reconcileReceiptTotals(primaryText, '', primaryItems);
@@ -2182,9 +2185,9 @@ export default function Home() {
             if (needsRetry) {
               receiptOcrProgressRef.current = { index, count: canvases.length, pass: 1 };
               await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1', user_defined_dpi: '300' });
-              const alternateResult = await worker.recognize(canvases[index]);
+              const alternateResult = await worker.recognize(canvases[index], {}, { text: true, blocks: true });
               alternateText = alternateResult.data.text || '';
-              alternateItems = parseReceiptOcr(alternateText);
+              alternateItems = receiptItemsFromOcr(alternateResult.data, parseReceiptOcr);
             }
             setOcrProgress(Math.round(100 * (index + 1) / canvases.length));
             // If either pass recognized real coded lines inside the receipt table,
@@ -2199,7 +2202,7 @@ export default function Home() {
             const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
-            const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
+            const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, orderNumber:primaryMeta.orderNumber||alternateMeta.orderNumber, date: primaryMeta.date || alternateMeta.date };
             const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
             const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(readFiscalAccessKey) || '';
@@ -2212,6 +2215,7 @@ export default function Home() {
               supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
               supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText),
               invoiceNumber: meta.invoiceNumber,
+              orderNumber: meta.orderNumber,
               date: meta.date,
               accessKey,
               consultaUrl,
@@ -2309,6 +2313,7 @@ export default function Home() {
     setPendingReceipts(Array.isArray(data)?data:[]);
   }
   async function storePendingReceipt(file,receipt){
+    receipt=withLocalReceiptId(receipt);
     if(!supabase||!accessCode)throw new Error('Faça login para salvar notas pendentes no servidor.');
     if(file.size>4000000)throw new Error('Limite de 4 MB por arquivo para arquivamento.');
     const bytes=new Uint8Array(await file.arrayBuffer());
@@ -2344,12 +2349,46 @@ export default function Home() {
       setToast('Nota cancelada pelo Gestor.');
     }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
   }
+  function applyRegionalDanfe(result) {
+    const next = rebuildSavedDanfe({...draft,ocrText:result.text}, {
+      mergeItems:mergeReceiptCandidates,reconcileTotals:reconcileReceiptTotals
+    });
+    if(!next){setError('A tabela regional ainda está incompleta. As suas edições foram preservadas; confira manualmente.');return;}
+    if(!window.confirm('Substituir os itens e totais pelas sugestões da leitura regional? As edições atuais serão substituídas e exigirão nova conferência.'))return;
+    const meta=detectReceiptMetadata(result.headerText);
+    const key=fiscalKeyCandidates(result.headerText).find(readFiscalAccessKey);
+    setDraft({...next,previousOcrText:draft.ocrText,source:'Foto (OCR local por regiões)',accessKey:key||draft.accessKey,
+      supplier:draft.supplier||detectReceiptSupplier(result.headerText),
+      supplierCnpj:draft.supplierCnpj||detectSupplierCnpj(result.headerText),
+      invoiceNumber:draft.invoiceNumber||meta.invoiceNumber,date:draft.date||meta.date});
+    setError('');setToast('Sugestões regionais aplicadas. Confira todos os itens e totais.');
+  }
+  function reinterpretSavedOrder() {
+    const next=rebuildSavedOrder(draft,{reconcileTotals:reconcileReceiptTotals});
+    if(!next){setError('O pedido está incompleto no texto salvo. Suas edições foram preservadas.');return;}
+    if(!window.confirm('Substituir as sugestões deste pedido pelo texto salvo? Confira novamente descrição, unidade e valores antes de lançar.'))return;
+    setDraft({...next,orderNumber:detectReceiptMetadata(draft.ocrText).orderNumber});
+    setError('');setToast('Pedido reinterpretado sem novo OCR. Confira descrição, unidade e valores.');
+  }
+  function reinterpretSavedDanfe() {
+    const next = rebuildSavedDanfe(draft, {
+      mergeItems: mergeReceiptCandidates, reconcileTotals: reconcileReceiptTotals
+    });
+    if (!next) {
+      setError('A tabela DANFE está incompleta no texto salvo. Confira a imagem e preencha os itens manualmente.');
+      return;
+    }
+    if (!window.confirm('Substituir os itens e totais desta conferência pela tabela do texto salvo? As edições atuais serão substituídas e todos os itens exigirão nova conferência.')) return;
+    setDraft(next);
+    setError('');
+    setToast('Tabela reinterpretada sem novo OCR. Confira todos os itens e totais antes de lançar.');
+  }
   async function openPendingReceipt(row){
     if(draft && draft.pendingId!==row.id &&
        !window.confirm('Trocar a conferência atual? As alterações são salvas automaticamente.'))return;
     pendingFingerprints.current.set(row.id,JSON.stringify(row.draft));
     pendingRevisions.current.set(row.id,row.revision);
-    setDraft({...row.draft,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision});
+    setDraft(withLocalReceiptId({...row.draft,localReceiptId:undefined,supplierCnpj:validatedSupplierCnpj(row.draft.supplierCnpj)||detectSupplierCnpj(row.draft.ocrText),pendingId:row.id,pendingRevision:row.revision}));
     setDraftQueue([]);setDraftBatch(null);setView('documents');setError('');
   }
   async function viewPendingOriginal(row){
@@ -2666,6 +2705,7 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   const localKeyReview = reviewLocalFiscalKey(draft);
+  const orderReference = draft?.orderNumber || detectReceiptMetadata(draft?.ocrText).orderNumber;
   function confirmDocument() {
     if (localKeyReview.pending) { setError(localKeyReview.message); return; }
     if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
@@ -2845,7 +2885,7 @@ export default function Home() {
       pendingReceiptId:draft.pendingId||null,
       status: 'Conferido e lançado', importedAt: dateNow(), items }, ...old]);
     const nextDraft = draftQueue[0] || null;
-    setDraft(nextDraft);
+    setDraft(withLocalReceiptId(nextDraft));
     setDraftQueue((old) => old.slice(1));
     setDraftBatch(nextDraft && draftBatch ? { ...draftBatch, current: draftBatch.current + 1 } : null);
     setError('');
@@ -3033,7 +3073,7 @@ export default function Home() {
         </div>
       </header>
       <div className="content">
-        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
+        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && <button className="btn secondary" type="button" disabled={busy || manualMode} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
         {view === 'count' && <section className="panel giro-count-panel">
@@ -3085,7 +3125,7 @@ export default function Home() {
           </section>
           <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}} type="button"><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
-            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
+            <div className="table-wrap stock-catalog-table"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>Custo<br/>unit.</th><th>Valor em<br/>estoque</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td data-label="Produto"><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td data-label="Categoria"><span className="category-chip">{p.category}</span></td><td data-label="Quantidade"><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td data-label="Custo unitário">{money(p.cost)}</td><td data-label="Valor em estoque"><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td data-label="Status"><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td data-label="Ações"><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Registrar entrada ou saída" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/><span>Entrada/saída</span></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
             <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
           <details className="giro-stock-details"><summary>Atividade recente e reposição</summary><section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')} type="button">Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)} type="button"><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
@@ -3148,38 +3188,8 @@ export default function Home() {
             </label>)}
           </div>)}
         </section>}
-        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
-          <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Leitura local:</b> OCR, QR e código de barras são lidos no navegador, sem enviar a imagem a leitores de terceiros. O original continua arquivado no sistema. A consulta oficial da NFC-e permanece disponível; confira os dados antes do lançamento.
-          </div>
-          </details>
-          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
-              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
-              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
-            </div>
-            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
-            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
-            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
-          </section>}
-          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
-          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
-            <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
-            {pendingBusy&&<small>Salvando conferência no servidor…</small>}
-            {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
-              <span className="history-file"><Icon type="file" size={18}/></span>
-              <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
-              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
-              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
-                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
-            </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
-          </details>
-          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
-          {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
-          {manualMode && <section className="panel manual-entry-panel">
+          {view === 'stock' && manualMode && <section className="panel manual-entry-panel">
+            {error && <div className="error" role="alert"><Icon type="alert" size={18}/><span>{error}</span></div>}
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
             <form onSubmit={saveManualEntry}>
               <label className="field full"><span>Buscar produto existente por nome ou código</span><input value={manualSearch} autoFocus onChange={(e)=>{setManualSearch(e.target.value);setManualChosenId('');setManualNew(false);setError('');}} placeholder="Ex.: Café em grãos, leite, 00123..."/></label>
@@ -3216,12 +3226,42 @@ export default function Home() {
               <div className="modal-actions"><button className="btn secondary" type="button" onClick={()=>{setManualMode(false);setError('');}}>Cancelar</button><button className="btn primary" type="submit" disabled={!manualNew&&!manualChosen}><Icon type="check" size={16}/>{manualNew?'Criar produto e lançar entrada':'Registrar entrada no produto selecionado'}</button></div>
             </form>
           </section>}
+        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
+          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
+
+          </details>
+          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
+              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
+              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
+            </div>
+            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
+            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
+            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
+          </section>}
+          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
+          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
+            <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
+            {pendingBusy&&<small>Salvando conferência no servidor…</small>}
+            {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
+              <span className="history-file"><Icon type="file" size={18}/></span>
+              <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
+              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
+                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
+            </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
+          </details>
+          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
+          {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
+
           {draft?.manualInvoice && <section className="panel manual-invoice-helper">
             <div className="panel-head"><div><h2>Nota de compra digitada manualmente</h2><p>Informe os dados do documento e adicione quantos produtos precisar, vinculando cada linha ao catálogo existente.</p></div></div>
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal} onRegionalApply={!draft.officialVerified && (localKeyReview.fields?.model==='55'||/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText||'')) ? applyRegionalDanfe : undefined}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
             <nav className="receipt-review-guide" aria-label="Etapas da conferência">
               <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
                 <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
@@ -3232,24 +3272,6 @@ export default function Home() {
             {draft.qrReaderWarning && <div className="notice qr-reader-warning" role="status">Leitura complementar do QR Code: {draft.qrReaderWarning} O OCR permanece disponível para conferência.</div>}
             {draft.keyWarning && !draft.accessKey && <div className="notice qr-key-warning" role="alert">
               <b>Chave da NFC-e não validada.</b> {draft.keyWarning}
-              {draft.ocrText && <label className="field qr-key-invalid-edit"><span>Corrigir chave de acesso</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>}
-            </div>}
-            {(draft.accessKey || draft.consultaUrl) && <div className="notice qr-identified-card" role="region" aria-label="Identificação fiscal da nota">
-              <div className="qr-identified-content">
-                <div className="qr-identified-title"><Icon type="check" size={17}/><b>{draft.qrDetected ? 'QR Code identificado' : 'Chave fiscal identificada'}</b></div>
-                {draft.accessKey ? <code className="qr-identified-key">{draft.accessKey}</code> : <span>QR Code encontrado com endereço de consulta.</span>}
-                {draft.qrReader?.includes('API externa') ? <small>QR Code obtido pela API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e ↗</a>.</small> :
-                  draft.qrReader ? <small>Origem da leitura: {draft.qrReader} (leitura local, sem API externa).</small> :
-                  <small>Chave obtida pelo reconhecimento do documento; confira com a nota original.</small>}
-                {draft.ocrText && <details className="qr-key-correction">
-                  <summary>Chave incorreta? Corrigir</summary>
-                  <label className="field"><span>Chave de acesso (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={(e) => changeNfceAccessKey(e.target.value)} placeholder="44 dígitos da chave"/></label>
-                </details>}
-              </div>
-              <div className="qr-identified-actions">
-                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
-                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Abrir consulta do QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
-              </div>
             </div>}
             {draft.consultaUrl && <section className="panel" style={{marginTop:14,background:'#fbfcf9'}}>
               <div className="panel-head"><div><h2>Conferência automática com a SEFAZ/SVRS</h2><p>O sistema tenta abrir a página oficial no servidor e comparar os itens automaticamente com o OCR. Os itens oficiais são adotados por padrão e exigem conferência antes do lançamento.</p></div></div>
@@ -3261,16 +3283,25 @@ export default function Home() {
               </div>
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
-            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre></details>}
+            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre>{/SEM\s+VALOR\s+FISCAL/i.test(draft.ocrText)&&/PEDIDO/i.test(draft.ocrText)&&<button className="btn secondary" type="button" onClick={reinterpretSavedOrder}>Reinterpretar pedido (sem novo OCR)</button>}{/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText) && <button className="btn secondary" type="button" onClick={reinterpretSavedDanfe}>Reinterpretar tabela DANFE (sem novo OCR)</button>}</details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
+              <div className="qr-identified-actions">
+                {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
+                {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Conferir QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
+              </div>
+              <details><summary>Origem da identificação</summary><p>{draft.qrDetected ? 'QR Code identificado no documento.' : 'QR Code não identificado; a chave pode vir de outra leitura ou digitação.'}</p>
+                {draft.qrReader?.includes('API externa') ? <p>Origem: API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>.</p> : <p>{draft.qrReader || 'Chave obtida pelo reconhecimento do documento; confira com a nota original.'}</p>}
+              </details>
               <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
-              <p id="local-key-status" role="status">{localKeyReview.message}</p>
-              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              <p id="local-key-status" role="status">{localKeyReview.pending ? localKeyReview.message : 'A chave identifica o emitente e a nota; não comprova consulta à SEFAZ nem os itens.'}</p>
               {localKeyReview.canConfirmKey && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, keyReadAcknowledged:localKeyReview.evidence, finalReviewed:false}))}>Conferi a chave digitada com a nota e confirmo esta leitura</button>}
               {localKeyReview.canConfirmIssuer && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, supplierCnpj:localKeyReview.fields.cnpj, issuerKeyAcknowledged:localKeyReview.issuerEvidence, finalReviewed:false}))}>Conferi o emitente na nota e confirmo o CNPJ da chave</button>}
             </section>
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
+              {orderReference&&<p>Pedido: <b>{orderReference}</b> · Referência comercial; não é o número de NF-e.</p>}
+              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              {localKeyReview.numberConflict && <p role="status">Número lido ou digitado diferente da chave. Confira o original. <button type="button" className="btn secondary" onClick={()=>setDraft(previous=>({...previous,invoiceNumber:localKeyReview.fields.invoiceNumber,series:localKeyReview.fields.series,finalReviewed:false}))}>Usar número da chave</button></p>}
             {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
               {draft.contingency && <strong>EMITIDA EM CONTINGÊNCIA · </strong>}
               Série: {draft.series || '—'} · Endereço: {draft.address || '—'}
@@ -3287,7 +3318,7 @@ export default function Home() {
             </div>
             <div className="table-wrap review-table receipt-items-table" id="receipt-review-items" tabIndex={0} role="region" aria-label="Itens da nota para conferência">
               <table>
-                <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>PRODUTO NO ESTOQUE</th><th>CONFERÊNCIA</th><th></th></tr></thead>
+                <thead><tr><th>PRODUTO</th><th>QTD.</th><th>UN.</th><th>Custo unit.<br/>(R$)</th><th>Total<br/>(R$)</th><th>Vínculo no estoque</th><th>CONFERÊNCIA</th><th></th></tr></thead>
                 <tbody>{draft.items.map((it, i) => {
                   const review = receiptReviewRows[i];
                   const attention = review.requiresReview && !review.done;
@@ -3306,7 +3337,7 @@ export default function Home() {
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
-                    </div> : <><input className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
+                    </div> : <><textarea rows={3} className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td data-label="Quantidade"><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td data-label="Unidade"><input className="inline-input unit-field" aria-label={'Unidade da linha '+(i+1)} style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td data-label="Custo unitário"><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -3317,15 +3348,15 @@ export default function Home() {
                         <select className="inline-input" style={{width:'100%',marginTop:3}}
                           value={it.stockDisposition || (isNonStockExpense(it) ? 'expense' : 'stock')}
                           onChange={(e) => changeItem(i,'stockDisposition',e.target.value)}>
-                          <option value="stock">Mercadoria — movimentar estoque</option>
-                          <option value="expense">Despesa/serviço — não movimentar</option>
+                          <option value="stock">Mercadoria</option>
+                          <option value="expense">Despesa</option>
                         </select>
                       </label>
                       {!draft.manualInvoice && <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
                         aria-label={'Associar ' + it.name + ' ao estoque'}
                         value={it.productId || ''}
                         onChange={(e) => changeItem(i,'productId',e.target.value)}>
-                        <option value="">Automático por nome/código (ou novo cadastro)</option>
+                        <option value="">Automático / novo</option>
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
                         <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
                       </select>}
@@ -3397,11 +3428,11 @@ export default function Home() {
                 <p className="giro-reviewer">Conferência por <b>{reviewerName || 'Conta indisponível'}</b><small>Preenchido pela conta conectada.</small></p>
               </div>
             </section>
-            <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
+
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </div></section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
-          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}>{!documentView.days.length&&<option value="">Sem documentos no mês</option>}{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
+          <div className="giro-history-filters"><label className="field"><span>Mês/ano de emissão</span><input type="month" value={documentMonth} onChange={event=>{setDocumentMonth(event.target.value);setDocumentDay('');}}/></label><label className="field"><span>Dia de emissão</span><select value={documentView.day} onChange={event=>setDocumentDay(event.target.value)}><option value="">Todos os dias do mês</option>{documentView.days.map(day=><option key={day} value={day}>{day.split('-').reverse().join('/')}</option>)}{documentView.unknown>0&&<option value="unknown">Sem data registrada ({documentView.unknown})</option>}</select></label></div>
           {documentView.documents.length ? documentView.documents.map((d) => <div className="history-row" key={d.id}><span className="history-file"><Icon type="file" size={19}/></span><span className="history-copy"><b>{d.supplier || d.fileName || 'Documento importado'}</b><small>{d.fileName} · {d.items.length} itens{d.invoiceNumber ? ' · Nº ' + d.invoiceNumber : ''}{d.total !== undefined && d.total !== null ? ' · Total ' + money(d.total) : ''}{Number(d.discount || 0) > 0 ? ' · Desconto ' + money(d.discount) : ''}{d.officialVerified ? ' · Conferido com consulta pública' : ''}{d.checkedBy ? ' · Conferido por ' + d.checkedBy : ''}</small></span><span className="history-date">{d.importedAt || d.date || 'Data não informada'}</span><span className="status ok-status"><i/>{d.status}</span>{currentUser?.role === 'admin' && <button type="button" className="btn secondary" style={{padding:'7px 11px',fontSize:12,color:'#a33'}} title="Excluir nota fiscal e estornar sua entrada de estoque" disabled={Boolean(deletingDocId) || saveStatus !== 'Sincronizado'} onClick={() => void deleteDocument(d)}>{deletingDocId === d.id ? 'Excluindo…' : 'Excluir NF'}</button>}<button className="row-chevron" title="Ver detalhes" onClick={() => {setDeleteError('');setDetailDoc(d);}} type="button"><Icon type="chevron" size={17}/></button></div>) : <div className="empty-docs"><span className="empty-file"><Icon type="file" size={28}/></span><b>Nenhum documento neste período</b><p>Escolha outro mês ou dia para consultar os documentos registrados.</p></div>}</section>
           <div className="privacy-note"><Icon type="check" size={16}/><span>Privacidade: OCR e leitura de códigos ocorrem no navegador. O original fica arquivado no sistema; a consulta oficial é separada e não confirma a entrada no estoque.</span></div>
         </>}
@@ -3471,7 +3502,7 @@ export default function Home() {
             </div>
           </section>
           <GiroManagerInsights entries={closings} products={products} documents={documents} month={cashMonth} scope={cashChartScope} status={cashDataStatus}/>
-          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
+          <CashRevenueChart entries={closings} month={cashMonth} scope={cashChartScope} onReturnToYear={()=>{setCashChartScope('year');setCashSelectedDay('');}} onSelect={key=>{if(cashChartScope==='year'){setCashMonth(key);setCashChartScope('month');}else setCashSelectedDay(key);}}/>
         </>}
 
         {(view==='cash'||view==='reports')&&cashSelectedDay&&typeof document!=='undefined'&&createPortal(<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setCashSelectedDay('');}}><section className="modal cash-day-dialog" role="dialog" aria-modal="true" aria-labelledby="cash-day-title"><div className="modal-heading"><div><div className="eyebrow">DETALHAMENTO DO FECHAMENTO</div><h2 id="cash-day-title">{new Date(cashSelectedDay+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}</h2><p>Faturamento consolidado dos caixas registrados neste dia.</p></div><button type="button" className="close-btn" aria-label="Fechar detalhamento do dia" onClick={()=>setCashSelectedDay('')}><Icon type="close"/></button></div><div className="cash-day-detail">
@@ -3487,6 +3518,7 @@ export default function Home() {
         <div className="cash-day-register-head">
           <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>{currentUser?.role==='admin'&&<button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Revisar caixa {entry.register}</button>}
         </div>
+        <CashMovementDetails entry={entry}/>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
       </article>;

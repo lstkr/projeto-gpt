@@ -16,3 +16,11 @@ tests/fixtures/private-images/
 
 # Prévia estática gerada com configuração pública do ambiente.
 _pages/
+
+# Artefatos locais e documentos fiscais privados não pertencem ao código.
+.worktrees/
+*.log
+__pycache__/
+*.py[cod]
+*.zip
+tests/fixtures/nfce/*pgl*

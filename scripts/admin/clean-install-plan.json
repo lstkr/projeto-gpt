@@ -20,7 +20,8 @@
     "supabase/migrations/20261023000500_user_directory_update.sql",
     "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql",
     "supabase/migrations/20261101223012_cash_closing_conflict_response.sql",
-    "supabase/migrations/20261101224158_fiscal_access_key_uniqueness.sql"
+    "supabase/migrations/20261101224158_fiscal_access_key_uniqueness.sql",
+    "supabase/migrations/20261104171102_fiscal_reviewer_from_session.sql"
   ],
   "explicitTransactionFiles": [
     "supabase/migrations/20261019201520_inventory_validate_session.sql",
@@ -30,7 +31,8 @@
     "supabase/migrations/20261023000500_user_directory_update.sql",
     "supabase/migrations/20261101211824_cash_closing_auditable_corrections.sql",
     "supabase/migrations/20261101223012_cash_closing_conflict_response.sql",
-    "supabase/migrations/20261101224158_fiscal_access_key_uniqueness.sql"
+    "supabase/migrations/20261101224158_fiscal_access_key_uniqueness.sql",
+    "supabase/migrations/20261104171102_fiscal_reviewer_from_session.sql"
   ],
   "authorizedDrops": [
     { "file": "db/schema.sql", "line": 15, "kind": "POLICY" },
