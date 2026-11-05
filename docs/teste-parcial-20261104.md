@@ -34,3 +34,7 @@ worker e encerra recursos em falha/cancelamento/timeout. Sem título único, man
 o rascunho. Resultado só é aplicado após confirmação; não altera estoque.
 Não foi executado OCR dos pixels dos originais anexados nesta rodada; ganho de
 qualidade das fotos reais continua pendente de teste humano privado.
+
+Validação da rodada OCR: npm test 343/343 e build aprovados; navegador isolado
+aprovou pedido salvo, CNPJ, conferência, caixa e impressão em seis larguras.
+Visibilidade de aba oculta não foi reproduzida; teste humano continua pendente.
