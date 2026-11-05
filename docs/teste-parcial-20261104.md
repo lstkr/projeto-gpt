@@ -15,13 +15,26 @@ para fixtures. Testes sintéticos não comprovam OCR dos pixels das fotos anexad
 | 9 | Fonte, borda e foco do motivo iguais aos campos do formulário | Implementado; reteste humano pendente |
 | 10 | Exibir suprimentos/sangrias e descrições, sem misturar com vendas | Browser sintético aprovado; cálculo e persistência inalterados |
 | 11 | Entrada sem documento na tela Estoque, com o mesmo handler | Browser sintético aprovado; não lançado no banco |
-| 12 | Reconhecer pedido separadamente do número fiscal e preservar descrição | Próxima rodada OCR; não homologado |
+| 12 | Reconhecer pedido separadamente do número fiscal e preservar descrição | Implementado com teste sintético; OCR das fotos reais não homologado |
 | 13–14 | Abreviar cabeçalhos/opções e descrição editável em várias linhas | Implementado; reteste humano pendente |
 | 15 | Remover aviso final redundante; manter conferência final e validações | Implementado; não lança automaticamente |
-| 16 | Leitura local da DANFE por regiões, acionada e conferida pelo usuário | Próxima rodada OCR; não homologado |
+| 16 | Leitura local da DANFE por regiões, acionada e conferida pelo usuário | Releitura opcional por títulos da imagem, cancelável; teste real pendente |
 
 Validação inicial: npm test 333/333; build aprovado com placeholders públicos;
 catálogo/teclado/conferência/CNPJ e relatórios testados em navegador isolado.
 Sem banco, API, permissões ou cálculos financeiros alterados. Sem merge autorizado.
 CL-04/05/07/11/13/15/16 conferidas no diff; dívida de tamanho da página legada
 continua fora do escopo. Reverter o commit reverte interface/preenchimento, sem migração.
+
+Rodada OCR: pedido comercial tem referência própria, sem virar número fiscal;
+a descrição anterior à linha numérica é preservada, sem transformar embalagem em
+unidade/conversão. Reinterpretação do texto salvo exige confirmação e nova revisão.
+DANFE regional localiza título e rodapé, limita a três reconhecimentos no mesmo
+worker e encerra recursos em falha/cancelamento/timeout. Sem título único, mantém
+o rascunho. Resultado só é aplicado após confirmação; não altera estoque.
+Não foi executado OCR dos pixels dos originais anexados nesta rodada; ganho de
+qualidade das fotos reais continua pendente de teste humano privado.
+
+Validação da rodada OCR: npm test 343/343 e build aprovados; navegador isolado
+aprovou pedido salvo, CNPJ, conferência, caixa e impressão em seis larguras.
+Visibilidade de aba oculta não foi reproduzida; teste humano continua pendente.

@@ -19,6 +19,10 @@ async function mockReading(page, scenario, official) {
     draft.consultaUrl='';draft.qrUrlPreserved=false;
     draft.ocrText='EMITENTE CNPJ/CPF: 11.222.333/0001-81\nDESTINATÁRIO / REMETENTE\nCNPJ: 45.723.174/0001-10';
   }
+  if(scenario==='order') {
+    draft.accessKey='';draft.consultaUrl='';draft.qrUrlPreserved=false;
+    draft.ocrText='EMITENTE SINTETICO CNPJ:11.222.333/0001-81\nPEDIDO No:000042\nSEM VALOR FISCAL\nDESCRICAO\nBANDEJA SINTETICA 120 X 160\n500 ML C/10 UN.\n00017 2,50 4,00 10,00\nSUB-TOTAL 10,00';
+  }
   await page.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.origin===origin&&url.pathname==='/api/consulta-nfce')return route.fulfill({status:scenario==='svrs'?200:503,
@@ -32,8 +36,8 @@ async function mockReading(page, scenario, official) {
       inventory_permissions_list:{self:{'fiscal.pending.read':true,'fiscal.pending.review':true},users:[]},
       pending_receipts_list:[{id:'fixture.note',revision:0,fileName:draft.fileName,draft}],cash_closings_list:[{id:'synthetic.closing',day:'2026-10-10',register:'001',operator:'Operador sintético',dinheiroVendas:100,cashCounted:105,movements:[{type:'suprimento',reason:'Fundo sintético',amount:10},{type:'sangria',reason:'Retirada sintética',amount:5}]}],
       inventory_validate_session:{ok:true,valid:true},pending_receipt_save:{ok:true,revision:1},
-      pending_receipt_file:{mime:'application/xml',fileName:'original-sintetico.xml',
-        base64:Buffer.from('<?xml version="1.0"?><exemplo>Original sintético, sem validade fiscal</exemplo>').toString('base64')}};
+      pending_receipt_file:{mime:scenario==='danfe'?'image/png':'application/xml',fileName:scenario==='danfe'?'sintetico.png':'original-sintetico.xml',
+        base64:scenario==='danfe'?'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jCq0AAAAASUVORK5CYII=':Buffer.from('<?xml version="1.0"?><exemplo>Original sintético, sem validade fiscal</exemplo>').toString('base64')}};
     assert.ok(name in responses,'RPC inesperada: '+name);
     if(name==='pending_receipt_save')assert.ok(!request.postDataJSON().p_draft.supplierCnpj||/^\d{14}$/.test(request.postDataJSON().p_draft.supplierCnpj));
     return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(responses[name])});
@@ -64,6 +68,7 @@ async function verifyReading(browser,scenario,official){
     assert.equal(await page.getByRole('region',{name:'Identificação fiscal da nota',exact:true}).count(),0);
     assert.equal(await page.getByLabel('Chave de acesso NF-e/NFC-e (44 dígitos)',{exact:true}).count(),1);
     if(scenario==='danfe'){
+      await page.getByRole('button',{name:'Ler DANFE por regiões',exact:true}).waitFor();
       assert.match(await page.locator('#local-key-status').innerText(),/não comprova consulta à SEFAZ/);
       assert.match(await page.getByRole('region',{name:'Dados do fornecedor e da nota'}).innerText(),/UF: RS.*Série: 001/);
       const input=page.getByLabel('Chave de acesso NF-e/NFC-e (44 dígitos)',{exact:true});
@@ -73,6 +78,29 @@ async function verifyReading(browser,scenario,official){
     }
     console.log('PASS CNPJ desktop: '+scenario+'; sem lançamento nem rede externa');
   }finally{await page.close();}
+}
+
+/** Usa o texto sintético salvo; verifica recusa e aceite sem chamar Tesseract. */
+async function verifySavedOrder(browser,official) {
+  const page=await browser.newPage({viewport:{width:1254,height:884}});
+  try {
+    await mockReading(page,'order',official);await page.goto(origin);
+    await page.getByLabel('Login',{exact:true}).fill('synthetic.manager');
+    await page.getByLabel('Senha',{exact:true}).fill('Synthetic-only-123');
+    await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
+    await page.getByRole('button',{name:'Notas fiscais',exact:true}).click();
+    await page.getByRole('button',{name:'Conferir',exact:true}).click();
+    await page.getByText('Texto reconhecido na foto (conferência)',{exact:true}).click();
+    const action=page.getByRole('button',{name:'Reinterpretar pedido (sem novo OCR)',exact:true});
+    page.once('dialog',dialog=>dialog.dismiss());await action.click();
+    assert.equal(await page.getByLabel('Nome do produto da linha 1',{exact:true}).inputValue(),'ITEM SINTETICO');
+    page.once('dialog',dialog=>dialog.accept());await action.click();
+    await page.waitForFunction(()=>document.querySelector('textarea[aria-label="Nome do produto da linha 1"]').value.includes('500 ML'));
+    assert.equal(await page.getByLabel('Nome do produto da linha 1',{exact:true}).inputValue(),'BANDEJA SINTETICA 120 X 160 500 ML C/10 UN.');
+    assert.equal(await page.getByLabel('Unidade da linha 1',{exact:true}).inputValue(),'');
+    assert.match(await page.getByRole('region',{name:'Dados do fornecedor e da nota'}).innerText(),/Pedido: 000042/);
+    console.log('PASS pedido salvo: referência separada, descrição completa, recusa preserva e aceite exige unidade');
+  } finally {await page.close();}
 }
 
 /** Verifica filtros e detalhes com lançamentos sintéticos, sem salvar caixa. */
@@ -106,5 +134,5 @@ async function verifyCashFeedback(browser,official) {
   const official=parseSvrsHtml(fs.readFileSync('tests/fixtures/nfce/nfce-svrs-sintetica.html','utf8'));
   const browser=await chromium.launch({headless:true,...(process.env.ESTOQUE_CHROME_PATH?{executablePath:process.env.ESTOQUE_CHROME_PATH}:{})});
   try{for(const scenario of ['svrs','ocr','invalid','danfe'])await verifyReading(browser,scenario,official);
-    await verifyCashFeedback(browser,official);}finally{await browser.close();}
+    await verifyCashFeedback(browser,official);await verifySavedOrder(browser,official);}finally{await browser.close();}
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

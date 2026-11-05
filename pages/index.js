@@ -1,5 +1,5 @@
 import CashMovementDetails from '../components/CashMovementDetails';
-import { receiptItemsFromOcr, rebuildSavedDanfe } from '../lib/receipt-ocr-cleanup.mjs';
+import { receiptItemsFromOcr, rebuildSavedDanfe, rebuildSavedOrder } from '../lib/receipt-ocr-cleanup.mjs';
 import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -837,7 +837,8 @@ function detectReceiptMetadata(text) {
   const invoice = raw.match(/NFC-?e\s*(?:n[ºo°.]?\s*)?([\d.]{5,})/i) ||
     raw.match(/N[úu]mero\s*:\s*([\d.]{4,})/i);
   const date = raw.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
-  return { invoiceNumber: invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
+  const order = raw.match(/\bPEDIDO\s*(?:N[ºo°.]?|N[ÚU]MERO)?\s*[:.#-]?\s*(\d{3,})\b/i);
+  return { orderNumber: order?.[1] || '', invoiceNumber: order && /SEM\s+VALOR\s+FISCAL/i.test(raw) ? '' : invoice ? invoice[1].replace(/\./g, '') : '', date: date ? date[0] : '' };
 }
 
 function receiptItemTotal(item) {
@@ -2201,7 +2202,7 @@ export default function Home() {
             const combinedText = alternateText ? primaryText + '\n\n--- LEITURA ALTERNATIVA ---\n' + alternateText : primaryText;
             const primaryMeta = detectReceiptMetadata(primaryText);
             const alternateMeta = detectReceiptMetadata(alternateText);
-            const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, date: primaryMeta.date || alternateMeta.date };
+            const meta = { invoiceNumber: primaryMeta.invoiceNumber || alternateMeta.invoiceNumber, orderNumber:primaryMeta.orderNumber||alternateMeta.orderNumber, date: primaryMeta.date || alternateMeta.date };
             const qrResults = await qrResultsPromise;
             const qr = qrResults[index] || { accessKey: '', consultaUrl: '' };
             const accessKey = [qr.accessKey, extractAccessKeyFromText(primaryText), extractAccessKeyFromText(alternateText)].find(readFiscalAccessKey) || '';
@@ -2214,6 +2215,7 @@ export default function Home() {
               supplier: detectReceiptSupplier(primaryText) || detectReceiptSupplier(alternateText) || (multiple ? 'Cupom ' + (index + 1) : ''),
               supplierCnpj: detectSupplierCnpj(primaryText) || detectSupplierCnpj(alternateText),
               invoiceNumber: meta.invoiceNumber,
+              orderNumber: meta.orderNumber,
               date: meta.date,
               accessKey,
               consultaUrl,
@@ -2346,6 +2348,27 @@ export default function Home() {
       setDraftQueue((rows)=>rows.filter((item)=>item.pendingId!==row.id));
       setToast('Nota cancelada pelo Gestor.');
     }catch(err){setError(err?.message||'Não foi possível cancelar a nota.');}
+  }
+  function applyRegionalDanfe(result) {
+    const next = rebuildSavedDanfe({...draft,ocrText:result.text}, {
+      mergeItems:mergeReceiptCandidates,reconcileTotals:reconcileReceiptTotals
+    });
+    if(!next){setError('A tabela regional ainda está incompleta. As suas edições foram preservadas; confira manualmente.');return;}
+    if(!window.confirm('Substituir os itens e totais pelas sugestões da leitura regional? As edições atuais serão substituídas e exigirão nova conferência.'))return;
+    const meta=detectReceiptMetadata(result.headerText);
+    const key=fiscalKeyCandidates(result.headerText).find(readFiscalAccessKey);
+    setDraft({...next,previousOcrText:draft.ocrText,source:'Foto (OCR local por regiões)',accessKey:key||draft.accessKey,
+      supplier:draft.supplier||detectReceiptSupplier(result.headerText),
+      supplierCnpj:draft.supplierCnpj||detectSupplierCnpj(result.headerText),
+      invoiceNumber:draft.invoiceNumber||meta.invoiceNumber,date:draft.date||meta.date});
+    setError('');setToast('Sugestões regionais aplicadas. Confira todos os itens e totais.');
+  }
+  function reinterpretSavedOrder() {
+    const next=rebuildSavedOrder(draft,{reconcileTotals:reconcileReceiptTotals});
+    if(!next){setError('O pedido está incompleto no texto salvo. Suas edições foram preservadas.');return;}
+    if(!window.confirm('Substituir as sugestões deste pedido pelo texto salvo? Confira novamente descrição, unidade e valores antes de lançar.'))return;
+    setDraft({...next,orderNumber:detectReceiptMetadata(draft.ocrText).orderNumber});
+    setError('');setToast('Pedido reinterpretado sem novo OCR. Confira descrição, unidade e valores.');
   }
   function reinterpretSavedDanfe() {
     const next = rebuildSavedDanfe(draft, {
@@ -2682,6 +2705,7 @@ export default function Home() {
     setToast('Itens substituídos pelos dados extraídos da consulta pública. Confira antes de lançar.');
   }
   const localKeyReview = reviewLocalFiscalKey(draft);
+  const orderReference = draft?.orderNumber || detectReceiptMetadata(draft?.ocrText).orderNumber;
   function confirmDocument() {
     if (localKeyReview.pending) { setError(localKeyReview.message); return; }
     if (draft?.supplierCnpj && !validSupplierCnpj(draft.supplierCnpj)) {
@@ -3237,7 +3261,7 @@ export default function Home() {
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
             <button type="button" className="btn secondary" onClick={()=>setView('stock')}>Buscar ou cadastrar produto na tela de Estoque</button>
           </section>}
-          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
+          {draft && <section className="panel review-panel" onKeyDown={preventReceiptImplicitSubmit}><div className="giro-review-overview"><ReceiptOriginalPreview receiptId={draft.pendingId} loadOriginal={requestReceiptOriginal} onRegionalApply={!draft.officialVerified && (localKeyReview.fields?.model==='55'||/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText||'')) ? applyRegionalDanfe : undefined}/><div className="giro-review-fields"><div className="panel-head"><div><div className="eyebrow">CONFERÊNCIA DO DOCUMENTO</div><h2>Confira os dados antes de lançar</h2><p>{draft.fileName} · {draft.source === 'XML de NF-e' ? 'Itens extraídos do XML' : 'Preencha os dados identificados no documento'}</p></div><button className="close-btn" aria-label="Fechar conferência" onClick={requestDiscardReceiptReview} type="button"><Icon type="close"/></button></div>
             <nav className="receipt-review-guide" aria-label="Etapas da conferência">
               <div><b>{receiptReviewRows.filter((row) => !row.done).length} linha(s) com conferência pendente</b>
                 <span>{totalsRequireReview && !draft.totalsReviewed ? 'Totais aguardando conferência.' : 'Sem pendência de conferência dos totais.'}</span></div>
@@ -3259,7 +3283,7 @@ export default function Home() {
               </div>
               {draft.officialItems?.length > 0 && <><div className="notice" style={{marginTop:12}}>Itens encontrados na consulta: {draft.officialItems.length}. Os itens oficiais são usados por padrão. Revise antes de lançar.{draft.officialTotal !== null && draft.officialTotal !== undefined ? <span style={{display:'block',marginTop:6}}>Total na consulta: <b>{money(draft.officialTotal)}</b>{draft.officialDiscount !== null && draft.officialDiscount !== undefined ? ' · Desconto: ' + money(draft.officialDiscount) : ''}</span> : null}</div><div className="table-wrap review-table" style={{marginTop:10}}><table><thead><tr><th>ITEM NO OCR</th><th>VALOR OCR</th><th>ITEM NA CONSULTA</th><th>VALOR OFICIAL</th><th>RESULTADO</th></tr></thead><tbody>{officialComparison.map((row, index) => <tr key={index}><td>{row.ocr ? <><b>{row.ocr.name}</b><small style={{display:'block'}}>{qty(row.ocr.quantity)} {row.ocr.unit} × {money(row.ocr.unitPrice)}</small></> : '—'}</td><td>{row.ocr ? money(receiptItemTotal(row.ocr)) : '—'}</td><td>{row.official ? <><b>{row.official.name}</b><small style={{display:'block'}}>{qty(row.official.quantity)} {row.official.unit} × {money(row.official.unitPrice)}</small></> : '—'}</td><td>{row.official ? money(receiptItemTotal(row.official)) : '—'}</td><td><span className={row.status === 'Confere' ? 'status ok-status' : 'status low-status'}><i/>{row.status}</span></td></tr>)}</tbody></table></div></>}
             </section>}
-            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre>{/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText) && <button className="btn secondary" type="button" onClick={reinterpretSavedDanfe}>Reinterpretar tabela DANFE (sem novo OCR)</button>}</details>}
+            {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre>{/SEM\s+VALOR\s+FISCAL/i.test(draft.ocrText)&&/PEDIDO/i.test(draft.ocrText)&&<button className="btn secondary" type="button" onClick={reinterpretSavedOrder}>Reinterpretar pedido (sem novo OCR)</button>}{/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText) && <button className="btn secondary" type="button" onClick={reinterpretSavedDanfe}>Reinterpretar tabela DANFE (sem novo OCR)</button>}</details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
               <div className="qr-identified-actions">
                 {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
@@ -3275,6 +3299,7 @@ export default function Home() {
             </section>
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
+              {orderReference&&<p>Pedido: <b>{orderReference}</b> · Referência comercial; não é o número de NF-e.</p>}
               {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
               {localKeyReview.numberConflict && <p role="status">Número lido ou digitado diferente da chave. Confira o original. <button type="button" className="btn secondary" onClick={()=>setDraft(previous=>({...previous,invoiceNumber:localKeyReview.fields.invoiceNumber,series:localKeyReview.fields.series,finalReviewed:false}))}>Usar número da chave</button></p>}
             {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
