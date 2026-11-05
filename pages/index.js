@@ -1,3 +1,4 @@
+import CashMovementDetails from '../components/CashMovementDetails';
 import { receiptItemsFromOcr, rebuildSavedDanfe } from '../lib/receipt-ocr-cleanup.mjs';
 import { readFiscalAccessKey, fiscalKeyCandidates, reviewLocalFiscalKey, applyLocalFiscalKey } from '../lib/fiscal-access-key.mjs';
 import { svrsDraftFields, validatedSupplierCnpj } from '../lib/svrs-draft.mjs';
@@ -1994,7 +1995,7 @@ export default function Home() {
     setManualMode(true); setManualNew(false); setManualChosenId(''); setManualSearch('');
     setManualForm({name:'',sku:'',category:'Mercearia',unit:'un',min:'0',
       quantity:'1',cost:'0',supplier:'',preferredSupplier:'',reason:'Entrada manual'});
-    setError('');setView('documents');
+    setError('');setView('stock');
   }
   function saveManualEntry(event) {
     event.preventDefault();
@@ -3048,7 +3049,7 @@ export default function Home() {
         </div>
       </header>
       <div className="content">
-        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
+        <div className="page-heading"><div><div className="eyebrow">{page[0]}</div><h1>{page[1]}</h1><p>{page[2]}</p></div><div className="heading-buttons">{view === 'stock' && <button className="btn secondary" onClick={() => setView('movements')} type="button"><Icon type="clock" size={17}/>Histórico</button>}{view === 'purchases' && currentUser?.role === 'admin' && <button className="btn primary" onClick={downloadPurchaseList} type="button"><Icon type="upload" size={18}/>Baixar CSV</button>}{view === 'stock' && <button className="btn secondary" type="button" disabled={busy || manualMode} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button>}{view === 'stock' && currentUser?.role === 'admin' && <button className="btn primary" onClick={() => openProduct(null)} type="button"><Icon type="plus" size={18}/>Novo produto</button>}</div></div>
 
         {countDue && <div className="alert-strip" role="alert" style={{marginBottom:14}}><span className="alert-icon"><Icon type="alert" size={18}/></span><div><b>Contagem obrigatória pendente</b><p>Prazo: {countDateLabel(nextCount)}</p></div><button type="button" onClick={()=>setView('count')}>Conferir agora</button></div>}
         {view === 'count' && <section className="panel giro-count-panel">
@@ -3100,7 +3101,7 @@ export default function Home() {
           </section>
           <section className="panel"><div className="panel-head"><div><h2>Produtos</h2><p>Gerencie quantidades, custos e níveis mínimos.</p></div><button className="quiet-btn" aria-label="Limpar filtros" onClick={() => {setQuery('');setCategory('Todas');setFilter('Todos');}} type="button"><Icon type="sliders" size={16}/>Limpar filtros</button></div>
             <div className="filters"><label className="search"><Icon type="search" size={18}/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar produto, código..."/></label><label className="select-filter"><span>Categoria</span><select value={category} onChange={(e) => setCategory(e.target.value)}>{categories.map((c) => <option key={c}>{c}</option>)}</select><Icon type="down" size={13}/></label><label className="select-filter"><span>Status</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option>Todos</option><option>Estoque baixo</option><option>Estoque normal</option></select><Icon type="down" size={13}/></label></div>
-            <div className="table-wrap"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>CUSTO UNITÁRIO</th><th>VALOR EM ESTOQUE</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td><span className="category-chip">{p.category}</span></td><td><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td>{money(p.cost)}</td><td><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Ajustar estoque" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
+            <div className="table-wrap stock-catalog-table"><table><thead><tr><th>PRODUTO</th><th>CATEGORIA</th><th>QUANTIDADE</th>{currentUser?.role === 'admin' && <><th>Custo<br/>unit.</th><th>Valor em<br/>estoque</th></>}<th>STATUS</th><th></th></tr></thead><tbody>{shownProducts.map((p) => <tr key={p.id}><td data-label="Produto"><div className="product-cell"><span className="product-box"><Icon type="box" size={18}/></span><span><b>{p.name}</b><small>{p.sku || 'Sem código'}</small></span></div></td><td data-label="Categoria"><span className="category-chip">{p.category}</span></td><td data-label="Quantidade"><b className={isLow(p) ? 'quantity-low' : 'quantity-ok'}>{qty(p.stock)} <small>{p.unit}</small></b><div className="minimum">Mínimo: {qty(p.min)} {p.unit}</div></td>{currentUser?.role === 'admin' && <><td data-label="Custo unitário">{money(p.cost)}</td><td data-label="Valor em estoque"><b>{money(Number(p.stock) * Number(p.cost))}</b></td></>}<td data-label="Status"><span className={isLow(p) ? 'status low-status' : 'status ok-status'}><i/>{isLow(p) ? 'Estoque baixo' : 'Normal'}</span></td><td data-label="Ações"><div className="row-actions"><button aria-label={'Ajustar estoque de ' + p.name} title="Registrar entrada ou saída" onClick={() => openAdjustment(p)} type="button"><Icon type="arrows" size={16}/><span>Entrada/saída</span></button><button aria-label={(currentUser?.role === 'admin' ? 'Editar cadastro de ' : 'Alterar quantidade de ') + p.name} onClick={() => openProduct(p)} title={currentUser?.role === 'admin' ? 'Editar cadastro' : 'Alterar quantidade'} type="button"><Icon type="edit" size={16}/></button></div></td></tr>)}{!shownProducts.length && <tr><td colSpan={currentUser?.role === 'admin' ? 7 : 5}><div className="empty"><Icon type="search" size={25}/><b>Nenhum produto encontrado</b><span>Altere os filtros ou cadastre um novo item.</span></div></td></tr>}</tbody></table></div>
             <div className="table-foot"><span>Exibindo <b>{shownProducts.length}</b> de <b>{products.length}</b> produtos</span><span>{supabase ? "Banco de dados compartilhado" : "Dados salvos neste navegador"}</span></div>
           </section>
           <details className="giro-stock-details"><summary>Atividade recente e reposição</summary><section className="lower-grid"><div className="panel lower-panel"><div className="panel-head"><div><h2>Estoque para revisar</h2><p>Itens no nível mínimo ou abaixo dele.</p></div><button className="text-btn" onClick={() => setFilter('Estoque baixo')} type="button">Ver todos <Icon type="chevron" size={14}/></button></div>{low.length ? low.slice(0, 4).map((p) => <div className="low-row" key={p.id}><span className="low-symbol"><Icon type="alert" size={16}/></span><span className="low-name"><b>{p.name}</b><small>{qty(p.stock)} {p.unit} disponíveis</small></span><span className="low-min"><small>Mínimo</small><b>{qty(p.min)} {p.unit}</b></span><button className="add-small" title="Registrar entrada" onClick={() => openAdjustment(p)} type="button"><Icon type="plus" size={16}/></button></div>) : <div className="all-good"><Icon type="check" size={22}/><b>Nenhuma reposição pendente</b></div>}</div>
@@ -3163,38 +3164,7 @@ export default function Home() {
             </label>)}
           </div>)}
         </section>}
-        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
-          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
-          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy} onClick={openManualEntry}><Icon type="plus" size={17}/>Entrada manual</button><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
-          <div className="notice" role="note" style={{margin:'12px 4px'}}>
-            <b>Leitura local:</b> OCR, QR e código de barras são lidos no navegador, sem enviar a imagem a leitores de terceiros. O original continua arquivado no sistema. A consulta oficial da NFC-e permanece disponível; confira os dados antes do lançamento.
-          </div>
-          </details>
-          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
-              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
-              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
-            </div>
-            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
-            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
-            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
-          </section>}
-          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
-          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
-            <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
-            {pendingBusy&&<small>Salvando conferência no servidor…</small>}
-            {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
-              <span className="history-file"><Icon type="file" size={18}/></span>
-              <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
-              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
-              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
-              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
-                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
-            </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
-          </details>
-          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
-          {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
-          {manualMode && <section className="panel manual-entry-panel">
+          {view === 'stock' && manualMode && <section className="panel manual-entry-panel">
             <div className="panel-head"><div><h2>Entrada manual no estoque</h2><p>Pesquise o catálogo primeiro. Cadastre um produto somente se ele realmente não existir.</p></div><button className="close-btn" type="button" onClick={()=>{setManualMode(false);setError('');}}><Icon type="close"/></button></div>
             <form onSubmit={saveManualEntry}>
               <label className="field full"><span>Buscar produto existente por nome ou código</span><input value={manualSearch} autoFocus onChange={(e)=>{setManualSearch(e.target.value);setManualChosenId('');setManualNew(false);setError('');}} placeholder="Ex.: Café em grãos, leite, 00123..."/></label>
@@ -3231,6 +3201,36 @@ export default function Home() {
               <div className="modal-actions"><button className="btn secondary" type="button" onClick={()=>{setManualMode(false);setError('');}}>Cancelar</button><button className="btn primary" type="submit" disabled={!manualNew&&!manualChosen}><Icon type="check" size={16}/>{manualNew?'Criar produto e lançar entrada':'Registrar entrada no produto selecionado'}</button></div>
             </form>
           </section>}
+        {view === 'documents' && canFiscal('fiscal.pending.read') && <>
+          <details className="giro-intake" open={!draft}><summary>{draft ? 'Importar ou abrir outra nota' : 'Importar notas'}</summary>
+          <section className="document-banner"><span className="banner-art"><Icon type="file" size={28}/></span><div className="banner-copy"><h2>Da nota fiscal para o estoque</h2><p>Selecione um ou vários arquivos XML, fotos ou PDFs de uma vez. O sistema processa cada arquivo e organiza as notas em sequência para revisão antes de lançar. PDFs ainda exigem preenchimento manual. Fotos acima de 4 MB são reduzidas para arquivamento; a leitura usa o original.</p><div className="feature-tags"><span><Icon type="check" size={14}/>XML de NF-e</span><span><Icon type="image" size={14}/>Foto ou PDF</span><span><Icon type="check" size={14}/>Conferência antes de lançar</span></div></div><div className="manual-top-actions"><button className="btn secondary" type="button" disabled={busy || manualMode || Boolean(draft)} onClick={startManualInvoice}><Icon type="file" size={17}/>Cadastrar nota manualmente</button>{canFiscal('fiscal.pending.create')&&<button className="btn primary" disabled={busy || manualMode} onClick={() => uploadRef.current?.click()} type="button"><Icon type="upload" size={17}/>Selecionar arquivos</button>}</div></section>
+
+          </details>
+          {busy && uploadBatchProgress && <section className="panel fiscal-upload-progress" role="status" aria-live="polite" style={{maxWidth:860,margin:'12px auto',padding:'18px 20px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'baseline',flexWrap:'wrap'}}>
+              <h2 style={{fontSize:'1rem',margin:0}}>Arquivos sendo processados</h2>
+              <strong style={{fontSize:'0.95rem'}}>{uploadBatchProgress.completed} de {uploadBatchProgress.total} arquivos · {Math.round(100*uploadBatchProgress.completed/Math.max(1,uploadBatchProgress.total))}% concluído</strong>
+            </div>
+            <progress value={uploadBatchProgress.completed} max={uploadBatchProgress.total} aria-label="Arquivos fiscais concluídos" style={{display:'block',width:'100%',margin:'12px 0'}}/>
+            <p style={{fontSize:'0.95rem',overflowWrap:'anywhere',margin:'6px 0'}}><b>Arquivo atual:</b> {uploadBatchProgress.fileName || 'Preparando arquivos…'}</p>
+            <p style={{fontSize:'0.9rem',margin:'6px 0'}}>{processingType==='xml' ? 'Lendo XML e identificando itens…' : 'Reconhecendo texto da imagem' + (ocrProgress ? ' — OCR '+ocrProgress+'%' : ' — preparando OCR…')}{uploadBatchProgress.failed ? ' · '+uploadBatchProgress.failed+' falha(s)' : ''}</p>
+          </section>}
+          {pendingSaveError&&<div className="notice" role="alert">⚠ {pendingSaveError}</div>}
+          <details className="panel pending-documents-panel giro-pending" open={!draft}><summary>Notas aguardando conferência · {pendingReceipts.length}</summary>
+            <div className="panel-head"><div><h2>Notas aguardando conferência</h2><p>Originais e OCR salvos no servidor. Você pode fechar a página e retomar depois.</p></div><span className="history-count">{pendingReceipts.length} pendente(s)</span></div>
+            {pendingBusy&&<small>Salvando conferência no servidor…</small>}
+            {pendingReceipts.length?pendingReceipts.map(row=><div className="history-row" key={row.id}>
+              <span className="history-file"><Icon type="file" size={18}/></span>
+              <span className="history-copy"><b>{row.draft?.supplier||row.fileName}</b><small>{row.fileName} · {row.draft?.items?.length||0} itens · {row.draft?.invoiceNumber||'Sem número'} · pendente</small></span>
+              <button className="btn secondary" type="button" onClick={()=>void viewPendingOriginal(row)}>Arquivo</button>
+              {canFiscal('fiscal.pending.review')&&<button className="btn primary" type="button" onClick={()=>void openPendingReceipt(row)}>Conferir</button>}
+              {currentUser?.role==='admin'&&canFiscal('fiscal.pending.cancel')&&<button className="btn secondary" type="button"
+                style={{color:'#a33'}} onClick={()=>void cancelPendingReceipt(row)}>Cancelar NF</button>}
+            </div>):<div className="empty-docs">Nenhuma nota aguardando conferência.</div>}
+          </details>
+          {error && <div className="error"><Icon type="alert" size={18}/><span>{error}</span><button onClick={() => setError('')} type="button"><Icon type="close" size={16}/></button></div>}
+          {draft?.importWarning && <div className="notice" role="alert">Não foi possível interpretar automaticamente este arquivo: {draft.importWarning}. Confira os campos e preencha os itens manualmente.</div>}
+
           {draft?.manualInvoice && <section className="panel manual-invoice-helper">
             <div className="panel-head"><div><h2>Nota de compra digitada manualmente</h2><p>Informe os dados do documento e adicione quantos produtos precisar, vinculando cada linha ao catálogo existente.</p></div></div>
             <p className="duplicate-guidance">Esta nota será identificada como digitada manualmente e não verificada pela SEFAZ. Confira os valores com o documento original antes de registrar a entrada.</p>
@@ -3260,22 +3260,22 @@ export default function Home() {
             </section>}
             {draft.ocrText && <details className="ocr-text-details"><summary>Texto reconhecido na foto (conferência)</summary><pre>{draft.ocrText}</pre>{/DANFE|DADOS DO PRODUTO/i.test(draft.ocrText) && <button className="btn secondary" type="button" onClick={reinterpretSavedDanfe}>Reinterpretar tabela DANFE (sem novo OCR)</button>}</details>}
             <section className="invoice-document-details" aria-label="Identificação local pela chave">
-              <p role="status" className={draft.qrDetected ? 'qr-detection-ok' : ''}>{draft.qrDetected ? '✓ QR Code identificado' : 'QR Code não identificado'}</p>
               <div className="qr-identified-actions">
                 {draft.accessKey && <button type="button" className="btn secondary" onClick={async () => { try { await navigator.clipboard.writeText(draft.accessKey); setToast('Chave de acesso copiada.'); } catch (_) { setToast('Selecione e copie a chave exibida para colá-la na consulta pública.'); } }}>Copiar chave</button>}
                 {draft.consultaUrl && <a href={draft.consultaUrl} target="_blank" rel="noopener noreferrer" className="btn secondary">{draft.qrUrlPreserved ? 'Conferir QR Code ↗' : 'Abrir consulta pública ↗'}</a>}
               </div>
-              <details><summary>Origem da identificação</summary>
+              <details><summary>Origem da identificação</summary><p>{draft.qrDetected ? 'QR Code identificado no documento.' : 'QR Code não identificado; a chave pode vir de outra leitura ou digitação.'}</p>
                 {draft.qrReader?.includes('API externa') ? <p>Origem: API externa <a href="https://github.com/pcelias-ctrl/nfc-e" target="_blank" rel="noopener noreferrer">pcelias-ctrl/nfc-e</a>.</p> : <p>{draft.qrReader || 'Chave obtida pelo reconhecimento do documento; confira com a nota original.'}</p>}
               </details>
               <label className="field"><span>Chave de acesso NF-e/NFC-e (44 dígitos)</span><input inputMode="numeric" maxLength={44} value={draft.accessKeyInput ?? draft.accessKey ?? ''} onChange={event => changeNfceAccessKey(event.target.value)} aria-describedby="local-key-status"/></label>
-              <p id="local-key-status" role="status">{localKeyReview.message}</p>
-              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              <p id="local-key-status" role="status">{localKeyReview.pending ? localKeyReview.message : 'A chave identifica o emitente e a nota; não comprova consulta à SEFAZ nem os itens.'}</p>
               {localKeyReview.canConfirmKey && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, keyReadAcknowledged:localKeyReview.evidence, finalReviewed:false}))}>Conferi a chave digitada com a nota e confirmo esta leitura</button>}
               {localKeyReview.canConfirmIssuer && <button type="button" className="btn secondary" onClick={() => setDraft(d => ({...d, supplierCnpj:localKeyReview.fields.cnpj, issuerKeyAcknowledged:localKeyReview.issuerEvidence, finalReviewed:false}))}>Conferi o emitente na nota e confirmo o CNPJ da chave</button>}
             </section>
             <section className="invoice-document-details" aria-label="Dados do fornecedor e da nota">
               <div className="invoice-document-heading"><h3>Dados do fornecedor e da nota</h3><p>Confira a identificação do documento antes de revisar os produtos.</p></div>
+              {localKeyReview.fields && <p>UF: {localKeyReview.fields.uf} · Mês/ano: {localKeyReview.fields.yearMonth} · Série: {localKeyReview.fields.series} · Número: {localKeyReview.fields.invoiceNumber}</p>}
+              {localKeyReview.numberConflict && <p role="status">Número lido ou digitado diferente da chave. Confira o original. <button type="button" className="btn secondary" onClick={()=>setDraft(previous=>({...previous,invoiceNumber:localKeyReview.fields.invoiceNumber,series:localKeyReview.fields.series,finalReviewed:false}))}>Usar número da chave</button></p>}
             {draft.officialOrigin === 'sefaz' && <div className="notice" role="status">
               {draft.contingency && <strong>EMITIDA EM CONTINGÊNCIA · </strong>}
               Série: {draft.series || '—'} · Endereço: {draft.address || '—'}
@@ -3292,7 +3292,7 @@ export default function Home() {
             </div>
             <div className="table-wrap review-table receipt-items-table" id="receipt-review-items" tabIndex={0} role="region" aria-label="Itens da nota para conferência">
               <table>
-                <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th><th>UNIDADE</th><th>CUSTO UNITÁRIO (R$)</th><th>TOTAL DA LINHA (R$)</th><th>PRODUTO NO ESTOQUE</th><th>CONFERÊNCIA</th><th></th></tr></thead>
+                <thead><tr><th>PRODUTO</th><th>QTD.</th><th>UN.</th><th>Custo unit.<br/>(R$)</th><th>Total<br/>(R$)</th><th>Vínculo no estoque</th><th>CONFERÊNCIA</th><th></th></tr></thead>
                 <tbody>{draft.items.map((it, i) => {
                   const review = receiptReviewRows[i];
                   const attention = review.requiresReview && !review.done;
@@ -3311,7 +3311,7 @@ export default function Home() {
                       </select>
                       {!!it.productId&&<small>Selecionado: {it.name} · código {it.code||'—'}</small>}
                       {!it.productId&&<small>Não encontrou? Cadastre o produto na tela Estoque, sem duplicar o catálogo.</small>}
-                    </div> : <><input className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
+                    </div> : <><textarea rows={3} className="inline-input name-field" aria-label={'Nome do produto da linha '+(i+1)} style={fieldStyle('produto')} value={it.name} onChange={(e) => changeItem(i, 'name', e.target.value)} placeholder="Nome do produto"/>{it.originalName && it.originalName !== it.name && <small className="fiscal-code-note">Descrição original: {it.originalName}</small>}{it.code && <small className="fiscal-code-note">Código fiscal: {it.code} (normalizado: {normalizeProductCode(it.code)})</small>}</>}</td>
                     <td data-label="Quantidade"><input className="inline-input small-field review-qty" aria-label={'Quantidade de ' + it.name} style={fieldStyle('quantidade')} type="number" min="0.001" step="any" value={it.quantity} onChange={(e) => changeItem(i, 'quantity', e.target.value)}/></td>
                     <td data-label="Unidade"><input className="inline-input unit-field" aria-label={'Unidade da linha '+(i+1)} style={fieldStyle('unidade')} value={it.unit} readOnly={Boolean(draft.manualInvoice)} onChange={(e) => changeItem(i, 'unit', e.target.value)}/></td>
                     <td data-label="Custo unitário"><input className="inline-input small-field review-money" aria-label={'Custo unitário de ' + it.name} style={fieldStyle('preço')} type="number" min="0" step="any" value={it.unitPrice} onChange={(e) => changeItem(i, 'unitPrice', e.target.value)}/></td>
@@ -3322,15 +3322,15 @@ export default function Home() {
                         <select className="inline-input" style={{width:'100%',marginTop:3}}
                           value={it.stockDisposition || (isNonStockExpense(it) ? 'expense' : 'stock')}
                           onChange={(e) => changeItem(i,'stockDisposition',e.target.value)}>
-                          <option value="stock">Mercadoria — movimentar estoque</option>
-                          <option value="expense">Despesa/serviço — não movimentar</option>
+                          <option value="stock">Mercadoria</option>
+                          <option value="expense">Despesa</option>
                         </select>
                       </label>
                       {!draft.manualInvoice && <select className="inline-input" style={{width:'100%',background: attention && !products.some((p) => p.id === it.productId) ? '#fffbeb' : undefined}}
                         aria-label={'Associar ' + it.name + ' ao estoque'}
                         value={it.productId || ''}
                         onChange={(e) => changeItem(i,'productId',e.target.value)}>
-                        <option value="">Automático por nome/código (ou novo cadastro)</option>
+                        <option value="">Automático / novo</option>
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name} — código {p.sku} ({p.unit})</option>)}
                         <option value="__new__">⚠ Criar cadastro distinto — conferi que não é duplicado</option>
                       </select>}
@@ -3402,7 +3402,7 @@ export default function Home() {
                 <p className="giro-reviewer">Conferência por <b>{reviewerName || 'Conta indisponível'}</b><small>Preenchido pela conta conectada.</small></p>
               </div>
             </section>
-            <div className="caution"><Icon type="alert" size={18}/><p><b>Confira antes de continuar.</b> Ao confirmar, as quantidades serão somadas ao saldo atual. Produtos com nome igual serão associados ao cadastro existente.</p></div>
+
             <div className="modal-actions"><button className="btn secondary" disabled={busy} onClick={() => {setDraft(null);setDraftQueue([]);setDraftBatch(null);setError('');}} type="button">Cancelar</button><button className="btn primary" disabled={busy || Boolean(pendingConfirmRequested)} onClick={confirmDocument} type="button"><Icon type="check" size={17}/>{pendingConfirmRequested?.id===draft.pendingId?'Salvando conferência…':'Confirmar entrada no estoque'}</button></div>{pendingConfirmRequested?.id===draft.pendingId&&<small role="status" aria-live="polite">Aguardando confirmação do servidor antes de lançar esta nota.</small>}
           </div></section>}
           <section className="panel history-panel"><div className="panel-head"><div><h2>Histórico de documentos</h2><p>Compras conferidas e lançadas no estoque.</p></div><span className="history-count">{documentView.documents.length} de {documents.length} documentos</span></div>
@@ -3492,6 +3492,7 @@ export default function Home() {
         <div className="cash-day-register-head">
           <h3>Caixa {entry.register}</h3><span>Operador: {entry.operator}</span>{currentUser?.role==='admin'&&<button type="button" className="btn secondary" disabled={cashSaving} onClick={()=>editCashClosing(entry)}>Revisar caixa {entry.register}</button>}
         </div>
+        <CashMovementDetails entry={entry}/>
         <dl className="cash-day-channels">{CASH_CHANNELS.map(([key,label])=><div key={key} className="cash-day-channel"><dt>{label}</dt><dd>{money(totals.revenues[key])}</dd></div>)}</dl>
         <div className="cash-day-register-total"><span>Total do caixa</span><strong>{money(totals.revenue)}</strong></div>
       </article>;

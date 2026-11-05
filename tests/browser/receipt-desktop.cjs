@@ -15,7 +15,7 @@ async function mockFiscalRequests(page, writes) {
     const responses = {
       inventory_login: {ok: true, session_token: 'synthetic-session'},
       inventory_tenants: {user, tenants: [{id: 'fixture.unit', name: 'Unidade sintética'}], activeTenantId: 'fixture.unit'},
-      inventory_get: {user, revision: 0, products: [], movements: [], documents: []},
+      inventory_get: {user, revision: 0, products: [{id:'synthetic.product',name:'Produto sintético com descrição longa para testar ações do catálogo',sku:'00042',category:'Teste',unit:'un',stock:2,cost:10}], movements: [], documents: []},
       inventory_permissions_list: {self: {'fiscal.pending.read': true, 'fiscal.pending.review': true, 'fiscal.pending.create': true}, users: []},
       pending_receipts_list: [], cash_closings_list: [],
       inventory_validate_session: {ok: true, valid: true}
@@ -35,7 +35,18 @@ async function verifyReview(browser) {
   await page.getByLabel('Login', {exact: true}).fill('synthetic.manager');
   await page.getByLabel('Senha', {exact: true}).fill('Synthetic-only-123');
   await page.getByRole('button', {name: 'Entrar no Giro', exact: true}).click();
+  await page.locator('.stock-catalog-table .row-actions button').first().waitFor();
+  for (const width of [1254,1024,390]) {
+    await page.setViewportSize({width,height:900});
+    const actions=await page.locator('.stock-catalog-table .row-actions').evaluateAll(nodes=>nodes.map(node=>({left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,viewport:innerWidth})));
+    assert.ok(actions.length && actions.every(box=>box.left>=0 && box.right<=box.viewport),'Ações fora da tela em '+width+' '+JSON.stringify(actions));
+  }
+  await page.getByRole('button',{name:'Entrada manual',exact:true}).click();
+  await page.getByRole('heading',{name:'Entrada manual no estoque',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Cancelar',exact:true}).click();
+  await page.setViewportSize({width:1440,height:900});
   await page.getByRole('button', {name: 'Notas fiscais', exact: true}).click();
+  assert.equal(await page.getByRole('button',{name:'Entrada manual',exact:true}).count(),0);
   await page.getByRole('button', {name: 'Cadastrar nota manualmente', exact: true}).click();
   const review = page.locator('.review-panel');
   await review.getByText('Pendente:', {exact: true}).waitFor();

@@ -89,7 +89,8 @@ const closings = [
     await page.getByLabel('Senha', {exact:true}).fill('Visual-QA-only-password');
     await page.getByRole('button',{name:'Entrar no Giro',exact:true}).click();
     await page.getByRole('button',{name:'Relatórios',exact:true}).click();
-    await page.locator('.cash-chart-controls input[type=month]').fill('2026-10');
+    await page.locator('.cash-chart-controls').getByLabel('Ano de referência',{exact:true}).selectOption('2026');
+    await page.locator('.cash-chart-controls').getByLabel('Mês de referência',{exact:true}).selectOption('10');
 
     const columns = page.locator('.giro-revenue-bars .cash-bar-column');
     await columns.first().waitFor();
@@ -153,7 +154,8 @@ const closings = [
     assert.equal(await columns.count(),12,'retorno explícito preserva os doze meses');
     await page.getByRole('group',{name:'Período do gráfico',exact:true}).getByRole('button',{name:'Mês',exact:true}).click();
 
-    await page.locator('.cash-chart-controls input[type=month]').fill('2028-02');
+    await page.locator('.cash-chart-controls').getByLabel('Ano de referência',{exact:true}).selectOption('2024');
+    await page.locator('.cash-chart-controls').getByLabel('Mês de referência',{exact:true}).selectOption('02');
     assert.equal(await columns.count(),0,'mês sem fechamento não mostra dias vazios');
     assert.equal(await columns.filter({has:page.locator('.giro-chart-track i')}).count(),0);
 
